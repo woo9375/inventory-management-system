@@ -1,0 +1,14 @@
+# CLASP 업로드 제외 목록
+node_modules/**
+.git/**
+.gitignore
+.claspignore
+README.md
+*.md
+package.json
+package-lock.json
+
+# 기존 한글 .gs 파일 (src/ 안의 영문 파일만 업로드)
+호텔덕구온천 재고관리 시스템.gs
+호텔덕구온천 인벤토리 시스템.gs
+확장모듈_마이그레이션_아카이빙.gs

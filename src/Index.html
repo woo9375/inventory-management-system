@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>호텔덕구온천 인벤토리 시스템</title>
+  <?!= include('Stylesheet') ?>
+</head>
+<body>
+
+<!-- ═══════ 모바일 헤더 ═══════ -->
+<div class="mobile-header">
+  <button class="hamburger" onclick="toggleSidebar()">☰</button>
+  <span class="brand">🏨 호텔덕구온천</span>
+  <span></span>
+</div>
+
+<!-- ═══════ 로딩 오버레이 ═══════ -->
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="spinner"></div>
+</div>
+
+<!-- ═══════ 토스트 컨테이너 ═══════ -->
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- ═══════ 모달 (품목 등록/수정) ═══════ -->
+<div id="modalOverlay" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modalTitle">품목 등록</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<div class="app-container">
+
+  <!-- ═══════ 사이드바 ═══════ -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <span class="brand-icon">🏨</span>
+      <h1>호텔덕구온천<br>인벤토리 시스템</h1>
+      <div class="brand-sub">Inventory Management v6.8</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" onclick="showTab('dashboard', this)">
+        <span class="nav-icon">📊</span> 대시보드
+        <span id="alertBadge" class="nav-badge" style="display:none">0</span>
+      </button>
+      <button class="nav-item" onclick="showTab('transactions', this)">
+        <span class="nav-icon">📝</span> 입출고 기록
+      </button>
+      <button class="nav-item" onclick="showTab('master', this)">
+        <span class="nav-icon">🗂️</span> 품목 마스터
+      </button>
+      <button class="nav-item" onclick="showTab('settings', this)">
+        <span class="nav-icon">⚙️</span> 설정
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      © 2026 (주)호텔덕구온천<br>구매 재고 관리 시스템
+    </div>
+  </aside>
+
+  <!-- ═══════ 메인 콘텐츠 ═══════ -->
+  <main class="main-content">
+
+    <!-- ━━━━━━━━━ 대시보드 탭 ━━━━━━━━━ -->
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="page-header">
+        <h2>📊 대시보드</h2>
+        <div class="header-meta">
+          <span id="dashDate">-</span>
+          <span id="dashSeason" class="season-badge">-</span>
+          <button class="btn btn-primary btn-sm" onclick="loadDashboard()">🔄 새로고침</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card total">
+          <div class="kpi-label">전체 관리 품목</div>
+          <div><span id="kpiTotal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+        </div>
+        <div class="kpi-card risk">
+          <div class="kpi-label">🚨 위험</div>
+          <div><span id="kpiRisk" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+        </div>
+        <div class="kpi-card order">
+          <div class="kpi-label">⚠️ 발주필요</div>
+          <div><span id="kpiOrder" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+        </div>
+        <div class="kpi-card normal">
+          <div class="kpi-label">✅ 정상</div>
+          <div><span id="kpiNormal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>🔔 위험 · 발주필요 품목</h3>
+        </div>
+        <div class="card-body">
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>품목코드</th><th>품목명</th><th>ABC</th>
+                  <th>현재고</th><th>안전재고</th><th>발주점</th>
+                  <th>적정발주량</th><th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="alertTableBody">
+                <tr><td colspan="8" class="empty-state"><span class="empty-icon">📋</span><p>데이터를 불러오는 중...</p></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ━━━━━━━━━ 입출고 기록 탭 ━━━━━━━━━ -->
+    <div id="tab-transactions" class="tab-content">
+      <div class="page-header">
+        <h2>📝 입출고 기록</h2>
+        <div class="header-meta">
+          <select id="txShopSelect" class="form-group select" onchange="loadTransactions()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:0.85rem;">
+            <option value="">업장 선택...</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>➕ 새 입출고 기록</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>날짜</label>
+              <input type="date" id="txDate">
+            </div>
+            <div class="form-group autocomplete-wrapper">
+              <label>품목코드</label>
+              <input type="text" id="txItemCode" placeholder="코드 입력..." autocomplete="off" oninput="onItemCodeInput(this.value)">
+              <div id="itemCodeDropdown" class="autocomplete-list" style="display:none"></div>
+            </div>
+            <div class="form-group">
+              <label>품목명 (자동)</label>
+              <input type="text" id="txItemName" readonly style="background:#e8f0fb">
+            </div>
+            <div class="form-group">
+              <label>구분</label>
+              <select id="txType">
+                <option value="">선택...</option>
+                <option value="입고">입고</option>
+                <option value="출고">출고</option>
+                <option value="폐기">폐기</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>수량</label>
+              <input type="number" id="txQty" min="1" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label>담당자</label>
+              <input type="text" id="txPerson" placeholder="이름">
+            </div>
+            <div class="form-group" style="grid-column: span 2">
+              <label>비고</label>
+              <input type="text" id="txNote" placeholder="메모 (선택)">
+            </div>
+          </div>
+          <div class="mt-16">
+            <button class="btn btn-gold" onclick="saveTransaction()">💾 기록 저장</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>📋 최근 입출고 내역</h3>
+          <span id="txCount" style="font-size:0.8rem;color:var(--text-secondary)">0건</span>
+        </div>
+        <div class="card-body">
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>날짜</th><th>품목코드</th><th>품목명</th>
+                  <th>구분</th><th>수량</th><th>담당자</th>
+                  <th>비고</th><th>거래ID</th>
+                </tr>
+              </thead>
+              <tbody id="txTableBody">
+                <tr><td colspan="8" class="empty-state"><span class="empty-icon">📝</span><p>업장을 선택하세요</p></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ━━━━━━━━━ 품목 마스터 탭 ━━━━━━━━━ -->
+    <div id="tab-master" class="tab-content">
+      <div class="page-header">
+        <h2>🗂️ 품목 마스터</h2>
+        <div class="btn-group">
+          <button class="btn btn-gold btn-sm" onclick="openNewItemModal()">➕ 신규 품목 등록</button>
+          <button class="btn btn-outline btn-sm" onclick="loadItemMaster()">🔄 새로고침</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>📦 등록 품목 목록</h3>
+          <span id="masterCount" style="font-size:0.8rem;color:var(--text-secondary)">0개</span>
+        </div>
+        <div class="card-body">
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>품목코드</th><th>품목명</th><th>카테고리</th>
+                  <th>ABC</th><th>단위</th><th>현재고</th>
+                  <th>일평균</th><th>안전재고</th><th>발주점</th>
+                  <th>상태</th><th>매입단가</th><th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="masterTableBody">
+                <tr><td colspan="12" class="empty-state"><span class="empty-icon">🗂️</span><p>데이터를 불러오는 중...</p></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ━━━━━━━━━ 설정 탭 ━━━━━━━━━ -->
+    <div id="tab-settings" class="tab-content">
+      <div class="page-header">
+        <h2>⚙️ 시스템 설정</h2>
+      </div>
+
+      <div class="settings-grid">
+        <!-- 업장 목록 -->
+        <div class="card">
+          <div class="card-header"><h3>🏪 업장 목록</h3></div>
+          <div class="card-body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>분류</th><th>업장명</th><th>태그</th><th>상태</th></tr></thead>
+                <tbody id="shopTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 시즌 설정 -->
+        <div class="card">
+          <div class="card-header"><h3>📅 시즌 설정</h3></div>
+          <div class="card-body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>시즌명</th><th>시작일</th><th>종료일</th><th>배수</th></tr></thead>
+                <tbody id="seasonTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 사용자 권한 -->
+        <div class="card" style="grid-column: span 2">
+          <div class="card-header"><h3>👤 사용자 권한</h3></div>
+          <div class="card-body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>성함</th><th>부서</th><th>이메일</th><th>권한범위</th></tr></thead>
+                <tbody id="userTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 시스템 명령 -->
+      <div class="card mt-16">
+        <div class="card-header"><h3>🛠️ 시스템 명령</h3></div>
+        <div class="card-body">
+          <div class="cmd-grid">
+            <div class="cmd-card" onclick="execCommand('refreshDashboard')">
+              <span class="cmd-icon">🔄</span>
+              <div class="cmd-text">
+                <h4>대시보드 및 재고 갱신</h4>
+                <p>전체 데이터 통합 및 재계산</p>
+              </div>
+            </div>
+            <div class="cmd-card" onclick="execCommand('syncPermissions')">
+              <span class="cmd-icon">🔐</span>
+              <div class="cmd-text">
+                <h4>권한 재동기화</h4>
+                <p>RBAC 기반 권한 갱신</p>
+              </div>
+            </div>
+            <div class="cmd-card" onclick="execCommand('validateSeason')">
+              <span class="cmd-icon">✅</span>
+              <div class="cmd-text">
+                <h4>시즌 설정 검증</h4>
+                <p>날짜 중복/유효성 검사</p>
+              </div>
+            </div>
+            <div class="cmd-card" onclick="execCommand('backupCSV')">
+              <span class="cmd-icon">💾</span>
+              <div class="cmd-text">
+                <h4>CSV 백업 실행</h4>
+                <p>구글 드라이브에 백업 저장</p>
+              </div>
+            </div>
+            <div class="cmd-card" onclick="execCommand('incrementalSync')">
+              <span class="cmd-icon">⚡</span>
+              <div class="cmd-text">
+                <h4>증분 동기화</h4>
+                <p>신규 거래만 빠르게 통합</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<?!= include('JavaScript') ?>
+</body>
+</html>
