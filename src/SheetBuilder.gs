@@ -22,19 +22,20 @@ function buildConfigSheet(ss) {
   sheet.getRange("B4:D30").setBackground(COLORS.inputBg);
   sheet.getRange("E4:G30").setBackground(COLORS.autoBg);
 
-  // 블록 2: 사용자 권한 관리 (I~L열)
-  sheet.getRange("I3:L3").setValues([["성함", "부서", "이메일", "권한범위"]]).setBackground("#2c3e50").setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
-  sheet.getRange("I4:L6").setValues([
-    ["홍길동", "구매팀", "admin1@test.com", "admin"],
-    ["이순신", "관리팀", "admin2@test.com", "admin"],
-    ["박영희", "식음팀", "park@test.com", "맛다락"]
-  ]);
-  sheet.getRange("I4:L30").setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+  // 블록 2: 사용자 계정 관리 (I~M열) — [MODIFIED] 이메일/권한범위 → 아이디/비밀번호/역할 인증 체계
+  sheet.getRange("I3:M3").setValues([["아이디 (회사이메일)", "비밀번호 해시", "성함", "부서", "역할"]]).setBackground("#2c3e50").setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
+  
+  // 기본 관리자 계정 자동 생성 (SHA-256 해싱)
+  const salt = Utilities.getUuid().substring(0, 16);
+  const rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + DEFAULT_ADMIN.password);
+  const hashHex = rawHash.map(b => ("0" + ((b < 0 ? b + 256 : b)).toString(16)).slice(-2)).join("");
+  const storedHash = salt + ":" + hashHex;
 
-  // Z열: 동적 드롭다운 소스 영역 (시각적 경고)
-  sheet.getRange("Z3").setValue("권한 범위 목록 (수동편집 금지)").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#ffcccc").setFontColor("#c0392b");
-  sheet.getRange("Z4").setValue("admin");
-  sheet.getRange("Z4:Z50").setBackground(COLORS.grayBg).setFontColor("#7f8c8d");
+  sheet.getRange("I4:M4").setValues([[
+    DEFAULT_ADMIN.username, storedHash, DEFAULT_ADMIN.name, DEFAULT_ADMIN.dept, DEFAULT_ADMIN.role
+  ]]);
+  sheet.getRange("I4:M30").setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+  sheet.getRange("J4:J30").setFontSize(7).setFontColor("#999999"); // 해시 컬럼은 작게 표시
 
   // 블록 4: 기초 데이터 드롭다운 (S, T, U열)
   sheet.getRange("S3").setValue("대분류 목록").setFontWeight("bold").setHorizontalAlignment("center").setBackground(COLORS.grayBg);
@@ -78,8 +79,7 @@ function buildConfigSheet(ss) {
   sheet.setColumnWidth(2, 110); sheet.setColumnWidth(3, 130); sheet.setColumnWidth(4, 100);
   sheet.setColumnWidth(5, 120); sheet.setColumnWidth(6, 140); sheet.setColumnWidth(7, 120);
   sheet.setColumnWidth(8, 20); // H (Spacer)
-  sheet.setColumnWidth(9, 80);  sheet.setColumnWidth(10, 80);  sheet.setColumnWidth(11, 200); sheet.setColumnWidth(12, 120);
-  sheet.setColumnWidth(13, 20); // M (Spacer)
+  sheet.setColumnWidth(9, 160); sheet.setColumnWidth(10, 80);  sheet.setColumnWidth(11, 80); sheet.setColumnWidth(12, 80); sheet.setColumnWidth(13, 80); // [MODIFIED] I~M: 아이디/해시/성함/부서/역할
   sheet.setColumnWidth(14, 100); sheet.setColumnWidth(15, 100); sheet.setColumnWidth(16, 100); sheet.setColumnWidth(17, 100);
   sheet.setColumnWidth(18, 20); // R (Spacer)
   sheet.setColumnWidth(19, 100); sheet.setColumnWidth(20, 100); sheet.setColumnWidth(21, 110);

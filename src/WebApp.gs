@@ -1,6 +1,6 @@
 /**
- * 호텔덕구온천 구매 재고 관리 시스템 — 웹앱 서버 모듈
- * doGet() 진입점 + 클라이언트에서 호출하는 API 함수들
+ * 호텔덕구온천 재고 관리 시스템 v1.0.0 — 웹앱 서버 모듈
+ * [MODIFIED] 전체 API에 토큰 검증 적용 + 인증/사용자/업장/시즌 관리 API 추가
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -10,7 +10,7 @@
 function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
-    .setTitle('호텔덕구온천 인벤토리 시스템')
+    .setTitle('호텔덕구온천 재고 관리 시스템')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -22,19 +22,39 @@ function include(filename) {
 
 
 // ═══════════════════════════════════════════════════════════════════
+//  [NEW] API: 인증
+// ═══════════════════════════════════════════════════════════════════
+
+function login(username, password) {
+  return authenticateUser(username, password);
+}
+
+function logout(token) {
+  return logoutUser(token);
+}
+
+function getSessionUser(token) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "세션이 만료되었습니다." };
+  return { success: true, user: session };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 //  API: 대시보드 데이터
 // ═══════════════════════════════════════════════════════════════════
 
-function getDashboardData() {
+function getDashboardData(token) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   const configSheet = ss.getSheetByName(SHEET_CONFIG);
 
-  // 시즌 정보
   const currentSeason = configSheet.getRange("O1").getValue() || "비수기";
   const seasonMultiplier = configSheet.getRange("O2").getValue() || 1.0;
 
-  // 품목 마스터 데이터
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
   const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 17).getValues();
 
@@ -65,6 +85,7 @@ function getDashboardData() {
   });
 
   return {
+    success: true,
     season: currentSeason,
     seasonMultiplier: seasonMultiplier,
     date: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"),
@@ -78,7 +99,10 @@ function getDashboardData() {
 //  API: 품목 마스터
 // ═══════════════════════════════════════════════════════════════════
 
-function getItemMasterData() {
+function getItemMasterData(token) {
+  const session = validateSession(token);
+  if (!session) return [];
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
@@ -102,7 +126,10 @@ function getItemMasterData() {
   return items;
 }
 
-function getItemCodes() {
+function getItemCodes(token) {
+  const session = validateSession(token);
+  if (!session) return [];
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
@@ -112,7 +139,11 @@ function getItemCodes() {
   return data.filter(r => r[0]).map(r => ({ code: r[0], name: r[1] }));
 }
 
-function addNewItem(itemData) {
+function addNewItem(token, itemData) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+  if (session.role === ROLES.STAFF) return { success: false, message: "품목 등록 권한이 없습니다." };
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   const lastRow = masterSheet.getLastRow();
@@ -122,8 +153,8 @@ function addNewItem(itemData) {
     itemData.code, itemData.name, itemData.category, itemData.grade, itemData.unit
   ]]);
   masterSheet.getRange(newRow, 7).setValue(itemData.initStock || 0);
-  masterSheet.getRange(newRow, 8).setValue(itemData.initStock || 0); // 현재고 = 초기재고
-  masterSheet.getRange(newRow, 9).setValue(0); // 일평균 0
+  masterSheet.getRange(newRow, 8).setValue(itemData.initStock || 0);
+  masterSheet.getRange(newRow, 9).setValue(0);
   masterSheet.getRange(newRow, 11, 1, 3).setValues([[
     itemData.leadTime || 3, itemData.safetyDays || 5, itemData.targetDays || 30
   ]]);
@@ -134,7 +165,11 @@ function addNewItem(itemData) {
   return { success: true, message: `✅ 품목 '${itemData.name}' 등록 완료` };
 }
 
-function updateItem(itemCode, updates) {
+function updateItem(token, itemCode, updates) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+  if (session.role === ROLES.STAFF) return { success: false, message: "품목 수정 권한이 없습니다." };
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
@@ -147,7 +182,6 @@ function updateItem(itemCode, updates) {
 
   if (targetRow === -1) return { success: false, message: "❌ 품목코드를 찾을 수 없습니다." };
 
-  // 수정 가능 컬럼 매핑
   const colMap = {
     name: 2, category: 3, grade: 4, unit: 5,
     initStock: 7, leadTime: 11, safetyDays: 12, targetDays: 13,
@@ -168,7 +202,10 @@ function updateItem(itemCode, updates) {
 //  API: 입출고 기록
 // ═══════════════════════════════════════════════════════════════════
 
-function getShopList() {
+function getShopList(token) {
+  const session = validateSession(token);
+  if (!session) return [];
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const cfg = ss.getSheetByName(SHEET_CONFIG);
   const lastRow = cfg.getLastRow();
@@ -184,11 +221,13 @@ function getShopList() {
   return shops;
 }
 
-function getRecentTransactions(shopName, limit) {
+function getRecentTransactions(token, shopName, limit) {
+  const session = validateSession(token);
+  if (!session) return [];
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   limit = limit || 50;
 
-  // 특정 업장이면 해당 시트에서, 아니면 통합 기록장에서
   let sheet;
   if (shopName && shopName !== "all") {
     sheet = ss.getSheetByName(shopName);
@@ -212,12 +251,14 @@ function getRecentTransactions(shopName, limit) {
     });
   });
 
-  // 최신순 정렬, limit 적용
   records.reverse();
   return records.slice(0, limit);
 }
 
-function addTransaction(shopName, txData) {
+function addTransaction(token, shopName, txData) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(shopName);
   if (!sheet) return { success: false, message: `❌ 업장 '${shopName}'을 찾을 수 없습니다.` };
@@ -242,13 +283,12 @@ function addTransaction(shopName, txData) {
   const uniqueSuffix = Utilities.getUuid().replace(/-/g,"").substring(0,8).toUpperCase();
   const txId = `${prefix}-${dateStr}-${uniqueSuffix}`;
 
-  // 시트에 기록
   const lastRow = sheet.getLastRow();
   const newRow = Math.max(lastRow + 1, 3);
   
   sheet.getRange(newRow, 1, 1, 8).setValues([[
     new Date(txData.date), txData.code, itemName, txData.type,
-    Number(txData.qty), txData.person || "", txData.note || "", txId
+    Number(txData.qty), txData.person || session.name, txData.note || "", txId
   ]]);
   sheet.getRange(newRow, 1, 1, 8).setHorizontalAlignment("center");
   sheet.getRange(newRow, 3).setBackground(COLORS.autoBg);
@@ -262,7 +302,10 @@ function addTransaction(shopName, txData) {
 //  API: 설정 데이터
 // ═══════════════════════════════════════════════════════════════════
 
-function getConfigData() {
+function getConfigData(token) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const cfg = ss.getSheetByName(SHEET_CONFIG);
   const lastRow = cfg.getLastRow();
@@ -293,28 +336,204 @@ function getConfigData() {
     }
   });
 
-  // 권한 사용자
+  // 사용자 목록 (admin만 전체 조회, 그 외는 본인 정보만)
   const users = [];
-  const userData = cfg.getRange(4, 9, Math.max(lastRow - 3, 1), 4).getValues();
-  userData.forEach(row => {
-    if (row[0]) {
-      users.push({ name: row[0], dept: row[1], email: row[2], role: row[3] });
+  if (session.role === ROLES.ADMIN) {
+    const result = getUserList(token);
+    if (result.success) {
+      result.users.forEach(u => users.push(u));
     }
-  });
+  }
 
   // 카테고리, 단위 목록
   const categories = cfg.getRange("U4:U15").getValues().flat().filter(v => v);
   const units = cfg.getRange("T4:T24").getValues().flat().filter(v => v);
 
-  return { shops, seasons, users, categories, units };
+  return { success: true, shops, seasons, users, categories, units, userRole: session.role };
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  [NEW] API: 업장 관리 (CRUD) — admin 전용
+// ═══════════════════════════════════════════════════════════════════
+
+function addShop(token, shopData) {
+  const session = validateSession(token);
+  if (!session || session.role !== ROLES.ADMIN) {
+    return { success: false, message: "관리자 권한이 필요합니다." };
+  }
+  if (!shopData.category || !shopData.name || !shopData.tag) {
+    return { success: false, message: "분류, 업장명, 태그는 필수입니다." };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = ss.getSheetByName(SHEET_CONFIG);
+
+  // 중복 체크
+  const lastRow = cfg.getLastRow();
+  if (lastRow >= 4) {
+    const existing = cfg.getRange(4, 3, lastRow - 3, 1).getValues().flat();
+    if (existing.includes(shopData.name)) {
+      return { success: false, message: "이미 존재하는 업장명입니다." };
+    }
+  }
+
+  // 설정 시트에 업장 행 추가
+  const newRow = Math.max(lastRow + 1, 4);
+  cfg.getRange(newRow, 2, 1, 4).setValues([[
+    shopData.category, shopData.name, shopData.tag, "대기"
+  ]]);
+  cfg.getRange(newRow, 2, 1, 3).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+  cfg.getRange(newRow, 5, 1, 3).setBackground(COLORS.autoBg).setHorizontalAlignment("center");
+
+  // 즉시 시트 생성 실행
+  generateNewShops();
+
+  return { success: true, message: `✅ 업장 '${shopData.name}' 추가 및 시트 생성 완료` };
+}
+
+function deleteShop(token, shopName) {
+  const session = validateSession(token);
+  if (!session || session.role !== ROLES.ADMIN) {
+    return { success: false, message: "관리자 권한이 필요합니다." };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = ss.getSheetByName(SHEET_CONFIG);
+  const lastRow = cfg.getLastRow();
+  if (lastRow < 4) return { success: false, message: "업장이 없습니다." };
+
+  const data = cfg.getRange(4, 2, lastRow - 3, 6).getValues();
+  let targetRowIdx = -1;
+  data.forEach((row, idx) => {
+    if (row[1] === shopName) targetRowIdx = idx;
+  });
+
+  if (targetRowIdx === -1) return { success: false, message: "업장을 찾을 수 없습니다." };
+
+  // 업장 시트 삭제
+  const targetSheet = ss.getSheetByName(shopName);
+  if (targetSheet) {
+    try { ss.deleteSheet(targetSheet); } catch(e) {
+      return { success: false, message: "시트 삭제 실패: " + e.message };
+    }
+  }
+
+  // 설정 시트 행 정리
+  const rowNum = targetRowIdx + 4;
+  cfg.getRange(rowNum, 2, 1, 6).clearContent();
+
+  _refreshPermissionDropdown(ss);
+  return { success: true, message: `✅ 업장 '${shopName}' 삭제 완료` };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  [NEW] API: 시즌 관리 (CRUD) — admin 전용
+// ═══════════════════════════════════════════════════════════════════
+
+function addSeason(token, seasonData) {
+  const session = validateSession(token);
+  if (!session || session.role !== ROLES.ADMIN) {
+    return { success: false, message: "관리자 권한이 필요합니다." };
+  }
+  if (!seasonData.name || !seasonData.start || !seasonData.end || !seasonData.multiplier) {
+    return { success: false, message: "시즌명, 시작일, 종료일, 배수는 필수입니다." };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = ss.getSheetByName(SHEET_CONFIG);
+
+  // 비어있는 행 찾기 (N4부터)
+  const lastRow = Math.max(cfg.getLastRow(), 4);
+  const seasonCol = cfg.getRange("N4:N" + (lastRow + 5)).getValues().flat();
+  let emptyRow = -1;
+  for (let i = 0; i < seasonCol.length; i++) {
+    if (!seasonCol[i]) { emptyRow = i + 4; break; }
+  }
+  if (emptyRow === -1) emptyRow = lastRow + 1;
+
+  cfg.getRange(emptyRow, 14, 1, 4).setValues([[
+    seasonData.name,
+    new Date(seasonData.start),
+    new Date(seasonData.end),
+    Number(seasonData.multiplier)
+  ]]);
+  cfg.getRange(emptyRow, 15, 1, 2).setNumberFormat("yyyy-mm-dd");
+  cfg.getRange(emptyRow, 14, 1, 4).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+
+  return { success: true, message: `✅ 시즌 '${seasonData.name}' 추가 완료` };
+}
+
+function updateSeason(token, seasonName, updates) {
+  const session = validateSession(token);
+  if (!session || session.role !== ROLES.ADMIN) {
+    return { success: false, message: "관리자 권한이 필요합니다." };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = ss.getSheetByName(SHEET_CONFIG);
+  const lastRow = Math.max(cfg.getLastRow(), 7);
+  const seasonData = cfg.getRange("N4:Q" + lastRow).getValues();
+
+  let targetRow = -1;
+  seasonData.forEach((row, idx) => {
+    if (row[0] === seasonName) targetRow = idx + 4;
+  });
+  if (targetRow === -1) return { success: false, message: "시즌을 찾을 수 없습니다." };
+
+  if (updates.name) cfg.getRange(targetRow, 14).setValue(updates.name);
+  if (updates.start) { cfg.getRange(targetRow, 15).setValue(new Date(updates.start)).setNumberFormat("yyyy-mm-dd"); }
+  if (updates.end) { cfg.getRange(targetRow, 16).setValue(new Date(updates.end)).setNumberFormat("yyyy-mm-dd"); }
+  if (updates.multiplier) cfg.getRange(targetRow, 17).setValue(Number(updates.multiplier));
+
+  return { success: true, message: `✅ 시즌 '${seasonName}' 수정 완료` };
+}
+
+function deleteSeason(token, seasonName) {
+  const session = validateSession(token);
+  if (!session || session.role !== ROLES.ADMIN) {
+    return { success: false, message: "관리자 권한이 필요합니다." };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = ss.getSheetByName(SHEET_CONFIG);
+  const lastRow = Math.max(cfg.getLastRow(), 7);
+  const seasonData = cfg.getRange("N4:Q" + lastRow).getValues();
+
+  let targetRow = -1;
+  seasonData.forEach((row, idx) => {
+    if (row[0] === seasonName) targetRow = idx + 4;
+  });
+  if (targetRow === -1) return { success: false, message: "시즌을 찾을 수 없습니다." };
+
+  cfg.getRange(targetRow, 14, 1, 4).clearContent();
+  return { success: true, message: `✅ 시즌 '${seasonName}' 삭제 완료` };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  [NEW] API: 사용자 계정 관리 (Proxy)
+// ═══════════════════════════════════════════════════════════════════
+
+function createUser(token, userData) { return createUserAccount(token, userData); }
+function updateUser(token, username, updates) { return updateUserAccount(token, username, updates); }
+function deleteUser(token, username) { return deleteUserAccount(token, username); }
+function resetPassword(token, username, newPw) { return resetUserPassword(token, username, newPw); }
+function getUsers(token) { return getUserList(token); }
+function changePassword(token, oldPw, newPw) { return changeMyPassword(token, oldPw, newPw); }
 
 
 // ═══════════════════════════════════════════════════════════════════
 //  API: 시스템 명령 실행
 // ═══════════════════════════════════════════════════════════════════
 
-function runSystemCommand(command) {
+function runSystemCommand(token, command) {
+  const session = validateSession(token);
+  if (!session || session.role !== ROLES.ADMIN) {
+    return { success: false, message: "관리자 권한이 필요합니다." };
+  }
+
   try {
     switch (command) {
       case "refreshDashboard":
@@ -326,7 +545,6 @@ function runSystemCommand(command) {
         _protectSystemSheets(ss1);
         return { success: true, message: "🔐 권한 동기화가 완료되었습니다." };
       case "validateSeason":
-        // 유효성 검사만 수행하고 결과를 반환
         const ss2 = SpreadsheetApp.getActiveSpreadsheet();
         const cfg = ss2.getSheetByName(SHEET_CONFIG);
         const lastRow = Math.max(cfg.getLastRow(), 4);
@@ -348,6 +566,12 @@ function runSystemCommand(command) {
       case "incrementalSync":
         incrementalSync();
         return { success: true, message: "🔄 증분 동기화가 완료되었습니다." };
+      case "generateShops":
+        generateNewShops();
+        return { success: true, message: "🆕 업장 시트 생성이 완료되었습니다." };
+      case "refreshSheetStatus":
+        refreshSheetStatus();
+        return { success: true, message: "🔍 시트 상태가 새로고침되었습니다." };
       default:
         return { success: false, message: "❌ 알 수 없는 명령입니다." };
     }

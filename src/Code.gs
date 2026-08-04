@@ -1,5 +1,5 @@
 /**
- * 호텔덕구온천 구매 재고 관리 시스템 v6.8 — 진입점 모듈
+ * 호텔덕구온천 재고 관리 시스템 v1.0.0 — 진입점 모듈
  * onOpen, onEdit, createAll 등 시스템 핵심 진입점
  */
 
@@ -50,7 +50,7 @@ function createAll() {
   refreshDashboard(true);
   _refreshPermissionDropdown(ss);
   _protectSystemSheets(ss);
-  ui.alert("✅ 시스템 초기화가 완료되었습니다. 통합 설정 시트를 작성해 주세요.");
+  ui.alert("✅ 시스템 초기화가 완료되었습니다.\n\n기본 관리자 계정이 생성되었습니다:\n아이디: " + DEFAULT_ADMIN.username + "\n비밀번호: " + DEFAULT_ADMIN.password + "\n\n웹앱 배포 후 위 계정으로 로그인하세요.");
 }
 
 

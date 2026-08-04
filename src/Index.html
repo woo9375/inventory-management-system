@@ -3,10 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>호텔덕구온천 인벤토리 시스템</title>
+  <title>호텔덕구온천 재고 관리 시스템</title>
   <?!= include('Stylesheet') ?>
 </head>
 <body>
+
+<!-- ═══════ [NEW] 로그인 화면 ═══════ -->
+<div id="loginContainer" class="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <span class="login-icon">🏨</span>
+      <h2>호텔덕구온천</h2>
+      <p>재고 관리 시스템 v1.0.0</p>
+    </div>
+    <div class="login-body">
+      <div class="form-group">
+        <label>아이디 (회사 이메일)</label>
+        <input type="email" id="loginUsername" placeholder="예: yw_bae@dukgu.com" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>비밀번호</label>
+        <input type="password" id="loginPassword" placeholder="비밀번호 입력" autocomplete="current-password" onkeypress="if(event.key==='Enter') submitLogin()">
+      </div>
+      <button class="login-btn" id="loginBtn" onclick="submitLogin()">로그인</button>
+      <div id="loginError" class="login-error"></div>
+    </div>
+  </div>
+</div>
 
 <!-- ═══════ 모바일 헤더 ═══════ -->
 <div class="mobile-header">
@@ -23,7 +46,7 @@
 <!-- ═══════ 토스트 컨테이너 ═══════ -->
 <div id="toastContainer" class="toast-container"></div>
 
-<!-- ═══════ 모달 (품목 등록/수정) ═══════ -->
+<!-- ═══════ 모달 ═══════ -->
 <div id="modalOverlay" class="modal-overlay" onclick="closeModal(event)">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-header">
@@ -35,14 +58,15 @@
   </div>
 </div>
 
-<div class="app-container">
+<!-- ═══════ 메인 앱 (로그인 후 표시) ═══════ -->
+<div id="appContainer" class="app-container" style="display:none;">
 
   <!-- ═══════ 사이드바 ═══════ -->
   <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <span class="brand-icon">🏨</span>
-      <h1>호텔덕구온천<br>인벤토리 시스템</h1>
-      <div class="brand-sub">Inventory Management v6.8</div>
+      <h1>호텔덕구온천<br>재고 관리 시스템</h1>
+      <div class="brand-sub">Inventory Management v1.0.0</div>
     </div>
 
     <nav class="sidebar-nav">
@@ -56,10 +80,20 @@
       <button class="nav-item" onclick="showTab('master', this)">
         <span class="nav-icon">🗂️</span> 품목 마스터
       </button>
-      <button class="nav-item" onclick="showTab('settings', this)">
+      <button id="navSettings" class="nav-item" onclick="showTab('settings', this)">
         <span class="nav-icon">⚙️</span> 설정
       </button>
     </nav>
+
+    <!-- [NEW] 로그인 사용자 정보 -->
+    <div id="sidebarUser" class="sidebar-user">
+      <div class="user-avatar" id="userAvatar">?</div>
+      <div class="user-info">
+        <div class="user-name" id="userName">-</div>
+        <div class="user-role-text" id="userRoleText">-</div>
+      </div>
+      <button class="logout-btn" onclick="doLogout()" title="로그아웃">🚪</button>
+    </div>
 
     <div class="sidebar-footer">
       © 2026 (주)호텔덕구온천<br>구매 재고 관리 시스템
@@ -208,7 +242,7 @@
     <div id="tab-master" class="tab-content">
       <div class="page-header">
         <h2>🗂️ 품목 마스터</h2>
-        <div class="btn-group">
+        <div id="masterActions" class="btn-group">
           <button class="btn btn-gold btn-sm" onclick="openNewItemModal()">➕ 신규 품목 등록</button>
           <button class="btn btn-outline btn-sm" onclick="loadItemMaster()">🔄 새로고침</button>
         </div>
@@ -248,11 +282,14 @@
       <div class="settings-grid">
         <!-- 업장 목록 -->
         <div class="card">
-          <div class="card-header"><h3>🏪 업장 목록</h3></div>
+          <div class="card-header">
+            <h3>🏪 업장 목록</h3>
+            <button id="btnAddShop" class="btn btn-gold btn-sm" onclick="openAddShopModal()" style="display:none">➕ 추가</button>
+          </div>
           <div class="card-body">
             <div class="data-table-wrapper">
               <table class="data-table">
-                <thead><tr><th>분류</th><th>업장명</th><th>태그</th><th>상태</th></tr></thead>
+                <thead><tr><th>분류</th><th>업장명</th><th>태그</th><th>상태</th><th id="shopActionCol" style="display:none">관리</th></tr></thead>
                 <tbody id="shopTableBody"></tbody>
               </table>
             </div>
@@ -261,11 +298,14 @@
 
         <!-- 시즌 설정 -->
         <div class="card">
-          <div class="card-header"><h3>📅 시즌 설정</h3></div>
+          <div class="card-header">
+            <h3>📅 시즌 설정</h3>
+            <button id="btnAddSeason" class="btn btn-gold btn-sm" onclick="openAddSeasonModal()" style="display:none">➕ 추가</button>
+          </div>
           <div class="card-body">
             <div class="data-table-wrapper">
               <table class="data-table">
-                <thead><tr><th>시즌명</th><th>시작일</th><th>종료일</th><th>배수</th></tr></thead>
+                <thead><tr><th>시즌명</th><th>시작일</th><th>종료일</th><th>배수</th><th id="seasonActionCol" style="display:none">관리</th></tr></thead>
                 <tbody id="seasonTableBody"></tbody>
               </table>
             </div>
@@ -274,11 +314,14 @@
 
         <!-- 사용자 권한 -->
         <div class="card" style="grid-column: span 2">
-          <div class="card-header"><h3>👤 사용자 권한</h3></div>
+          <div class="card-header">
+            <h3>👤 사용자 계정</h3>
+            <button id="btnAddUser" class="btn btn-gold btn-sm" onclick="openCreateUserModal()" style="display:none">➕ 계정 생성</button>
+          </div>
           <div class="card-body">
             <div class="data-table-wrapper">
               <table class="data-table">
-                <thead><tr><th>성함</th><th>부서</th><th>이메일</th><th>권한범위</th></tr></thead>
+                <thead><tr><th>아이디</th><th>성함</th><th>부서</th><th>역할</th><th id="userActionCol" style="display:none">관리</th></tr></thead>
                 <tbody id="userTableBody"></tbody>
               </table>
             </div>
@@ -287,7 +330,7 @@
       </div>
 
       <!-- 시스템 명령 -->
-      <div class="card mt-16">
+      <div id="systemCmdCard" class="card mt-16" style="display:none">
         <div class="card-header"><h3>🛠️ 시스템 명령</h3></div>
         <div class="card-body">
           <div class="cmd-grid">
@@ -324,6 +367,13 @@
               <div class="cmd-text">
                 <h4>증분 동기화</h4>
                 <p>신규 거래만 빠르게 통합</p>
+              </div>
+            </div>
+            <div class="cmd-card" onclick="execCommand('generateShops')">
+              <span class="cmd-icon">🆕</span>
+              <div class="cmd-text">
+                <h4>대기 업장 시트 생성</h4>
+                <p>대기 상태 업장 일괄 생성</p>
               </div>
             </div>
           </div>
