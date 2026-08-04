@@ -36,14 +36,14 @@ const ROLES = { ADMIN: "admin", MANAGER: "manager", STAFF: "staff" };
 const SESSION_TIMEOUT_SECONDS = 21600; // 6시간 (CacheService 최대값)
 const SESSION_PREFIX = "session_";     // CacheService 키 접두어
 
-// 기본 관리자 계정 (createAll 초기화 시 자동 생성)
-const DEFAULT_ADMIN = {
-  username: "yw_bae@dukgu.com",
-  password: "2468097531b!",
-  name: "관리자",
-  dept: "경영지원",
-  role: "admin"
-};
+// 기본 계정 리스트 (createAll 초기화 시 자동 생성)
+const DEFAULT_USERS = [
+  { username: "mh_kwon@dukgu.com", password: "dukgu1013!", name: "권미화", dept: "경영지원팀", role: "admin" },
+  { username: "yw_bae@dukgu.com", password: "dukgu1013!", name: "배영우", dept: "관리팀", role: "admin" },
+  { username: "ss_shim@dukgu.com", password: "dukgu1013!", name: "심순섭", dept: "관리팀", role: "admin" },
+  { username: "js_seo@dukgu.com", password: "dukgu1013!", name: "서정승", dept: "구매팀", role: "manager" },
+  { username: "gy_jeong@dukgu.com", password: "dukgu1013!", name: "정경용", dept: "구매팀", role: "staff" }
+];
 
 // 사용자 데이터 열 매핑 (⚙️ 통합 설정 시트 I~M열)
 const USER_COLS = {

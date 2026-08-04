@@ -50,7 +50,7 @@ function createAll() {
   refreshDashboard(true);
   _refreshPermissionDropdown(ss);
   _protectSystemSheets(ss);
-  ui.alert("✅ 시스템 초기화가 완료되었습니다.\n\n기본 관리자 계정이 생성되었습니다:\n아이디: " + DEFAULT_ADMIN.username + "\n비밀번호: " + DEFAULT_ADMIN.password + "\n\n웹앱 배포 후 위 계정으로 로그인하세요.");
+  ui.alert("✅ 시스템 초기화가 완료되었습니다.\n\n5개의 기본 계정이 생성되었습니다. 초기 비밀번호는 dukgu1013! 입니다.\n\n웹앱 배포 후 해당 계정으로 로그인하세요.");
 }
 
 

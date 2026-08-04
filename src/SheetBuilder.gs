@@ -25,15 +25,16 @@ function buildConfigSheet(ss) {
   // 블록 2: 사용자 계정 관리 (I~M열) — [MODIFIED] 이메일/권한범위 → 아이디/비밀번호/역할 인증 체계
   sheet.getRange("I3:M3").setValues([["아이디 (회사이메일)", "비밀번호 해시", "성함", "부서", "역할"]]).setBackground("#2c3e50").setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
   
-  // 기본 관리자 계정 자동 생성 (SHA-256 해싱)
-  const salt = Utilities.getUuid().substring(0, 16);
-  const rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + DEFAULT_ADMIN.password);
-  const hashHex = rawHash.map(b => ("0" + ((b < 0 ? b + 256 : b)).toString(16)).slice(-2)).join("");
-  const storedHash = salt + ":" + hashHex;
+  // 다중 기본 계정 자동 생성 (SHA-256 해싱)
+  const userData = DEFAULT_USERS.map(user => {
+    const salt = Utilities.getUuid().substring(0, 16);
+    const rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + user.password);
+    const hashHex = rawHash.map(b => ("0" + ((b < 0 ? b + 256 : b)).toString(16)).slice(-2)).join("");
+    const storedHash = salt + ":" + hashHex;
+    return [user.username, storedHash, user.name, user.dept, user.role];
+  });
 
-  sheet.getRange("I4:M4").setValues([[
-    DEFAULT_ADMIN.username, storedHash, DEFAULT_ADMIN.name, DEFAULT_ADMIN.dept, DEFAULT_ADMIN.role
-  ]]);
+  sheet.getRange(4, 9, userData.length, 5).setValues(userData);
   sheet.getRange("I4:M30").setBackground(COLORS.inputBg).setHorizontalAlignment("center");
   sheet.getRange("J4:J30").setFontSize(7).setFontColor("#999999"); // 해시 컬럼은 작게 표시
 
