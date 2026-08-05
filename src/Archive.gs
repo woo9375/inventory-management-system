@@ -1,17 +1,12 @@
 /**
- * 호텔덕구온천 구매 재고 관리 시스템 — 아카이빙 & 백업 모듈
- * 증분 동기화, 자동 아카이빙, CSV 백업
+ * 호텔덕구온천 구매 재고 관리 시스템 v7.0 — 아카이빙 & 백업 모듈
+ * [v7.0] 시트 참조 변경 + 9열 입출고 구조
  */
 
 // ═══════════════════════════════════════════════════════════════════
-//  증분 동기화 엔진 (성능 최적화)
+//  증분 동기화 엔진
 // ═══════════════════════════════════════════════════════════════════
 
-/**
- * 증분 동기화: 마지막 동기화 이후 신규 거래만 통합 시트에 추가
- * 기존 consolidateAllSheets()의 "전체 클리어→재작성" 대비:
- * - 10,000건 이상 데이터에서 ~90% 실행 시간 절감
- */
 function incrementalSync() {
   const lock = LockService.getScriptLock();
   try {
@@ -26,17 +21,19 @@ function incrementalSync() {
     const props = PropertiesService.getScriptProperties();
     
     const consolidated = ss.getSheetByName(SHEET_INOUT);
-    const cfg = ss.getSheetByName(SHEET_CONFIG);
-    const cfgLastRow = cfg.getLastRow();
-    if (cfgLastRow < 4) return;
+    // [v7.0] 업장관리 시트에서 업장 목록 조회
+    const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+    const shopLastRow = shopSheet.getLastRow();
+    if (shopLastRow < 3) return;
     
-    const configRows = cfg.getRange(4, 2, cfgLastRow - 3, 6).getValues();
+    const configRows = shopSheet.getRange(3, 1, shopLastRow - 2, 6).getValues();
     
     // 통합 시트의 기존 거래ID 목록 (중복 방지)
     const existingTxIds = new Set();
     const consLastRow = consolidated.getLastRow();
     if (consLastRow >= 3) {
-      const txIds = consolidated.getRange(3, 8, consLastRow - 2, 1).getValues();
+      // [v7.0] 거래ID는 9열
+      const txIds = consolidated.getRange(3, 9, consLastRow - 2, 1).getValues();
       txIds.forEach(r => { if (r[0]) existingTxIds.add(r[0].toString()); });
     }
     
@@ -48,9 +45,10 @@ function incrementalSync() {
       const sh = ss.getSheets().find(s => s.getSheetId() == gid);
       if (!sh || sh.getLastRow() < 3) return;
       
-      const data = sh.getRange(3, 1, sh.getLastRow() - 2, 8).getValues();
+      // [v7.0] 9열 구조
+      const data = sh.getRange(3, 1, sh.getLastRow() - 2, TX_COLS).getValues();
       data.forEach(r => {
-        const txId = r[7] ? r[7].toString() : "";
+        const txId = r[8] ? r[8].toString() : ""; // [v7.0] 거래ID = 9번째 열 (index 8)
         if (r[1] && txId && !existingTxIds.has(txId)) {
           newRows.push(r);
           existingTxIds.add(txId);
@@ -61,7 +59,7 @@ function incrementalSync() {
     if (newRows.length > 0) {
       newRows.sort((a, b) => toLocalDate(a[0]) - toLocalDate(b[0]));
       const appendRow = Math.max(consolidated.getLastRow() + 1, 3);
-      consolidated.getRange(appendRow, 1, newRows.length, 8)
+      consolidated.getRange(appendRow, 1, newRows.length, TX_COLS)
         .setValues(newRows)
         .setHorizontalAlignment("center")
         .setBackground(COLORS.autoBg);
@@ -86,9 +84,6 @@ function incrementalSync() {
 //  자동 아카이빙 파이프라인
 // ═══════════════════════════════════════════════════════════════════
 
-/**
- * 월간 아카이빙: 2개월 이전 데이터를 별도 스프레드시트로 이관
- */
 function archiveOldRecords() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const consolidated = ss.getSheetByName(SHEET_INOUT);
@@ -98,7 +93,8 @@ function archiveOldRecords() {
     return;
   }
   
-  const allData = consolidated.getRange(3, 1, consLastRow - 2, 8).getValues();
+  // [v7.0] 9열 구조
+  const allData = consolidated.getRange(3, 1, consLastRow - 2, TX_COLS).getValues();
   const today = new Date();
   const archiveCutoff = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   
@@ -139,8 +135,9 @@ function archiveOldRecords() {
     let archiveSheet = archiveSS.getSheetByName(monthKey);
     if (!archiveSheet) {
       archiveSheet = archiveSS.insertSheet(monthKey);
-      const headers = ["날짜", "품목코드", "품목명", "구분", "수량", "담당자", "비고", "거래ID"];
-      archiveSheet.getRange("A1:H1").setValues([headers])
+      // [v7.0] 9열 헤더
+      const headers = ["날짜", "품목코드", "품목명", "구분", "수량", "단가", "담당자", "비고", "거래ID"];
+      archiveSheet.getRange("A1:I1").setValues([headers])
         .setBackground(COLORS.headerBg).setFontColor(COLORS.headerText)
         .setFontWeight("bold").setHorizontalAlignment("center");
       archiveSheet.setFrozenRows(1);
@@ -148,7 +145,7 @@ function archiveOldRecords() {
     
     const startRow = Math.max(archiveSheet.getLastRow() + 1, 2);
     const rows = monthBuckets[monthKey];
-    archiveSheet.getRange(startRow, 1, rows.length, 8).setValues(rows)
+    archiveSheet.getRange(startRow, 1, rows.length, TX_COLS).setValues(rows)
       .setHorizontalAlignment("center");
   });
   
@@ -160,10 +157,10 @@ function archiveOldRecords() {
     }
   } catch(e) {}
   
-  // 메인 시트 갱신 (유지 데이터만 남김)
-  consolidated.getRange(3, 1, consLastRow - 2, 8).clearContent();
+  // 메인 시트 갱신
+  consolidated.getRange(3, 1, consLastRow - 2, TX_COLS).clearContent();
   if (keepRows.length > 0) {
-    consolidated.getRange(3, 1, keepRows.length, 8)
+    consolidated.getRange(3, 1, keepRows.length, TX_COLS)
       .setValues(keepRows)
       .setHorizontalAlignment("center")
       .setBackground(COLORS.autoBg);
@@ -211,7 +208,8 @@ function backupToCSV() {
   }
   
   const tz = Session.getScriptTimeZone();
-  const data = consolidated.getRange(2, 1, lastRow - 1, 8).getValues();
+  // [v7.0] 9열 구조
+  const data = consolidated.getRange(2, 1, lastRow - 1, TX_COLS).getValues();
   
   let csv = data.map(row => 
     row.map(cell => {

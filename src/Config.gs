@@ -1,5 +1,5 @@
 /**
- * 호텔덕구온천 재고 관리 시스템 v1.0.0 — 설정 모듈
+ * 호텔덕구온천 재고 관리 시스템 v7.0 — 설정 모듈
  * 모든 상수, 색상, 시트명을 한곳에서 관리합니다.
  */
 
@@ -8,8 +8,14 @@ const MIN_ANALYSIS_DAYS = 7; // 시즌 초기 일평균 산출 시 최소 분석
 const SHEET_DASHBOARD = "📊 대시보드";
 const SHEET_INOUT     = "📝 통합 입출고 기록장"; 
 const SHEET_MASTER    = "🗂️ 품목 마스터";
-const SHEET_CONFIG    = "⚙️ 통합 설정";
 const SHEET_TEMPLATE  = "📋 입출고_템플릿";
+
+// [v7.0] 통합 설정 시트 → 개별 시트 분리
+const SHEET_SHOPS     = "🏢 업장관리";
+const SHEET_SEASONS   = "📅 시즌설정";
+const SHEET_USERS     = "👤 사용자관리";
+const SHEET_BASE_DATA = "📂 기초데이터";
+const SHEET_CHANGELOG = "📋 변경이력";
 
 const STATUS_RISK  = "🚨 위험";
 const STATUS_ORDER = "⚠️ 발주필요";
@@ -25,10 +31,10 @@ const ALERT_EMAIL = "[EMAIL_ADDRESS]";
 const SEND_EMAIL_ALERT = false; 
 const VALIDATION_ROWS = 500; // 성능 최적화를 위한 검증/서식 고정 적용 범위
 
-const CURRENT_SCHEMA_VERSION = 7; // v6.8 내부 스키마 버전
+const CURRENT_SCHEMA_VERSION = 8; // [v7.0] v8 스키마
 
 // ═══════════════════════════════════════════════════════════════════
-//  [NEW] 인증 시스템 상수
+//  인증 시스템 상수
 // ═══════════════════════════════════════════════════════════════════
 
 const ROLES = { ADMIN: "admin", MANAGER: "manager", STAFF: "staff" };
@@ -45,12 +51,14 @@ const DEFAULT_USERS = [
   { username: "gy_jeong@dukgu.com", password: "dukgu1013!", name: "정경용", dept: "구매팀", role: "staff" }
 ];
 
-// 사용자 데이터 열 매핑 (⚙️ 통합 설정 시트 I~M열)
+// [v7.0] 사용자 데이터 열 매핑 (👤 사용자관리 시트 A~E열)
 const USER_COLS = {
-  USERNAME: 9,   // I열: 아이디 (다우오피스 이메일)
-  PASSHASH: 10,  // J열: 비밀번호 해시 (SHA-256 + salt)
-  NAME: 11,      // K열: 성함
-  DEPT: 12,      // L열: 부서
-  ROLE: 13       // M열: 역할 (admin/manager/staff)
-  // 담당 업장은 기존 권한범위 드롭다운 구조 활용하여 별도 관리
+  USERNAME: 1,   // A열: 아이디 (다우오피스 이메일)
+  PASSHASH: 2,   // B열: 비밀번호 해시 (SHA-256 + salt)
+  NAME: 3,       // C열: 성함
+  DEPT: 4,       // D열: 부서
+  ROLE: 5        // E열: 역할 (admin/manager/staff)
 };
+
+// [v7.0] 입출고 시트 열 수 (단가 스냅샷 열 추가)
+const TX_COLS = 9; // [날짜|품목코드|품목명|구분|수량|단가(스냅샷)|담당자|비고|거래ID]

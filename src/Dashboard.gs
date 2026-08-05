@@ -1,17 +1,18 @@
 /**
- * 호텔덕구온천 구매 재고 관리 시스템 — 대시보드 모듈
- * 통합 데이터 집계, 대시보드 갱신, 알림 기능
+ * 호텔덕구온천 구매 재고 관리 시스템 v7.0 — 대시보드 모듈
+ * [v7.0] 시트 참조 변경 + 9열 입출고 구조
  */
 
 function consolidateAllSheets(ss) {
   const consolidated = ss.getSheetByName(SHEET_INOUT);
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
+  // [v7.0] 업장관리 시트에서 업장 목록 조회
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
   const lastRow = consolidated.getLastRow();
-  if (lastRow >= 3) consolidated.getRange(3, 1, lastRow - 2, 8).clearContent();
+  if (lastRow >= 3) consolidated.getRange(3, 1, lastRow - 2, TX_COLS).clearContent();
 
-  const cfgLastRow = cfg.getLastRow();
-  if (cfgLastRow < 4) return;
-  const configRows = cfg.getRange(4, 2, cfgLastRow - 3, 6).getValues();
+  const shopLastRow = shopSheet.getLastRow();
+  if (shopLastRow < 3) return;
+  const configRows = shopSheet.getRange(3, 1, shopLastRow - 2, 6).getValues();
 
   let allDataRows = [];
   configRows.forEach((row) => {
@@ -24,7 +25,8 @@ function consolidateAllSheets(ss) {
     const last = sh.getLastRow();
     if (last < 3) return;
 
-    const rows = sh.getRange(3, 1, last - 2, 8).getValues();
+    // [v7.0] 9열 구조
+    const rows = sh.getRange(3, 1, last - 2, TX_COLS).getValues();
     rows.forEach(r => { if (r[1]) allDataRows.push(r); });
   });
 
@@ -36,7 +38,7 @@ function consolidateAllSheets(ss) {
     return da - db;
   });
 
-  consolidated.getRange(3, 1, allDataRows.length, 8).setValues(allDataRows).setHorizontalAlignment("center").setBackground(COLORS.autoBg);
+  consolidated.getRange(3, 1, allDataRows.length, TX_COLS).setValues(allDataRows).setHorizontalAlignment("center").setBackground(COLORS.autoBg);
 }
 
 function refreshDashboard(isSilent = false) {
@@ -53,10 +55,9 @@ function refreshDashboard(isSilent = false) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     
     consolidateAllSheets(ss); 
-    SpreadsheetApp.flush();   // 통합 데이터 확정 (recalc 의존성)
+    SpreadsheetApp.flush();
     
     recalcStockAndUsage(ss);
-    // [v6.8] 2차 flush 제거 — runDashboardSync는 GAS 내부 캐시에서 직전 setValues를 읽을 수 있음
     
     runDashboardSync(ss);
     

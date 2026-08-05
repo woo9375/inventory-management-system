@@ -1,10 +1,10 @@
 /**
- * 호텔덕구온천 재고 관리 시스템 v1.0.0 — RBAC 권한 관리 모듈
- * [MODIFIED] 이메일/Sheet Protection 기반 → 아이디/비밀번호 + 세션 토큰 인증
+ * 호텔덕구온천 재고 관리 시스템 v7.0 — RBAC 권한 관리 모듈
+ * [v7.0] 시트 참조: SHEET_CONFIG → SHEET_USERS / SHEET_SHOPS 개별 시트
  */
 
 // ═══════════════════════════════════════════════════════════════════
-//  [NEW] 비밀번호 해싱 유틸리티
+//  비밀번호 해싱 유틸리티
 // ═══════════════════════════════════════════════════════════════════
 
 /** SHA-256 + salt 해싱 */
@@ -32,21 +32,21 @@ function _verifyPassword(password, storedHash) {
 
 
 // ═══════════════════════════════════════════════════════════════════
-//  [NEW] 사용자 데이터 I/O 헬퍼
+//  사용자 데이터 I/O 헬퍼
 // ═══════════════════════════════════════════════════════════════════
 
-/** 설정 시트에서 사용자 목록 읽기 (내부 전용) */
+/** [v7.0] 사용자관리 시트에서 사용자 목록 읽기 (내부 전용) */
 function _getAllUsers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  const lastRow = Math.max(cfg.getLastRow(), 4);
-  const data = cfg.getRange(4, USER_COLS.USERNAME, lastRow - 3, 5).getValues(); // I~M열
+  const userSheet = ss.getSheetByName(SHEET_USERS);
+  const lastRow = Math.max(userSheet.getLastRow(), 3);
+  const data = userSheet.getRange(3, USER_COLS.USERNAME, lastRow - 2, 5).getValues(); // A~E열
 
   const users = [];
   data.forEach((row, idx) => {
     if (row[0]) { // username이 있는 행만
       users.push({
-        row: idx + 4, // 실제 시트 행 번호
+        row: idx + 3, // [v7.0] 헤더가 2행이므로 데이터는 3행부터
         username: row[0].toString().trim(),
         passHash: row[1].toString().trim(),
         name: row[2].toString().trim(),
@@ -66,15 +66,9 @@ function _findUser(username) {
 
 
 // ═══════════════════════════════════════════════════════════════════
-//  [NEW] 인증 (로그인 / 로그아웃 / 세션)
+//  인증 (로그인 / 로그아웃 / 세션)
 // ═══════════════════════════════════════════════════════════════════
 
-/**
- * 사용자 인증 (로그인)
- * @param {string} username 다우오피스 회사 이메일 (예: yw_bae@dukgu.com)
- * @param {string} password 평문 비밀번호
- * @returns {{ success: boolean, token?: string, user?: object, message: string }}
- */
 function authenticateUser(username, password) {
   if (!username || !password) {
     return { success: false, message: "아이디와 비밀번호를 입력해 주세요." };
@@ -89,7 +83,6 @@ function authenticateUser(username, password) {
     return { success: false, message: "비밀번호가 일치하지 않습니다." };
   }
 
-  // 세션 토큰 생성 및 저장
   const token = Utilities.getUuid();
   const sessionData = JSON.stringify({
     username: user.username,
@@ -118,11 +111,6 @@ function authenticateUser(username, password) {
   };
 }
 
-/**
- * 세션 토큰 검증
- * @param {string} token
- * @returns {object|null} 유효하면 사용자 정보, 아니면 null
- */
 function validateSession(token) {
   if (!token) return null;
   const cached = CacheService.getScriptCache().get(SESSION_PREFIX + token);
@@ -135,11 +123,6 @@ function validateSession(token) {
   }
 }
 
-/**
- * 세션 토큰이 유효한 admin인지 확인
- * @param {string} token
- * @returns {object|null}
- */
 function _requireAdmin(token) {
   const session = validateSession(token);
   if (!session) return null;
@@ -147,10 +130,6 @@ function _requireAdmin(token) {
   return session;
 }
 
-/**
- * 로그아웃
- * @param {string} token
- */
 function logoutUser(token) {
   if (token) {
     CacheService.getScriptCache().remove(SESSION_PREFIX + token);
@@ -160,14 +139,9 @@ function logoutUser(token) {
 
 
 // ═══════════════════════════════════════════════════════════════════
-//  [NEW] 사용자 계정 관리 (CRUD) — admin 전용
+//  사용자 계정 관리 (CRUD) — admin 전용
 // ═══════════════════════════════════════════════════════════════════
 
-/**
- * 새 사용자 계정 생성
- * @param {string} adminToken admin 세션 토큰
- * @param {object} userData { username, name, dept, password, role }
- */
 function createUserAccount(adminToken, userData) {
   if (!_requireAdmin(adminToken)) {
     return { success: false, message: "관리자 권한이 필요합니다." };
@@ -179,7 +153,6 @@ function createUserAccount(adminToken, userData) {
     return { success: false, message: "유효하지 않은 역할입니다. (admin/manager/staff)" };
   }
 
-  // 중복 체크
   if (_findUser(userData.username)) {
     return { success: false, message: "이미 존재하는 아이디입니다." };
   }
@@ -187,26 +160,23 @@ function createUserAccount(adminToken, userData) {
   const hashResult = _hashPassword(userData.password);
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  const lastRow = cfg.getLastRow();
-  const newRow = Math.max(lastRow + 1, 4);
+  const userSheet = ss.getSheetByName(SHEET_USERS);
+  const lastRow = userSheet.getLastRow();
+  const newRow = Math.max(lastRow + 1, 3);
 
-  cfg.getRange(newRow, USER_COLS.USERNAME, 1, 5).setValues([[
+  userSheet.getRange(newRow, USER_COLS.USERNAME, 1, 5).setValues([[
     userData.username.trim(),
     hashResult.stored,
     userData.name.trim(),
     (userData.dept || "").trim(),
     userData.role
   ]]);
-  cfg.getRange(newRow, USER_COLS.USERNAME, 1, 5).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
-  cfg.getRange(newRow, USER_COLS.PASSHASH).setFontSize(7).setFontColor("#999999");
+  userSheet.getRange(newRow, USER_COLS.USERNAME, 1, 5).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+  userSheet.getRange(newRow, USER_COLS.PASSHASH).setFontSize(7).setFontColor("#999999");
 
   return { success: true, message: `✅ 계정 '${userData.username}' 생성 완료` };
 }
 
-/**
- * 사용자 정보 수정 (비밀번호 제외)
- */
 function updateUserAccount(adminToken, username, updates) {
   if (!_requireAdmin(adminToken)) {
     return { success: false, message: "관리자 권한이 필요합니다." };
@@ -215,40 +185,31 @@ function updateUserAccount(adminToken, username, updates) {
   if (!user) return { success: false, message: "사용자를 찾을 수 없습니다." };
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
+  const userSheet = ss.getSheetByName(SHEET_USERS);
 
-  if (updates.name) cfg.getRange(user.row, USER_COLS.NAME).setValue(updates.name.trim());
-  if (updates.dept) cfg.getRange(user.row, USER_COLS.DEPT).setValue(updates.dept.trim());
+  if (updates.name) userSheet.getRange(user.row, USER_COLS.NAME).setValue(updates.name.trim());
+  if (updates.dept) userSheet.getRange(user.row, USER_COLS.DEPT).setValue(updates.dept.trim());
   if (updates.role && [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF].includes(updates.role)) {
-    cfg.getRange(user.row, USER_COLS.ROLE).setValue(updates.role);
+    userSheet.getRange(user.row, USER_COLS.ROLE).setValue(updates.role);
   }
 
   return { success: true, message: `✅ '${username}' 정보 수정 완료` };
 }
 
-/**
- * 사용자 삭제
- */
 function deleteUserAccount(adminToken, username) {
   if (!_requireAdmin(adminToken)) {
     return { success: false, message: "관리자 권한이 필요합니다." };
-  }
-  if (username === DEFAULT_ADMIN.username) {
-    return { success: false, message: "기본 관리자 계정은 삭제할 수 없습니다." };
   }
   const user = _findUser(username);
   if (!user) return { success: false, message: "사용자를 찾을 수 없습니다." };
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  cfg.getRange(user.row, USER_COLS.USERNAME, 1, 5).clearContent();
+  const userSheet = ss.getSheetByName(SHEET_USERS);
+  userSheet.getRange(user.row, USER_COLS.USERNAME, 1, 5).clearContent();
 
   return { success: true, message: `✅ '${username}' 계정 삭제 완료` };
 }
 
-/**
- * 비밀번호 초기화 (admin이 직원 비밀번호 재설정)
- */
 function resetUserPassword(adminToken, username, newPassword) {
   if (!_requireAdmin(adminToken)) {
     return { success: false, message: "관리자 권한이 필요합니다." };
@@ -261,15 +222,12 @@ function resetUserPassword(adminToken, username, newPassword) {
 
   const hashResult = _hashPassword(newPassword);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  cfg.getRange(user.row, USER_COLS.PASSHASH).setValue(hashResult.stored);
+  const userSheet = ss.getSheetByName(SHEET_USERS);
+  userSheet.getRange(user.row, USER_COLS.PASSHASH).setValue(hashResult.stored);
 
   return { success: true, message: `✅ '${username}' 비밀번호 초기화 완료` };
 }
 
-/**
- * 본인 비밀번호 변경
- */
 function changeMyPassword(token, oldPassword, newPassword) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "세션이 만료되었습니다. 다시 로그인하세요." };
@@ -285,15 +243,12 @@ function changeMyPassword(token, oldPassword, newPassword) {
 
   const hashResult = _hashPassword(newPassword);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  cfg.getRange(user.row, USER_COLS.PASSHASH).setValue(hashResult.stored);
+  const userSheet = ss.getSheetByName(SHEET_USERS);
+  userSheet.getRange(user.row, USER_COLS.PASSHASH).setValue(hashResult.stored);
 
   return { success: true, message: "✅ 비밀번호가 변경되었습니다." };
 }
 
-/**
- * 전체 사용자 목록 조회 (비밀번호 해시 제외)
- */
 function getUserList(adminToken) {
   if (!_requireAdmin(adminToken)) {
     return { success: false, message: "관리자 권한이 필요합니다.", users: [] };
@@ -309,47 +264,34 @@ function getUserList(adminToken) {
 
 
 // ═══════════════════════════════════════════════════════════════════
-//  [LEGACY] 하위 호환 — Sheet Protection 기반 (Sheet 직접 사용자용)
+//  Sheet Protection 기반 유틸리티
 // ═══════════════════════════════════════════════════════════════════
 
-/** [DEPRECATED] Z열 동적 드롭다운 — 웹앱에서는 불필요하나 Sheet 호환 유지 */
+/** [v7.0] 업장관리 시트에서 권한 드롭다운 갱신 */
 function _refreshPermissionDropdown(ss) {
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  const lastRow = cfg.getLastRow();
-  const shopList = ["admin"];
-  
-  if (lastRow >= 4) {
-    const configData = cfg.getRange(4, 2, lastRow - 3, 6).getValues();
-    configData.forEach(row => {
-      if (row[1] && row[3] === "생성완료") {
-        shopList.push(row[1]);
-      }
-    });
-  }
-
-  cfg.getRange("Z4:Z").clearContent();
-  if (shopList.length > 0) {
-    cfg.getRange(4, 26, shopList.length, 1).setValues(shopList.map(s => [s]));
-  }
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+  if (!shopSheet) return;
+  // 권한 드롭다운은 레거시 호환용으로 유지하되, 별도 Z열은 사용하지 않음
+  // 웹앱 인증이 주 접근제어
 }
 
 function generateNewShops() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
   const template = ss.getSheetByName(SHEET_TEMPLATE);
   
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   const codeListRange = masterSheet.getRange(3, 1, Math.max(masterSheet.getLastRow() - 2, 1), 1);
   
-  const lastRow = cfg.getLastRow();
-  if (lastRow < 4) return SpreadsheetApp.getUi().alert("설정할 업장 명단이 없습니다.");
+  const lastRow = shopSheet.getLastRow();
+  if (lastRow < 3) return SpreadsheetApp.getUi().alert("설정할 업장 명단이 없습니다.");
 
-  const configData = cfg.getRange(4, 2, lastRow - 3, 6).getValues();
+  const configData = shopSheet.getRange(3, 1, lastRow - 2, 6).getValues();
   let createdCount = 0;
 
   configData.forEach((row, index) => {
     const [, shopName, tag, status, , ] = row;
-    const currentRowNum = index + 4;
+    const currentRowNum = index + 3;
 
     if (shopName && status === "대기") {
       let targetSheet = ss.getSheetByName(shopName);
@@ -362,22 +304,20 @@ function generateNewShops() {
         targetSheet.getRange(3, 4, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["입고", "출고", "폐기"]).setAllowInvalid(false).build());
         targetSheet.getRange(3, 5, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireNumberGreaterThan(0).setAllowInvalid(false).build());
 
-        // [MODIFIED] Sheet Protection — 하위 호환으로 유지하되, 웹앱 인증이 주 접근제어
         const protection = targetSheet.protect().setDescription(`${shopName} 권한`);
 
-        // 노란색 구역 개방
+        // [v7.0] 9열 구조: 보호 범위 업데이트
         protection.setUnprotectedRanges([
-          targetSheet.getRange(3, 1, VALIDATION_ROWS, 2),
-          targetSheet.getRange(3, 4, VALIDATION_ROWS, 1),
-          targetSheet.getRange(3, 5, VALIDATION_ROWS, 1),
-          targetSheet.getRange(3, 6, VALIDATION_ROWS, 2)
+          targetSheet.getRange(3, 1, VALIDATION_ROWS, 2),  // A~B (날짜, 품목코드)
+          targetSheet.getRange(3, 4, VALIDATION_ROWS, 2),  // D~E (구분, 수량)
+          targetSheet.getRange(3, 7, VALIDATION_ROWS, 2)   // G~H (담당자, 비고)
         ]);
       }
 
-      cfg.getRange(currentRowNum, 5).setValue("생성완료");
+      shopSheet.getRange(currentRowNum, 4).setValue("생성완료");
       const sheetId = targetSheet.getSheetId();
-      cfg.getRange(currentRowNum, 6).setFormula(`=HYPERLINK("#gid=${sheetId}", "🔗 ${shopName}")`);
-      cfg.getRange(currentRowNum, 7).setValue(sheetId); 
+      shopSheet.getRange(currentRowNum, 5).setFormula(`=HYPERLINK("#gid=${sheetId}", "🔗 ${shopName}")`);
+      shopSheet.getRange(currentRowNum, 6).setValue(sheetId); 
       createdCount++;
     }
   });
@@ -389,9 +329,9 @@ function generateNewShops() {
 
 function removeItemCodeValidation() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  if (cfg.getLastRow() < 4) return;
-  const configRows = cfg.getRange(4, 2, cfg.getLastRow() - 3, 6).getValues();
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+  if (shopSheet.getLastRow() < 3) return;
+  const configRows = shopSheet.getRange(3, 1, shopSheet.getLastRow() - 2, 6).getValues();
   let count = 0;
 
   configRows.forEach(row => {
@@ -410,9 +350,9 @@ function removeItemCodeValidation() {
 
 function fixSheetProtection() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  if (cfg.getLastRow() < 4) return;
-  const configRows = cfg.getRange(4, 2, cfg.getLastRow() - 3, 6).getValues();
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+  if (shopSheet.getLastRow() < 3) return;
+  const configRows = shopSheet.getRange(3, 1, shopSheet.getLastRow() - 2, 6).getValues();
   let count = 0;
 
   configRows.forEach(row => {
@@ -421,9 +361,11 @@ function fixSheetProtection() {
       if (sh) {
         const protection = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET)[0];
         if (protection) {
+          // [v7.0] 9열 구조
           protection.setUnprotectedRanges([
-            sh.getRange(3, 1, VALIDATION_ROWS, 2),
-            sh.getRange(3, 4, VALIDATION_ROWS, 4)
+            sh.getRange(3, 1, VALIDATION_ROWS, 2),  // A~B
+            sh.getRange(3, 4, VALIDATION_ROWS, 2),  // D~E
+            sh.getRange(3, 7, VALIDATION_ROWS, 2)   // G~H
           ]);
           count++;
         }
@@ -435,24 +377,24 @@ function fixSheetProtection() {
 
 function refreshSheetStatus() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  const lastRow = cfg.getLastRow();
-  if (lastRow < 4) return;
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+  const lastRow = shopSheet.getLastRow();
+  if (lastRow < 3) return;
 
-  const data = cfg.getRange(4, 2, lastRow - 3, 6).getValues();
+  const data = shopSheet.getRange(3, 1, lastRow - 2, 6).getValues();
   let missingCount = 0;
 
   data.forEach((row, idx) => {
     const status = row[3];
     const gid = row[5];
-    const rowNum = idx + 4;
+    const rowNum = idx + 3;
 
     if (status === "생성완료" && gid !== "") {
       const target = ss.getSheets().find(s => s.getSheetId() == gid);
       if (!target) {
-        cfg.getRange(rowNum, 5).setValue("대기");
-        cfg.getRange(rowNum, 6).setValue("삭제됨");
-        cfg.getRange(rowNum, 7).clearContent();
+        shopSheet.getRange(rowNum, 4).setValue("대기");
+        shopSheet.getRange(rowNum, 5).setValue("삭제됨");
+        shopSheet.getRange(rowNum, 6).clearContent();
         missingCount++;
       }
     }
@@ -462,7 +404,6 @@ function refreshSheetStatus() {
   SpreadsheetApp.getUi().alert(missingCount > 0 ? `⚠️ ${missingCount}개의 삭제된 시트가 '대기' 상태로 초기화되었습니다.` : "✅ 모든 시트가 정상 존재합니다.");
 }
 
-/** [DEPRECATED] 이메일 기반 Sheet Protection 동기화 — 레거시 호환용 */
 function syncPermissions() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   _refreshPermissionDropdown(ss);
@@ -471,7 +412,8 @@ function syncPermissions() {
 }
 
 function _protectSystemSheets(ss) {
-  const SYSTEM_SHEETS = [SHEET_CONFIG, SHEET_MASTER, SHEET_INOUT, SHEET_DASHBOARD, SHEET_TEMPLATE];
+  // [v7.0] 보호 대상 시트 목록 업데이트
+  const SYSTEM_SHEETS = [SHEET_MASTER, SHEET_INOUT, SHEET_DASHBOARD, SHEET_TEMPLATE, SHEET_SHOPS, SHEET_SEASONS, SHEET_USERS, SHEET_BASE_DATA, SHEET_CHANGELOG];
   
   SYSTEM_SHEETS.forEach(sheetName => {
     const sheet = ss.getSheetByName(sheetName);
@@ -487,9 +429,10 @@ function _protectSystemSheets(ss) {
 
 function validateSeasonSettings() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = ss.getSheetByName(SHEET_CONFIG);
-  const lastRow = Math.max(cfg.getLastRow(), 4);
-  const data = cfg.getRange("N4:Q" + lastRow).getValues();
+  const seasonSheet = ss.getSheetByName(SHEET_SEASONS);
+  const lastRow = Math.max(seasonSheet.getLastRow(), 5);
+  // [v7.0] 시즌 데이터는 A5:D 부터 (헤더가 4행)
+  const data = seasonSheet.getRange("A5:D" + lastRow).getValues();
   
   let errors = [];
   let validSeasons = [];

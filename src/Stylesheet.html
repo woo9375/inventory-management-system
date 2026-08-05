@@ -861,4 +861,98 @@ body {
 .action-btn.edit:hover { background: #dbeafe; }
 .action-btn.delete:hover { background: var(--risk-light); color: var(--risk); }
 .action-btn.key:hover { background: #fef3c7; }
+
+/* ═══════════════ [NEW] Chip 컴포넌트 ═══════════════ */
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+}
+
+.chip-delete {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  margin-left: 6px;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.chip-delete:hover {
+  color: var(--risk);
+}
+
+/* ═══════════════ [NEW] 인쇄 전용 스타일 ═══════════════ */
+.print-container {
+  display: none;
+}
+
+@media print {
+  /* 불필요한 UI 숨김 */
+  .sidebar, .mobile-header, .page-header, .card, .kpi-grid, .btn, .modal-overlay, .login-container {
+    display: none !important;
+  }
+  
+  /* 본문 영역 리셋 */
+  .app-container, .main-content, body, html {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    min-height: auto !important;
+  }
+
+  /* 인쇄 영역 표시 */
+  .print-container {
+    display: block !important;
+    width: 100%;
+    background: white;
+  }
+
+  .print-header {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  .print-header h1 {
+    font-size: 24px;
+    margin-bottom: 5px;
+  }
+
+  .print-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .print-table th, .print-table td {
+    border: 1px solid #333;
+    padding: 8px 4px;
+    text-align: center;
+  }
+
+  .print-table th {
+    background-color: #f0f0f0 !important;
+    -webkit-print-color-adjust: exact;
+    font-weight: bold;
+  }
+
+  .print-table td.empty-box {
+    width: 15%;
+  }
+}
 </style>

@@ -40,8 +40,18 @@ function submitLogin() {
       if (result.success) {
         authToken = result.token;
         currentUser = result.user;
-        sessionStorage.setItem('authToken', result.token);
-        sessionStorage.setItem('currentUser', JSON.stringify(result.user));
+        var remember = document.getElementById('rememberMe').checked;
+        if (remember) {
+          localStorage.setItem('authToken', result.token);
+          localStorage.setItem('currentUser', JSON.stringify(result.user));
+          sessionStorage.removeItem('authToken');
+          sessionStorage.removeItem('currentUser');
+        } else {
+          sessionStorage.setItem('authToken', result.token);
+          sessionStorage.setItem('currentUser', JSON.stringify(result.user));
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('currentUser');
+        }
         onLoginSuccess();
       } else {
         errEl.textContent = result.message;
@@ -107,6 +117,8 @@ function doLogout() {
   currentUser = null;
   sessionStorage.removeItem('authToken');
   sessionStorage.removeItem('currentUser');
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('currentUser');
 
   // UI 초기화
   document.getElementById('loginContainer').classList.remove('hidden');
@@ -118,27 +130,36 @@ function doLogout() {
 
 // 페이지 로드 시 세션 복원 시도
 document.addEventListener('DOMContentLoaded', function() {
-  var savedToken = sessionStorage.getItem('authToken');
-  var savedUser = sessionStorage.getItem('currentUser');
-
-  if (savedToken && savedUser) {
+  var savedToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+  var savedUserStr = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+  
+  if (savedToken && savedUserStr) {
     // 서버에서 세션 검증
     google.script.run
       .withSuccessHandler(function(result) {
         if (result.success) {
           authToken = savedToken;
           currentUser = result.user;
-          sessionStorage.setItem('currentUser', JSON.stringify(result.user));
+          // 스토리지 갱신
+          if (localStorage.getItem('authToken')) {
+            localStorage.setItem('currentUser', JSON.stringify(result.user));
+          } else {
+            sessionStorage.setItem('currentUser', JSON.stringify(result.user));
+          }
           onLoginSuccess();
         } else {
           // 세션 만료 → 로그인 화면
           sessionStorage.removeItem('authToken');
           sessionStorage.removeItem('currentUser');
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('currentUser');
         }
       })
       .withFailureHandler(function() {
         sessionStorage.removeItem('authToken');
         sessionStorage.removeItem('currentUser');
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('currentUser');
       })
       .getSessionUser(savedToken);
   }
@@ -160,6 +181,7 @@ function showTab(tabId, navEl) {
 
   if (tabId === 'master') loadItemMaster();
   if (tabId === 'shop' || tabId === 'season' || tabId === 'user') loadConfig();
+  if (tabId === 'basedata') loadBaseData();
 
   document.getElementById('sidebar').classList.remove('open');
 }
@@ -297,41 +319,52 @@ function loadItemCodes() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  품목코드 자동완성
+//  품목명 기반 자동완성 (Phase 4)
 // ═══════════════════════════════════════════════════════════════
-function onItemCodeInput(value) {
-  var dropdown = document.getElementById('itemCodeDropdown');
-  var nameField = document.getElementById('txItemName');
-  if (!value || value.length < 1) { dropdown.style.display = 'none'; nameField.value = ''; return; }
+function onItemNameInput(value) {
+  var dropdown = document.getElementById('itemNameDropdown');
+  var codeField = document.getElementById('txItemCode');
+  
+  if (!value || value.trim().length < 1) { 
+    dropdown.style.display = 'none'; 
+    codeField.value = ''; 
+    return; 
+  }
 
-  var query = value.toUpperCase();
+  var query = value.toLowerCase().trim();
   var matches = itemCodeList.filter(function(item) {
-    return item.code.toUpperCase().indexOf(query) !== -1 || item.name.indexOf(value) !== -1;
+    return item.name.toLowerCase().indexOf(query) !== -1 || item.code.toLowerCase().indexOf(query) !== -1;
   }).slice(0, 10);
 
-  if (matches.length === 0) { dropdown.style.display = 'none'; nameField.value = ''; return; }
+  if (matches.length === 0) { 
+    dropdown.style.display = 'none'; 
+    codeField.value = ''; 
+    return; 
+  }
 
   var html = '';
   matches.forEach(function(item) {
-    html += '<div class="autocomplete-item" onclick="selectItemCode(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
-      '<span class="item-code">' + item.code + '</span><span class="item-name">' + item.name + '</span></div>';
+    html += '<div class="autocomplete-item" onclick="selectItemName(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
+      '<span class="item-name">' + item.name + '</span> <span class="item-code" style="color:#888; font-size:0.85em;">(' + item.code + ')</span></div>';
   });
   dropdown.innerHTML = html;
   dropdown.style.display = 'block';
 
-  var exact = itemCodeList.find(function(item) { return item.code === value; });
-  if (exact) nameField.value = exact.name;
+  // 정확히 일치하는 이름이 있으면 자동으로 코드 기입 (옵션)
+  var exact = itemCodeList.find(function(item) { return item.name.trim() === value.trim(); });
+  if (exact) codeField.value = exact.code;
+  else codeField.value = '';
 }
 
-function selectItemCode(code, name) {
+function selectItemName(code, name) {
+  document.getElementById('txItemNameSearch').value = name;
   document.getElementById('txItemCode').value = code;
-  document.getElementById('txItemName').value = name;
-  document.getElementById('itemCodeDropdown').style.display = 'none';
+  document.getElementById('itemNameDropdown').style.display = 'none';
 }
 
 document.addEventListener('click', function(e) {
   if (!e.target.closest('.autocomplete-wrapper')) {
-    var dd = document.getElementById('itemCodeDropdown');
+    var dd = document.getElementById('itemNameDropdown');
     if (dd) dd.style.display = 'none';
   }
 });
@@ -390,8 +423,8 @@ function saveTransaction() {
       hideLoading();
       if (result.success) {
         showToast(result.message, 'success');
+        document.getElementById('txItemNameSearch').value = '';
         document.getElementById('txItemCode').value = '';
-        document.getElementById('txItemName').value = '';
         document.getElementById('txType').selectedIndex = 0;
         document.getElementById('txQty').value = '';
         document.getElementById('txNote').value = '';
@@ -434,13 +467,48 @@ function renderItemMaster(items) {
       '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
       '<td class="text-right">' + formatNumber(item.unitPrice) + '</td>';
     if (canEdit) {
-      html += '<td><button class="btn btn-outline btn-sm" onclick="openEditItemModal(\'' + item.code + '\')">✏️</button></td>';
+      html += '<td><div class="btn-group">' + 
+              '<button class="action-btn edit" onclick="openEditItemModal(\'' + item.code + '\')" title="수정">✏️</button>' +
+              '<button class="action-btn" style="background:#e0e7ff" onclick="viewItemHistory(\'' + item.code + '\')" title="이력조회">🕒</button>' +
+              '</div></td>';
     } else {
-      html += '<td>-</td>';
+      html += '<td><button class="action-btn" style="background:#e0e7ff" onclick="viewItemHistory(\'' + item.code + '\')" title="이력조회">🕒</button></td>';
     }
     html += '</tr>';
   });
   tbody.innerHTML = html;
+}
+
+function viewItemHistory(code) {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res.success) return showToast(res.message, 'error');
+      
+      var records = res.records;
+      var body = '<div class="data-table-wrapper" style="max-height: 400px; overflow-y: auto;">' +
+                 '<table class="data-table"><thead><tr><th>일시</th><th>변경자</th><th>필드</th><th>이전 값</th><th>새 값</th></tr></thead><tbody>';
+      
+      if (records.length === 0) {
+        body += '<tr><td colspan="5" class="text-center text-secondary" style="padding: 24px;">변경 이력이 없습니다.</td></tr>';
+      } else {
+        records.forEach(function(r) {
+          body += '<tr>' +
+                  '<td style="white-space: nowrap">' + r.date + '</td>' +
+                  '<td style="white-space: nowrap">' + r.user + '</td>' +
+                  '<td>' + escapeHtml(r.field) + '</td>' +
+                  '<td style="color:var(--text-secondary); text-decoration:line-through">' + escapeHtml(r.oldValue) + '</td>' +
+                  '<td style="color:var(--navy-700); font-weight:600">' + escapeHtml(r.newValue) + '</td>' +
+                  '</tr>';
+        });
+      }
+      body += '</tbody></table></div>';
+      var footer = '<button class="btn btn-outline" onclick="closeModal()">닫기</button>';
+      openModal('🕒 품목 마스터 변경 이력 — ' + code, body, footer);
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('이력 조회 실패: ' + err.message, 'error'); })
+    .getItemChangelog(getToken(), code);
 }
 
 function openNewItemModal() {
@@ -815,5 +883,124 @@ function escapeHtml(str) {
   var div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 기초데이터 관리 (Phase 6)
+// ═══════════════════════════════════════════════════════════════
+function loadBaseData() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res.success) return showToast(res.message, 'error');
+      renderBaseData(res);
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('기초데이터 로드 실패: ' + err.message, 'error'); })
+    .getBaseData(getToken());
+}
+
+function renderBaseData(data) {
+  var isAdmin = currentUser && currentUser.role === 'admin';
+  var renderChips = function(items, type) {
+    if (!items || items.length === 0) return '<span class="empty-state">데이터가 없습니다.</span>';
+    return items.map(function(item) {
+      var html = '<div class="chip">' + escapeHtml(item);
+      if (isAdmin) html += '<button class="chip-delete" onclick="deleteBaseDataItem(\'' + type + '\', \'' + escapeHtml(item) + '\')">×</button>';
+      html += '</div>';
+      return html;
+    }).join('');
+  };
+
+  document.getElementById('mainCatList').innerHTML = renderChips(data.mainCategories, 'mainCategory');
+  document.getElementById('unitList').innerHTML = renderChips(data.units, 'unit');
+  document.getElementById('itemCatList').innerHTML = renderChips(data.itemCategories, 'itemCategory');
+}
+
+function addBaseDataItem(type) {
+  var inputMap = { mainCategory: 'newMainCat', unit: 'newUnit', itemCategory: 'newItemCat' };
+  var inputEl = document.getElementById(inputMap[type]);
+  var value = inputEl.value.trim();
+  
+  if (!value) return showToast('값을 입력하세요.', 'warning');
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) {
+      hideLoading();
+      showToast(r.message, r.success ? 'success' : 'error');
+      if (r.success) {
+        inputEl.value = '';
+        loadBaseData();
+      }
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('추가 실패: ' + e.message, 'error'); })
+    .addBaseDataItem(getToken(), type, value);
+}
+
+function deleteBaseDataItem(type, value) {
+  if (!confirm('정말로 "' + value + '" 항목을 삭제하시겠습니까?\n이 항목을 사용 중인 품목이 있을 수 있습니다.')) return;
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) {
+      hideLoading();
+      showToast(r.message, r.success ? 'success' : 'error');
+      if (r.success) loadBaseData();
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('삭제 실패: ' + e.message, 'error'); })
+    .deleteBaseDataItem(getToken(), type, value);
+}
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 재고 실사 인쇄 (Phase 7)
+// ═══════════════════════════════════════════════════════════════
+function printPhysicalCheckList() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(items) {
+      hideLoading();
+      if (!items || items.length === 0) {
+        showToast('인쇄할 품목 데이터가 없습니다.', 'warning');
+        return;
+      }
+      
+      var container = document.getElementById('printContainer');
+      var dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+      
+      var html = '<div class="print-header">' +
+                 '<h1>📋 재고 실사 조사표</h1>' +
+                 '<p>출력일자: ' + dateStr + '</p>' +
+                 '</div>' +
+                 '<table class="print-table">' +
+                 '<thead><tr>' +
+                 '<th>품목코드</th><th>품목명</th><th>카테고리</th><th>단위</th>' +
+                 '<th>전산재고</th><th style="width: 15%">실사재고</th><th style="width: 20%">비고</th>' +
+                 '</tr></thead><tbody>';
+      
+      items.forEach(function(item) {
+        html += '<tr>' +
+                '<td>' + item.code + '</td>' +
+                '<td style="text-align: left">' + item.name + '</td>' +
+                '<td>' + item.category + '</td>' +
+                '<td>' + item.unit + '</td>' +
+                '<td style="font-weight: bold">' + item.currentStock + '</td>' +
+                '<td></td><td></td>' +
+                '</tr>';
+      });
+      
+      html += '</tbody></table>';
+      container.innerHTML = html;
+      
+      // 브라우저 인쇄 호출
+      setTimeout(function() {
+        window.print();
+        // 인쇄 후 내용 초기화
+        setTimeout(function() { container.innerHTML = ''; }, 1000);
+      }, 500);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('데이터 로드 실패: ' + err.message, 'error');
+    })
+    .getItemMasterData(getToken());
 }
 </script>
