@@ -263,6 +263,7 @@
         <h2>🗂️ 품목 마스터</h2>
         <div id="masterActions" class="btn-group">
           <button class="btn btn-gold btn-sm" onclick="openNewItemModal()">➕ 신규 품목 등록</button>
+          <button class="btn btn-outline btn-sm" onclick="openCsvUploadModal()">📤 CSV 업로드</button>
           <button class="btn btn-primary btn-sm" onclick="printPhysicalCheckList()">🖨️ 실사 양식 인쇄</button>
           <button class="btn btn-outline btn-sm" onclick="loadItemMaster()">🔄 새로고침</button>
         </div>
@@ -393,6 +394,10 @@
             <div class="cmd-card" onclick="execCommand('generateShops')">
               <span class="cmd-icon">🆕</span>
               <div class="cmd-text"><h4>대기 업장 시트 생성</h4><p>대기 상태 업장 일괄 생성</p></div>
+            </div>
+            <div class="cmd-card" onclick="openMonthlyClosingModal()" style="border: 2px solid var(--gold); background: #fffdf5;">
+              <span class="cmd-icon">🗓️</span>
+              <div class="cmd-text"><h4>수동 월마감 (이월) 실행</h4><p>이전 내역 보관 및 재고 이월</p></div>
             </div>
           </div>
         </div>
