@@ -1,0 +1,173 @@
+<script>
+/**
+ * 호텔덕구온천 재고 관리 시스템 v1.0.0 — 클라이언트 JavaScript
+ * [MODIFIED] 토큰 기반 인증 + google.script.run 서버 통신
+ */
+
+// ═══════════════════════════════════════════════════════════════
+//  전역 상태
+// ═══════════════════════════════════════════════════════════════
+let itemCodeList = [];
+let currentShop = '';
+let currentUser = null;  // [NEW] { username, name, dept, role }
+let authToken = '';      // [NEW] 세션 토큰
+
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 인증 — 로그인 / 로그아웃 / 세션
+// ═══════════════════════════════════════════════════════════════
+
+function getToken() { return authToken; }
+
+function submitLogin() {
+  var username = document.getElementById('loginUsername').value.trim();
+  var password = document.getElementById('loginPassword').value;
+  var errEl = document.getElementById('loginError');
+  var btn = document.getElementById('loginBtn');
+
+  if (!username || !password) {
+    errEl.textContent = '아이디와 비밀번호를 입력해 주세요.';
+    return;
+  }
+
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = '로그인 중...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.textContent = '로그인';
+      if (result.success) {
+        authToken = result.token;
+        currentUser = result.user;
+        var remember = document.getElementById('rememberMe').checked;
+        if (remember) {
+          localStorage.setItem('authToken', result.token);
+          localStorage.setItem('currentUser', JSON.stringify(result.user));
+          sessionStorage.removeItem('authToken');
+          sessionStorage.removeItem('currentUser');
+        } else {
+          sessionStorage.setItem('authToken', result.token);
+          sessionStorage.setItem('currentUser', JSON.stringify(result.user));
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('currentUser');
+        }
+        onLoginSuccess();
+      } else {
+        errEl.textContent = result.message;
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = '로그인';
+      errEl.textContent = '서버 오류: ' + err.message;
+    })
+    .login(username, password);
+}
+
+function onLoginSuccess() {
+  // 로그인 화면 숨기기
+  document.getElementById('loginContainer').classList.add('hidden');
+  document.getElementById('appContainer').style.display = 'flex';
+
+  // 사이드바 사용자 정보 표시
+  var initials = currentUser.name ? currentUser.name.charAt(0) : '?';
+  document.getElementById('userAvatar').textContent = initials;
+  document.getElementById('userName').textContent = currentUser.name;
+
+  var roleNames = { admin: '관리자', manager: '매니저', staff: '담당자' };
+  document.getElementById('userRoleText').textContent = (roleNames[currentUser.role] || currentUser.role) + ' · ' + currentUser.dept;
+
+  // 역할별 UI 분기
+  applyRolePermissions();
+
+  // 데이터 로드
+  loadDashboard();
+  loadShopList();
+  loadItemCodes();
+}
+
+function applyRolePermissions() {
+  var isAdmin = currentUser.role === 'admin';
+  var isManager = currentUser.role === 'manager';
+
+  // .admin-only 요소 제어 (업장/시즌/사용자/시스템 탭 및 버튼들)
+  document.querySelectorAll('.admin-only').forEach(function(el) {
+    if (el.tagName === 'TH' || el.tagName === 'TD') {
+      el.style.display = isAdmin ? 'table-cell' : 'none';
+    } else {
+      el.style.display = isAdmin ? '' : 'none';
+    }
+  });
+
+  // staff: 품목 등록/수정 버튼 숨기기
+  if (currentUser.role === 'staff') {
+    var masterActions = document.getElementById('masterActions');
+    if (masterActions) masterActions.style.display = 'none';
+  }
+}
+
+function doLogout() {
+  google.script.run
+    .withSuccessHandler(function() {})
+    .withFailureHandler(function() {})
+    .logout(getToken());
+
+  authToken = '';
+  currentUser = null;
+  sessionStorage.removeItem('authToken');
+  sessionStorage.removeItem('currentUser');
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('currentUser');
+
+  // UI 초기화
+  document.getElementById('loginContainer').classList.remove('hidden');
+  document.getElementById('appContainer').style.display = 'none';
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginError').textContent = '';
+}
+
+// 페이지 로드 시 세션 복원 시도
+document.addEventListener('DOMContentLoaded', function() {
+  var savedToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+  var savedUserStr = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+  
+  if (savedToken && savedUserStr) {
+    // 서버에서 세션 검증
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          authToken = savedToken;
+          currentUser = result.user;
+          // 스토리지 갱신
+          if (localStorage.getItem('authToken')) {
+            localStorage.setItem('currentUser', JSON.stringify(result.user));
+          } else {
+            sessionStorage.setItem('currentUser', JSON.stringify(result.user));
+          }
+          onLoginSuccess();
+        } else {
+          // 세션 만료 → 로그인 화면
+          sessionStorage.removeItem('authToken');
+          sessionStorage.removeItem('currentUser');
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('currentUser');
+        }
+      })
+      .withFailureHandler(function() {
+        sessionStorage.removeItem('authToken');
+        sessionStorage.removeItem('currentUser');
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('currentUser');
+      })
+      .getSessionUser(savedToken);
+  }
+
+  // 오늘 날짜 기본값
+  var today = new Date().toISOString().split('T')[0];
+  var txDate = document.getElementById('txDate');
+  if (txDate) txDate.value = today;
+});
+
+</script>

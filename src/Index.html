@@ -269,9 +269,14 @@
       </div>
 
       <div class="card">
-        <div class="card-header">
-          <h3>📦 등록 품목 목록</h3>
-          <span id="masterCount" style="font-size:0.8rem;color:var(--text-secondary)">0개</span>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h3 style="display:inline-block; margin-right:8px;">📦 등록 품목 목록</h3>
+            <span id="masterCount" style="font-size:0.8rem;color:var(--text-secondary)">0개</span>
+          </div>
+          <div>
+            <input type="text" id="masterSearchInput" placeholder="🔍 품목명 또는 코드 검색..." oninput="filterItemMaster()" style="padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 200px;">
+          </div>
         </div>
         <div class="card-body">
           <div class="data-table-wrapper">
@@ -468,6 +473,11 @@
 <!-- ═══════ 인쇄 전용 영역 ═══════ -->
 <div id="printContainer" class="print-container"></div>
 
-<?!= include('JavaScript') ?>
+<?!= include('JS_Auth') ?>
+<?!= include('JS_UI') ?>
+<?!= include('JS_Tx') ?>
+<?!= include('JS_Master') ?>
+<?!= include('JS_Config') ?>
+<?!= include('JS_BaseData') ?>
 </body>
 </html>

@@ -1,0 +1,137 @@
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  네비게이션
+// ═══════════════════════════════════════════════════════════════
+function showTab(tabId, navEl) {
+  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+  document.getElementById('tab-' + tabId).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(function(el) { el.classList.remove('active'); });
+  if (navEl) navEl.classList.add('active');
+
+  if (tabId === 'master') loadItemMaster();
+  if (tabId === 'shop' || tabId === 'season' || tabId === 'user') loadConfig();
+  if (tabId === 'basedata') loadBaseData();
+
+  document.getElementById('sidebar').classList.remove('open');
+}
+
+function submitMyPasswordChange() {
+  var oldPw = document.getElementById('myOldPw').value;
+  var newPw = document.getElementById('myNewPw').value;
+  if (!oldPw || !newPw) return showToast('비밀번호를 모두 입력해주세요', 'warning');
+  if (newPw.length < 4) return showToast('새 비밀번호는 4자 이상이어야 합니다', 'warning');
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) { 
+      hideLoading(); 
+      showToast(r.message, r.success ? 'success' : 'error'); 
+      if (r.success) {
+        document.getElementById('myOldPw').value = '';
+        document.getElementById('myNewPw').value = '';
+      }
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
+    .changePassword(getToken(), oldPw, newPw);
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  로딩 & 토스트
+// ═══════════════════════════════════════════════════════════════
+function showLoading() { document.getElementById('loadingOverlay').classList.add('active'); }
+function hideLoading() { document.getElementById('loadingOverlay').classList.remove('active'); }
+
+function showToast(message, type) {
+  type = type || 'info';
+  var container = document.getElementById('toastContainer');
+  var icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+  var toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.innerHTML = '<span>' + (icons[type] || '') + '</span><span>' + message + '</span>';
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100px)';
+    toast.style.transition = 'all 0.3s';
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 4000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  모달
+// ═══════════════════════════════════════════════════════════════
+function openModal(title, bodyHtml, footerHtml) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  document.getElementById('modalFooter').innerHTML = footerHtml;
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  대시보드
+// ═══════════════════════════════════════════════════════════════
+function loadDashboard() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(data) {
+      hideLoading();
+      if (data.success === false) { showToast(data.message, 'error'); return; }
+      renderDashboard(data);
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('대시보드 로드 실패: ' + err.message, 'error'); })
+    .getDashboardData(getToken());
+}
+
+function renderDashboard(data) {
+  document.getElementById('dashDate').textContent = '기준일: ' + data.date;
+  document.getElementById('dashSeason').textContent = data.season + ' (×' + data.seasonMultiplier + ')';
+  document.getElementById('kpiTotal').textContent = data.kpi.total;
+  document.getElementById('kpiRisk').textContent = data.kpi.risk;
+  document.getElementById('kpiOrder').textContent = data.kpi.order;
+  document.getElementById('kpiNormal').textContent = data.kpi.normal;
+
+  var alertCount = data.kpi.risk + data.kpi.order;
+  var badge = document.getElementById('alertBadge');
+  if (alertCount > 0) { badge.textContent = alertCount; badge.style.display = 'inline'; }
+  else { badge.style.display = 'none'; }
+
+  var tbody = document.getElementById('alertTableBody');
+  if (data.alertItems.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">🎉</span><p>발주 필요 품목이 없습니다</p></td></tr>';
+    return;
+  }
+  var html = '';
+  data.alertItems.forEach(function(item) {
+    var statusClass = item.status === 'risk' ? 'risk' : 'order';
+    var statusText = item.status === 'risk' ? '🚨 위험' : '⚠️ 발주필요';
+    html += '<tr><td><strong>' + item.code + '</strong></td><td>' + item.name + '</td><td>' + item.grade + '</td>' +
+      '<td>' + item.currentStock + '</td><td>' + item.safetyStock + '</td><td>' + item.rop + '</td>' +
+      '<td><strong>' + item.orderQty + '</strong></td><td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td></tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  유틸리티
+// ═══════════════════════════════════════════════════════════════
+function formatNumber(num) {
+  if (num === null || num === undefined || num === '') return '-';
+  return Number(num).toLocaleString('ko-KR');
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  var div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+</script>

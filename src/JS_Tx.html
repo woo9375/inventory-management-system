@@ -1,0 +1,146 @@
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  업장 목록 & 품목코드 로드
+// ═══════════════════════════════════════════════════════════════
+function loadShopList() {
+  google.script.run
+    .withSuccessHandler(function(shops) {
+      var select = document.getElementById('txShopSelect');
+      select.innerHTML = '<option value="">업장 선택...</option>';
+      shops.forEach(function(shop) {
+        var opt = document.createElement('option');
+        opt.value = shop.name;
+        opt.textContent = shop.name + ' (' + shop.category + ')';
+        select.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function() {})
+    .getShopList(getToken());
+}
+
+function loadItemCodes() {
+  google.script.run
+    .withSuccessHandler(function(items) { itemCodeList = items || []; })
+    .withFailureHandler(function() {})
+    .getItemCodes(getToken());
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  품목명 기반 자동완성 (Phase 4)
+// ═══════════════════════════════════════════════════════════════
+function onItemNameInput(value) {
+  var dropdown = document.getElementById('itemNameDropdown');
+  var codeField = document.getElementById('txItemCode');
+  
+  if (!value || value.trim().length < 1) { 
+    dropdown.style.display = 'none'; 
+    codeField.value = ''; 
+    return; 
+  }
+
+  var query = value.toLowerCase().trim();
+  var matches = itemCodeList.filter(function(item) {
+    return item.name.toLowerCase().indexOf(query) !== -1 || item.code.toLowerCase().indexOf(query) !== -1;
+  }).slice(0, 10);
+
+  if (matches.length === 0) { 
+    dropdown.style.display = 'none'; 
+    codeField.value = ''; 
+    return; 
+  }
+
+  var html = '';
+  matches.forEach(function(item) {
+    html += '<div class="autocomplete-item" onclick="selectItemName(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
+      '<span class="item-name">' + item.name + '</span> <span class="item-code" style="color:#888; font-size:0.85em;">(' + item.code + ')</span></div>';
+  });
+  dropdown.innerHTML = html;
+  dropdown.style.display = 'block';
+
+  // 정확히 일치하는 이름이 있으면 자동으로 코드 기입 (옵션)
+  var exact = itemCodeList.find(function(item) { return item.name.trim() === value.trim(); });
+  if (exact) codeField.value = exact.code;
+  else codeField.value = '';
+}
+
+function selectItemName(code, name) {
+  document.getElementById('txItemNameSearch').value = name;
+  document.getElementById('txItemCode').value = code;
+  document.getElementById('itemNameDropdown').style.display = 'none';
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.autocomplete-wrapper')) {
+    var dd = document.getElementById('itemNameDropdown');
+    if (dd) dd.style.display = 'none';
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  입출고 기록
+// ═══════════════════════════════════════════════════════════════
+function loadTransactions() {
+  var shopName = document.getElementById('txShopSelect').value;
+  currentShop = shopName;
+  if (!shopName) return;
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(records) { hideLoading(); renderTransactions(records); })
+    .withFailureHandler(function(err) { hideLoading(); showToast('기록 로드 실패: ' + err.message, 'error'); })
+    .getRecentTransactions(getToken(), shopName, 50);
+}
+
+function renderTransactions(records) {
+  var tbody = document.getElementById('txTableBody');
+  document.getElementById('txCount').textContent = records.length + '건';
+  if (records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">📝</span><p>입출고 기록이 없습니다</p></td></tr>';
+    return;
+  }
+  var html = '';
+  records.forEach(function(r) {
+    var typeClass = r.type === '입고' ? 'color:var(--normal)' : (r.type === '폐기' ? 'color:var(--risk)' : 'color:var(--order)');
+    html += '<tr><td>' + r.date + '</td><td><strong>' + r.code + '</strong></td><td>' + r.name + '</td>' +
+      '<td style="font-weight:600;' + typeClass + '">' + r.type + '</td><td>' + r.qty + '</td>' +
+      '<td>' + (r.person || '-') + '</td><td>' + (r.note || '-') + '</td>' +
+      '<td style="font-size:0.75rem;color:var(--text-secondary)">' + (r.txId || '-') + '</td></tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function saveTransaction() {
+  var shopName = document.getElementById('txShopSelect').value;
+  if (!shopName) return showToast('업장을 먼저 선택하세요', 'warning');
+
+  var txData = {
+    date: document.getElementById('txDate').value,
+    code: document.getElementById('txItemCode').value,
+    type: document.getElementById('txType').value,
+    qty: document.getElementById('txQty').value,
+    person: document.getElementById('txPerson').value,
+    note: document.getElementById('txNote').value
+  };
+
+  if (!txData.date || !txData.code || !txData.type || !txData.qty) return showToast('날짜, 품목코드, 구분, 수량은 필수입니다', 'warning');
+  if (Number(txData.qty) <= 0) return showToast('수량은 1 이상이어야 합니다', 'warning');
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result.success) {
+        showToast(result.message, 'success');
+        document.getElementById('txItemNameSearch').value = '';
+        document.getElementById('txItemCode').value = '';
+        document.getElementById('txType').selectedIndex = 0;
+        document.getElementById('txQty').value = '';
+        document.getElementById('txNote').value = '';
+        loadTransactions();
+      } else { showToast(result.message, 'error'); }
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('저장 실패: ' + err.message, 'error'); })
+    .addTransaction(getToken(), shopName, txData);
+}
+
+
+</script>
