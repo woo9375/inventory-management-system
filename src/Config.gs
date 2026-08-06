@@ -4,7 +4,7 @@
  */
 
 const MIN_ANALYSIS_DAYS = 7; // 시즌 초기 일평균 산출 시 최소 분석 일수
-const ARCHIVE_FOLDER_ID = "여기에_폴더ID_입력"; // [v9.0] 월별 마감 데이터가 저장될 드라이브 폴더 ID
+const ARCHIVE_FOLDER_ID = "1gGzUY3dnc-5plYoI2J-zMdeIYTuIu1gJ"; // [v9.0] 월별 마감 데이터가 저장될 드라이브 폴더 ID ("마감 데이터")
 
 const SHEET_DASHBOARD = "📊 대시보드";
 const SHEET_INOUT     = "📝 통합 입출고 기록장"; 
