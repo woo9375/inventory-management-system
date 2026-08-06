@@ -17,8 +17,8 @@ function buildShopsSheet(ss) {
   sheet.getRange("A3:C6").setValues([
     ["식음", "맛다락", "TX"],
     ["식음", "술다락", "AX"],
-    ["온천", "남탕", "MB"],
-    ["온천", "여탕", "WB"]
+    ["스파월드", "남탕", "MB"],
+    ["스파월드", "여탕", "WB"]
   ]);
   sheet.getRange("D3:D6").setValues([["대기"], ["대기"], ["대기"], ["대기"]]);
   sheet.getRange("A3:F30").setHorizontalAlignment("center");
