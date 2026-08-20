@@ -123,7 +123,7 @@ function buildBaseDataSheet(ss) {
   const itemCategories = [
     ["원재료"], ["어메니티"], ["세제류"], ["소모품"],
     ["식재료"], ["음료"], ["청소용품"], ["린넨류"],
-    ["위생용품"], ["사무용품"], ["시설자재"], ["기타"]
+    ["위생용품"], ["사무용품"], ["시설자재"], ["저장품"], ["기타"]
   ];
   sheet.getRange(3, 3, itemCategories.length, 1).setValues(itemCategories).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
 
@@ -334,7 +334,7 @@ function buildDashboard(ss) {
   });
 
   for (let row = 5; row <= 8; row++) sheet.setRowHeight(row, 30);
-  sheet.getRange("B10:I10").setValues([["품목코드", "품목명", "ABC", "현재고", "안전재고", "발주점(ROP)", "적정발주량", "상태"]]).setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("B10:I10").setValues([["품목코드", "품목명", "규격", "현재고", "안전재고", "발주점(ROP)", "적정발주량", "상태"]]).setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
   sheet.setColumnWidth(1, 20); // Spacer
   sheet.setColumnWidth(2, 130); // 품목코드
   sheet.setColumnWidth(3, 220); sheet.setColumnWidth(8, 120);

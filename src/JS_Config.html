@@ -191,7 +191,7 @@ function submitCreateUser() {
 function openEditUserModal(username, name, dept, role, shopsStr) {
   var assigned = (shopsStr || '').split(',').map(s => s.trim()).filter(Boolean);
   
-  var shopsHtml = '<div class="checkbox-group" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">';
+  var shopsHtml = '<div id="editUserShopsContainer" class="checkbox-group" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">';
   if (window.currentShops && window.currentShops.length > 0) {
     window.currentShops.forEach(function(s) {
       var isChecked = assigned.includes(s.name) ? 'checked' : '';
@@ -203,12 +203,13 @@ function openEditUserModal(username, name, dept, role, shopsStr) {
     shopsHtml += '<span style="color:var(--text-muted);font-size:0.9rem;">등록된 업장이 없습니다.</span>';
   }
   shopsHtml += '</div>';
+  shopsHtml += '<small id="editUserShopsHelp" class="form-text text-muted" style="margin-top:5px;display:block;"></small>';
 
   var body = '<div class="form-grid">' +
     '<div class="form-group"><label>아이디</label><input type="text" value="' + escapeHtml(username) + '" readonly style="background:#e8f0fb"></div>' +
     '<div class="form-group"><label>성함</label><input type="text" id="editUserName" value="' + escapeHtml(name) + '"></div>' +
     '<div class="form-group"><label>부서</label><input type="text" id="editUserDept" value="' + escapeHtml(dept) + '"></div>' +
-    '<div class="form-group"><label>역할</label><select id="editUserRole">' +
+    '<div class="form-group"><label>역할</label><select id="editUserRole" onchange="toggleEditShops(this.value)">' +
       '<option value="staff"' + (role==='staff'?' selected':'') + '>staff</option>' +
       '<option value="manager"' + (role==='manager'?' selected':'') + '>manager</option>' +
       '<option value="admin"' + (role==='admin'?' selected':'') + '>admin</option></select></div>' +
@@ -216,6 +217,34 @@ function openEditUserModal(username, name, dept, role, shopsStr) {
     
   var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditUser(\'' + escapeHtml(username) + '\')">저장</button>';
   openModal('✏️ 사용자 수정 — ' + username, body, footer);
+  
+  // 모달 열 때 초기 상태 설정
+  toggleEditShops(role);
+}
+
+function toggleEditShops(role) {
+  var cbs = document.querySelectorAll('input[name="editUserShops"]');
+  var helpText = document.getElementById('editUserShopsHelp');
+  var isPrivileged = (role === 'admin' || role === 'manager');
+  
+  cbs.forEach(function(cb) {
+    cb.disabled = isPrivileged;
+    if (isPrivileged) {
+      cb.checked = true; // 시각적 편의를 위해 전체 선택
+    }
+  });
+  
+  if (helpText) {
+    if (isPrivileged) {
+      helpText.textContent = "Admin 및 Manager는 모든 업장에 접근 및 관리 권한이 있어 개별 배정이 불필요합니다.";
+      helpText.style.color = "var(--gold)";
+      helpText.style.fontWeight = "bold";
+    } else {
+      helpText.textContent = "해당 계정이 접근할 업장을 선택해주세요.";
+      helpText.style.color = "var(--text-muted)";
+      helpText.style.fontWeight = "normal";
+    }
+  }
 }
 
 function submitEditUser(username) {

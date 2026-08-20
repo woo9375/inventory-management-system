@@ -19,8 +19,9 @@ function renderBaseData(data) {
   var renderChips = function(items, type) {
     if (!items || items.length === 0) return '<span class="empty-state">데이터가 없습니다.</span>';
     return items.map(function(item) {
+      var safeItem = item.replace(/'/g, "\\'").replace(/"/g, '&quot;');
       var html = '<div class="chip">' + escapeHtml(item);
-      if (isAdmin) html += '<button class="chip-delete" onclick="deleteBaseDataItem(\'' + type + '\', \'' + escapeHtml(item) + '\')">×</button>';
+      if (isAdmin) html += '<button class="chip-delete" onclick="deleteBaseDataItem(\'' + type + '\', \'' + safeItem + '\')">×</button>';
       html += '</div>';
       return html;
     }).join('');

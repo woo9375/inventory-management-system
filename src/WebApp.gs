@@ -42,6 +42,16 @@ function getSessionUser(token) {
 
 
 // ═══════════════════════════════════════════════════════════════════
+//  API: 수동 동기화 (새로고침)
+// ═══════════════════════════════════════════════════════════════════
+function forceRefreshData(token) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+  CacheManager.invalidateAll();
+  return { success: true };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  API: 대시보드 데이터
 // ═══════════════════════════════════════════════════════════════════
 
@@ -200,8 +210,14 @@ function uploadItemMasterCSV(token, dataRows) {
     codeValues.forEach(row => { if (row[0]) existingCodes.add(row[0].toString()); });
   }
   
+  // 기초데이터 카테고리 유효성 검사를 위한 준비
+  const baseSheet = ss.getSheetByName(SHEET_BASE_DATA);
+  const baseLastRow = Math.max(baseSheet.getLastRow(), 3);
+  const validCategories = new Set(baseSheet.getRange(3, 3, baseLastRow - 2, 1).getValues().flat().filter(v => v));
+  
   const newRows = [];
   let ignoredCount = 0;
+  const errors = [];
   
   // CSV 데이터(dataRows) 포맷: [품목코드, 품목명, 카테고리, ABC등급, 단위, ... ]
   // 최소 품목코드(0)와 품목명(1)이 있어야 함
@@ -213,24 +229,33 @@ function uploadItemMasterCSV(token, dataRows) {
     if (existingCodes.has(code)) {
       ignoredCount++;
     } else {
-      // 신규 등록 데이터 구성 (최소 20열 구조)
-      const newRow = new Array(20).fill("");
-      newRow[0] = code; // 품목코드
-      newRow[1] = row[1] || ""; // 품목명
-      newRow[2] = row[2] || ""; // 카테고리
-      newRow[3] = row[3] || "C"; // 규격
-      newRow[4] = row[4] || ""; // 단위
-      newRow[6] = Number(row[5]) || 0; // 초기재고 (CSV 6번째 열에 있다고 가정, 없으면 0)
-      newRow[10] = Number(row[6]) || 3; // 리드타임 (시트 K열=11, 0-indexed=10)
-      newRow[11] = Number(row[7]) || 5; // 안전재고일수 (시트 L열=12, 0-indexed=11)
-      newRow[12] = Number(row[8]) || 30; // 목표유지일수 (시트 M열=13, 0-indexed=12)
-      newRow[18] = row[9] || "과세"; // 과세구분
-      newRow[19] = Number(row[10]) || 0; // 매입단가
-      
-      newRows.push(newRow);
-      existingCodes.add(code); // 같은 CSV 내 중복 방지
+      const cat = row[2] ? row[2].toString().trim() : "";
+      if (cat && !validCategories.has(cat)) {
+        errors.push(`[${code}] '${cat}'`);
+      } else {
+        // 신규 등록 데이터 구성 (최소 20열 구조)
+        const newRow = new Array(20).fill("");
+        newRow[0] = code; // 품목코드
+        newRow[1] = row[1] || ""; // 품목명
+        newRow[2] = cat; // 카테고리
+        newRow[3] = row[3] || "C"; // 규격
+        newRow[4] = row[4] || ""; // 단위
+        newRow[6] = Number(row[5]) || 0; // 초기재고 (CSV 6번째 열에 있다고 가정, 없으면 0)
+        newRow[10] = Number(row[6]) || 3; // 리드타임 (시트 K열=11, 0-indexed=10)
+        newRow[11] = Number(row[7]) || 5; // 안전재고일수 (시트 L열=12, 0-indexed=11)
+        newRow[12] = Number(row[8]) || 30; // 목표유지일수 (시트 M열=13, 0-indexed=12)
+        newRow[18] = row[9] || "과세"; // 과세구분
+        newRow[19] = Number(row[10]) || 0; // 매입단가
+        
+        newRows.push(newRow);
+        existingCodes.add(code); // 같은 CSV 내 중복 방지
+      }
     }
   });
+  
+  if (errors.length > 0) {
+    throw new Error(`미등록 카테고리가 포함된 품목이 있어 업로드가 중단되었습니다. (총 ${errors.length}건)\n기초데이터에 먼저 추가하시거나 올바른 카테고리를 입력해주세요.\n오류 항목: ${errors.join(', ')}`);
+  }
   
   if (newRows.length > 0) {
     masterSheet.getRange(masterLastRow + 1, 1, newRows.length, 20).setValues(newRows);

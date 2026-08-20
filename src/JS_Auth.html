@@ -75,27 +75,34 @@ function onLoginSuccess() {
   document.getElementById('userAvatar').textContent = initials;
   document.getElementById('userName').textContent = currentUser.name;
 
-  var roleNames = { admin: '관리자', manager: '매니저', staff: '담당자' };
-  document.getElementById('userRoleText').textContent = (roleNames[currentUser.role] || currentUser.role) + ' · ' + currentUser.dept;
+  document.getElementById('userRoleText').textContent = currentUser.role.toLowerCase() + ' · ' + currentUser.dept;
 
   // [NEW] 내 설정 데이터 바인딩
   if (document.getElementById('mySettingsUsername')) {
     document.getElementById('mySettingsUsername').value = currentUser.username;
     document.getElementById('mySettingsName').value = currentUser.name;
     document.getElementById('mySettingsDept').value = currentUser.dept;
-    document.getElementById('mySettingsRole').value = roleNames[currentUser.role] || currentUser.role;
+    document.getElementById('mySettingsRole').value = currentUser.role.toLowerCase();
     
     var shopContainer = document.getElementById('mySettingsShops');
     shopContainer.innerHTML = '';
-    if (currentUser.assignedShops && currentUser.assignedShops.length > 0) {
-      currentUser.assignedShops.forEach(function(shop) {
-        var badge = document.createElement('span');
-        badge.className = 'status-badge status-normal';
-        badge.textContent = shop;
-        shopContainer.appendChild(badge);
-      });
+    var helpText = document.querySelector('#mySettingsShops + small');
+    
+    if (currentUser.role === 'admin' || currentUser.role === 'manager') {
+      shopContainer.innerHTML = '<span class="status-badge" style="background:#fff3cd; color:#856404; font-weight:bold;">전체 업장 접근 가능</span>';
+      if (helpText) helpText.textContent = "모든 업장에 접근 및 관리 권한이 있습니다.";
     } else {
-      shopContainer.innerHTML = '<span style="color:var(--text-muted);font-size:0.9rem;">배정된 업장이 없습니다.</span>';
+      if (currentUser.assignedShops && currentUser.assignedShops.length > 0) {
+        currentUser.assignedShops.forEach(function(shop) {
+          var badge = document.createElement('span');
+          badge.className = 'status-badge status-normal';
+          badge.textContent = shop;
+          shopContainer.appendChild(badge);
+        });
+      } else {
+        shopContainer.innerHTML = '<span style="color:var(--text-muted);font-size:0.9rem;">배정된 업장이 없습니다.</span>';
+      }
+      if (helpText) helpText.textContent = "접근 가능한 업장 목록입니다. 권한 변경이 필요하면 관리자에게 문의하세요.";
     }
   }
 

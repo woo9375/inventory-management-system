@@ -40,6 +40,21 @@ function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
 }
 
+function doForceRefresh(callback) {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) { 
+      if (r.success) {
+        if(typeof callback === 'function') callback();
+      } else {
+        hideLoading(); 
+        showToast(r.message, 'error');
+      }
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('동기화 실패: ' + e.message, 'error'); })
+    .forceRefreshData(getToken());
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  로딩 & 토스트
 // ═══════════════════════════════════════════════════════════════

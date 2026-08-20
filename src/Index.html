@@ -128,10 +128,10 @@
       <div class="page-header">
         <h2>📊 대시보드</h2>
         <div class="header-meta">
+          <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)" style="border:none; font-size:1.2rem; padding:4px; margin-right:4px;" title="수동 데이터 동기화">🔄</button>
           <span id="dashDate">-</span>
           <span id="dashSeason" class="season-badge">-</span>
-          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('refreshDashboard')">🔄 통합 갱신</button>
-          <button class="btn btn-primary btn-sm" onclick="loadDashboard()">🔄 새로고침</button>
+          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('refreshDashboard')" title="통합 갱신">🔄</button>
         </div>
       </div>
 
@@ -163,7 +163,7 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>품목코드</th><th>품목명</th><th>ABC</th>
+                  <th>품목코드</th><th>품목명</th><th>규격</th>
                   <th>현재고</th><th>안전재고</th><th>발주점</th>
                   <th>적정발주량</th><th>상태</th>
                 </tr>
@@ -180,9 +180,9 @@
     <!-- ━━━━━━━━━ 입출고 기록 탭 ━━━━━━━━━ -->
     <div id="tab-transactions" class="tab-content">
       <div class="page-header">
-        <h2>📝 입출고 기록</h2>
+        <h2 style="display:flex; align-items:center;">📝 입출고 기록 <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTx)" style="border:none; font-size:1.2rem; padding:4px; margin-left:8px;" title="수동 데이터 동기화">🔄</button></h2>
         <div class="header-meta">
-          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('incrementalSync')" title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다.">⚡ 신규 내역 취합</button>
+          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('incrementalSync')" title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다.">⚡</button>
           <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()" style="border: 1px solid var(--gold); background: #fffdf5;" title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
           <select id="txShopSelect" class="form-group select" onchange="loadTransactions()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:0.85rem;">
             <option value="">업장 선택...</option>
@@ -268,7 +268,7 @@
     <!-- ━━━━━━━━━ 품목 마스터 탭 ━━━━━━━━━ -->
     <div id="tab-master" class="tab-content">
       <div class="page-header">
-        <h2>🗂️ 품목 마스터</h2>
+        <h2 style="display:flex; align-items:center;">🗂️ 품목 마스터 <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadItemMaster)" style="border:none; font-size:1.2rem; padding:4px; margin-left:8px;" title="수동 데이터 동기화">🔄</button></h2>
         <div id="masterActions" class="btn-group">
           <button class="btn btn-gold btn-sm" onclick="openNewItemModal()">➕ 신규 품목 등록</button>
           <button class="btn btn-outline btn-sm" onclick="openCsvUploadModal()">📤 CSV 업로드</button>
@@ -279,7 +279,6 @@
               <button onclick="downloadPhysicalCheckListExcel()">📥 실사 양식 다운로드 (Excel)</button>
             </div>
           </div>
-          <button class="btn btn-outline btn-sm" onclick="loadItemMaster()">🔄 새로고침</button>
         </div>
       </div>
 
@@ -309,6 +308,7 @@
               </tbody>
             </table>
           </div>
+          <div id="masterPagination" class="pagination-container" style="margin-top: 16px; text-align: center; display: flex; justify-content: center; gap: 4px;"></div>
         </div>
       </div>
     </div>
@@ -389,7 +389,6 @@
     <div id="tab-basedata" class="tab-content">
       <div class="page-header">
         <h2>📂 기초데이터 관리</h2>
-        <button class="btn btn-outline btn-sm" onclick="loadBaseData()">🔄 새로고침</button>
       </div>
 
       <div class="card">
