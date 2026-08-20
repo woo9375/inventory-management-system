@@ -1,0 +1,410 @@
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  설정
+// ═══════════════════════════════════════════════════════════════
+function loadConfig() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(config) {
+      hideLoading();
+      if (config.success === false) { showToast(config.message, 'error'); return; }
+      renderConfig(config);
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('설정 로드 실패: ' + err.message, 'error'); })
+    .getConfigData(getToken());
+}
+
+function renderConfig(config) {
+  var isAdmin = currentUser && currentUser.role === 'admin';
+  window.currentShops = config.shops || []; // 업장 목록 저장
+
+  // 업장 테이블
+  var shopBody = document.getElementById('shopTableBody');
+  shopBody.innerHTML = config.shops.map(function(s) {
+    var statusStyle = s.status === '생성완료' ? 'color:var(--normal);font-weight:600' : 'color:var(--order)';
+    var row = '<tr><td>' + s.category + '</td><td>' + s.name + '</td><td>' + s.tag + '</td><td style="' + statusStyle + '">' + s.status + '</td>';
+    if (isAdmin) {
+      row += '<td><button class="action-btn delete" onclick="confirmDeleteShop(\'' + escapeHtml(s.name) + '\')" title="삭제">🗑️</button></td>';
+    }
+    return row + '</tr>';
+  }).join('');
+
+  // 시즌 테이블
+  var seasonBody = document.getElementById('seasonTableBody');
+  seasonBody.innerHTML = config.seasons.map(function(s) {
+    var row = '<tr><td>' + s.name + '</td><td>' + s.start + '</td><td>' + s.end + '</td><td>×' + s.multiplier + '</td>';
+    if (isAdmin) {
+      row += '<td>' +
+        '<button class="action-btn edit" onclick="openEditSeasonModal(\'' + escapeHtml(s.name) + '\', \'' + s.start + '\', \'' + s.end + '\', ' + s.multiplier + ')" title="수정">✏️</button> ' +
+        '<button class="action-btn delete" onclick="confirmDeleteSeason(\'' + escapeHtml(s.name) + '\')" title="삭제">🗑️</button></td>';
+    }
+    return row + '</tr>';
+  }).join('');
+
+  // 사용자 테이블
+  var userBody = document.getElementById('userTableBody');
+  userBody.innerHTML = config.users.map(function(u) {
+    var roleBadge = '<span class="role-badge ' + u.role + '">' + u.role + '</span>';
+    var shopsStr = u.assignedShops ? u.assignedShops.join(',') : '';
+    var row = '<tr><td>' + u.username + '</td><td>' + u.name + '</td><td>' + u.dept + '</td><td>' + roleBadge + '</td>';
+    if (isAdmin) {
+      row += '<td>' +
+        '<button class="action-btn edit" onclick="openEditUserModal(\'' + escapeHtml(u.username) + '\', \'' + escapeHtml(u.name) + '\', \'' + escapeHtml(u.dept) + '\', \'' + u.role + '\', \'' + escapeHtml(shopsStr) + '\')" title="수정">✏️</button> ' +
+        '<button class="action-btn key" onclick="openResetPasswordModal(\'' + escapeHtml(u.username) + '\')" title="비밀번호 초기화">🔑</button> ' +
+        '<button class="action-btn delete" onclick="confirmDeleteUser(\'' + escapeHtml(u.username) + '\')" title="삭제">🗑️</button></td>';
+    }
+    return row + '</tr>';
+  }).join('');
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 업장 CRUD 모달
+// ═══════════════════════════════════════════════════════════════
+function openAddShopModal() {
+  var body = '<div class="form-grid">' +
+    '<div class="form-group"><label>분류</label><select id="newShopCategory"><option value="">선택...</option></select></div>' +
+    '<div class="form-group"><label>업장명</label><input type="text" id="newShopName" placeholder="예: 맛다락"></div>' +
+    '<div class="form-group" style="grid-column: span 2"><label>거래ID 태그 (2~3자)</label><input type="text" id="newShopTag" placeholder="예: TX" maxlength="3"></div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitNewShop()">추가</button>';
+  openModal('➕ 업장 추가', body, footer);
+
+  // 분류 드롭다운
+  google.script.run.withSuccessHandler(function(config) {
+    var sel = document.getElementById('newShopCategory');
+    var cats = ['호텔','콘도','빌리지','스파월드','식음','조리','관리','구매','판촉'];
+    cats.forEach(function(c) { var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+  }).getConfigData(getToken());
+}
+
+function submitNewShop() {
+  var data = {
+    category: document.getElementById('newShopCategory').value,
+    name: document.getElementById('newShopName').value.trim(),
+    tag: document.getElementById('newShopTag').value.trim().toUpperCase()
+  };
+  if (!data.category || !data.name || !data.tag) return showToast('필수 필드를 입력해주세요', 'warning');
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); loadShopList(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
+    .addShop(getToken(), data);
+}
+
+function confirmDeleteShop(name) {
+  var body = '<p style="text-align:center;font-size:1rem;">업장 <strong>"' + name + '"</strong>을(를) 삭제하시겠습니까?<br><span style="color:var(--risk);font-size:0.85rem;">⚠️ 해당 업장의 모든 입출고 데이터가 삭제됩니다.</span></p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteShop(\'' + escapeHtml(name) + '\')">삭제</button>';
+  openModal('🗑️ 업장 삭제 확인', body, footer);
+}
+
+function doDeleteShop(name) {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); loadShopList(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
+    .deleteShop(getToken(), name);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 시즌 CRUD 모달
+// ═══════════════════════════════════════════════════════════════
+function openAddSeasonModal() {
+  var body = '<div class="form-grid">' +
+    '<div class="form-group"><label>시즌명</label><input type="text" id="newSeasonName" placeholder="예: 여름성수기"></div>' +
+    '<div class="form-group"><label>시작일</label><input type="date" id="newSeasonStart"></div>' +
+    '<div class="form-group"><label>종료일</label><input type="date" id="newSeasonEnd"></div>' +
+    '<div class="form-group"><label>안전재고 배수</label><input type="number" id="newSeasonMult" value="1.0" step="0.1" min="0.1"></div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitNewSeason()">추가</button>';
+  openModal('➕ 시즌 추가', body, footer);
+}
+
+function submitNewSeason() {
+  var data = { name: document.getElementById('newSeasonName').value, start: document.getElementById('newSeasonStart').value, end: document.getElementById('newSeasonEnd').value, multiplier: document.getElementById('newSeasonMult').value };
+  if (!data.name || !data.start || !data.end || !data.multiplier) return showToast('모든 필드를 입력해주세요', 'warning');
+  showLoading();
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).addSeason(getToken(), data);
+}
+
+function openEditSeasonModal(name, start, end, mult) {
+  var body = '<div class="form-grid">' +
+    '<div class="form-group"><label>시즌명</label><input type="text" id="editSeasonName" value="' + escapeHtml(name) + '" readonly style="background:#e8f0fb"></div>' +
+    '<div class="form-group"><label>시작일</label><input type="date" id="editSeasonStart" value="' + start + '"></div>' +
+    '<div class="form-group"><label>종료일</label><input type="date" id="editSeasonEnd" value="' + end + '"></div>' +
+    '<div class="form-group"><label>안전재고 배수</label><input type="number" id="editSeasonMult" value="' + mult + '" step="0.1" min="0.1"></div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditSeason(\'' + escapeHtml(name) + '\')">저장</button>';
+  openModal('✏️ 시즌 수정 — ' + name, body, footer);
+}
+
+function submitEditSeason(name) {
+  var updates = { start: document.getElementById('editSeasonStart').value, end: document.getElementById('editSeasonEnd').value, multiplier: document.getElementById('editSeasonMult').value };
+  showLoading();
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).updateSeason(getToken(), name, updates);
+}
+
+function confirmDeleteSeason(name) {
+  var body = '<p style="text-align:center;">시즌 <strong>"' + name + '"</strong>을(를) 삭제하시겠습니까?</p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteSeason(\'' + escapeHtml(name) + '\')">삭제</button>';
+  openModal('🗑️ 시즌 삭제 확인', body, footer);
+}
+
+function doDeleteSeason(name) {
+  showLoading();
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).deleteSeason(getToken(), name);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 사용자 CRUD 모달
+// ═══════════════════════════════════════════════════════════════
+function openCreateUserModal() {
+  var body = '<div class="form-grid">' +
+    '<div class="form-group"><label>아이디 (회사 이메일)</label><input type="email" id="newUserUsername" placeholder="예: hong_gd@dukgu.com"></div>' +
+    '<div class="form-group"><label>초기 비밀번호</label><input type="text" id="newUserPassword" placeholder="4자 이상"></div>' +
+    '<div class="form-group"><label>성함</label><input type="text" id="newUserName" placeholder="이름"></div>' +
+    '<div class="form-group"><label>부서</label><input type="text" id="newUserDept" placeholder="부서명"></div>' +
+    '<div class="form-group"><label>역할</label><select id="newUserRole"><option value="staff">staff (담당자)</option><option value="manager">manager (매니저)</option><option value="admin">admin (관리자)</option></select></div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitCreateUser()">생성</button>';
+  openModal('➕ 사용자 계정 생성', body, footer);
+}
+
+function submitCreateUser() {
+  var data = {
+    username: document.getElementById('newUserUsername').value.trim(),
+    password: document.getElementById('newUserPassword').value,
+    name: document.getElementById('newUserName').value.trim(),
+    dept: document.getElementById('newUserDept').value.trim(),
+    role: document.getElementById('newUserRole').value
+  };
+  if (!data.username || !data.password || !data.name || !data.role) return showToast('모든 필수 필드를 입력해주세요', 'warning');
+  if (data.password.length < 4) return showToast('비밀번호는 4자 이상이어야 합니다', 'warning');
+
+  showLoading();
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).createUser(getToken(), data);
+}
+
+function openEditUserModal(username, name, dept, role, shopsStr) {
+  var assigned = (shopsStr || '').split(',').map(s => s.trim()).filter(Boolean);
+  
+  var shopsHtml = '<div class="checkbox-group" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">';
+  if (window.currentShops && window.currentShops.length > 0) {
+    window.currentShops.forEach(function(s) {
+      var isChecked = assigned.includes(s.name) ? 'checked' : '';
+      shopsHtml += '<label style="display:inline-flex;align-items:center;gap:4px;font-size:0.9rem;cursor:pointer;">' +
+                   '<input type="checkbox" name="editUserShops" value="' + escapeHtml(s.name) + '" ' + isChecked + '> ' + escapeHtml(s.name) +
+                   '</label>';
+    });
+  } else {
+    shopsHtml += '<span style="color:var(--text-muted);font-size:0.9rem;">등록된 업장이 없습니다.</span>';
+  }
+  shopsHtml += '</div>';
+
+  var body = '<div class="form-grid">' +
+    '<div class="form-group"><label>아이디</label><input type="text" value="' + escapeHtml(username) + '" readonly style="background:#e8f0fb"></div>' +
+    '<div class="form-group"><label>성함</label><input type="text" id="editUserName" value="' + escapeHtml(name) + '"></div>' +
+    '<div class="form-group"><label>부서</label><input type="text" id="editUserDept" value="' + escapeHtml(dept) + '"></div>' +
+    '<div class="form-group"><label>역할</label><select id="editUserRole">' +
+      '<option value="staff"' + (role==='staff'?' selected':'') + '>staff</option>' +
+      '<option value="manager"' + (role==='manager'?' selected':'') + '>manager</option>' +
+      '<option value="admin"' + (role==='admin'?' selected':'') + '>admin</option></select></div>' +
+    '<div class="form-group" style="grid-column: span 2"><label>배정된 업장</label>' + shopsHtml + '</div></div>';
+    
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditUser(\'' + escapeHtml(username) + '\')">저장</button>';
+  openModal('✏️ 사용자 수정 — ' + username, body, footer);
+}
+
+function submitEditUser(username) {
+  var selectedShops = [];
+  var checkboxes = document.querySelectorAll('input[name="editUserShops"]:checked');
+  checkboxes.forEach(function(cb) { selectedShops.push(cb.value); });
+  
+  var updates = { 
+    name: document.getElementById('editUserName').value, 
+    dept: document.getElementById('editUserDept').value, 
+    role: document.getElementById('editUserRole').value,
+    assignedShops: selectedShops
+  };
+  showLoading();
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).updateUser(getToken(), username, updates);
+}
+
+function openResetPasswordModal(username) {
+  var body = '<div class="form-grid"><div class="form-group" style="grid-column:span 2"><label><strong>' + escapeHtml(username) + '</strong>의 새 비밀번호</label><input type="text" id="resetNewPw" placeholder="4자 이상"></div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitResetPassword(\'' + escapeHtml(username) + '\')">초기화</button>';
+  openModal('🔑 비밀번호 초기화', body, footer);
+}
+
+function submitResetPassword(username) {
+  var newPw = document.getElementById('resetNewPw').value;
+  if (!newPw || newPw.length < 4) return showToast('비밀번호는 4자 이상이어야 합니다', 'warning');
+  showLoading();
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) closeModal(); })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).resetPassword(getToken(), username, newPw);
+}
+
+function confirmDeleteUser(username) {
+  var body = '<p style="text-align:center;">계정 <strong>"' + username + '"</strong>을(를) 삭제하시겠습니까?</p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteUser(\'' + escapeHtml(username) + '\')">삭제</button>';
+  openModal('🗑️ 계정 삭제 확인', body, footer);
+}
+
+function doDeleteUser(username) {
+  showLoading();
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).deleteUser(getToken(), username);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 수동 월마감 기능
+// ═══════════════════════════════════════════════════════════════
+function openMonthlyClosingModal() {
+  if (currentUser && currentUser.role !== 'admin') {
+    return showToast('최고 관리자만 실행할 수 있습니다.', 'error');
+  }
+
+  var d = new Date();
+  var currYear = d.getFullYear();
+  var currMonth = d.getMonth() + 1;
+  
+  var yrOptions = '';
+  for(var y = currYear - 1; y <= currYear; y++) {
+    yrOptions += '<option value="' + y + '"' + (y===currYear ? ' selected' : '') + '>' + y + '년</option>';
+  }
+  
+  var mthOptions = '';
+  for(var m = 1; m <= 12; m++) {
+    mthOptions += '<option value="' + m + '"' + (m===currMonth ? ' selected' : '') + '>' + m + '월</option>';
+  }
+
+  var body = '<div class="form-grid">' +
+    '<div class="form-group" style="grid-column: span 2;">' +
+    '<p style="color:var(--risk); font-weight:bold; margin-bottom:10px;">⚠️ 경고: 월마감을 실행하면 선택한 연/월 이전의 모든 과거 데이터가 별도의 드라이브 시트로 분리되며, 현재 메인 시트에서 삭제됩니다. 남은 재고는 새롭게 선입선출 이월 기록으로 생성됩니다.</p>' +
+    '</div>' +
+    '<div class="form-group"><label>마감 기준 연도</label><select id="closingYear">' + yrOptions + '</select></div>' +
+    '<div class="form-group"><label>마감 기준 월</label><select id="closingMonth">' + mthOptions + '</select></div>' +
+    '</div>';
+    
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="confirmMonthlyClosing()">실행</button>';
+  openModal('🗓️ 월마감 및 재고 이월 실행', body, footer);
+}
+
+function confirmMonthlyClosing() {
+  var year = document.getElementById('closingYear').value;
+  var month = document.getElementById('closingMonth').value;
+  
+  var body = '<h3 style="text-align:center; margin-bottom:15px; color:var(--risk);">정말 ' + year + '년 ' + month + '월 마감을 실행하시겠습니까?</h3>' + 
+             '<p style="text-align:center;">이 작업은 되돌릴 수 없습니다.<br>계속하시려면 <strong>동의</strong>라고 입력해주세요.</p>' +
+             '<input type="text" id="closingConfirmText" class="form-control" style="margin-top:10px; text-align:center;" placeholder="동의">';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="submitMonthlyClosing(' + year + ', ' + month + ')">최종 마감 실행</button>';
+  openModal('🚨 월마감 최종 확인', body, footer);
+}
+
+function submitMonthlyClosing(year, month) {
+  var txt = document.getElementById('closingConfirmText').value;
+  if (txt !== '동의') {
+    return showToast('"동의"라고 입력하셔야 실행됩니다.', 'warning');
+  }
+  
+  showLoading();
+  // 시간이 오래 걸리는 작업이므로 토스트 띄우기
+  showToast('마감 및 이월 데이터 생성 중... 시간이 다소 소요될 수 있습니다.', 'info');
+  
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res.success) {
+        showToast(res.message, 'success');
+        closeModal();
+      } else {
+        showToast('마감 실패: ' + res.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('네트워크/서버 오류: ' + err.message, 'error');
+    })
+    .executeMonthlyClosing(getToken(), year, month);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  [NEW] 시스템 명령 실행기
+// ═══════════════════════════════════════════════════════════════
+function execCommand(command) {
+  if (currentUser && currentUser.role !== 'admin') {
+    return showToast('최고 관리자만 실행할 수 있습니다.', 'error');
+  }
+
+  var cmdConfig = {
+    'refreshDashboard': {
+      title: '🔄 대시보드 및 재고 갱신',
+      desc: '현재 전체 재고 상태와 대시보드 통계를 즉시 재계산합니다.',
+      btn: 'btn-primary',
+      btnText: '갱신'
+    },
+    'syncPermissions': {
+      title: '🔐 권한 재동기화',
+      desc: '사용자 시트의 직급에 맞게 시트 보호 및 권한 설정을 초기화하고 재동기화합니다.',
+      btn: 'btn-gold',
+      btnText: '동기화'
+    },
+    'validateSeason': {
+      title: '✅ 시즌 설정 검증',
+      desc: '시즌 날짜에 중복이나 역전 오류가 없는지 전체 검사합니다.',
+      btn: 'btn-primary',
+      btnText: '검증'
+    },
+    'backupCSV': {
+      title: '💾 CSV 백업 실행',
+      desc: '현재 전체 데이터베이스를 백업 폴더에 CSV 파일로 강제 백업합니다.',
+      btn: 'btn-gold',
+      btnText: '백업 시작'
+    },
+    'incrementalSync': {
+      title: '⚡ 신규 내역 취합',
+      desc: '각 업장 시트에 새롭게 입력된 최신 거래 내역만 메인으로 빠르게 통합합니다.',
+      btn: 'btn-primary',
+      btnText: '취합 시작'
+    }
+  };
+
+  var conf = cmdConfig[command];
+  if (!conf) return showToast('알 수 없는 명령어입니다.', 'error');
+
+  var body = '<p style="text-align:center; margin-bottom:15px; font-size:1.05rem;"><strong>' + conf.title + '</strong> 작업을 실행하시겠습니까?</p>' +
+             '<p style="text-align:center; color:var(--text-secondary);">' + conf.desc + '</p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+               '<button class="btn ' + conf.btn + '" onclick="submitSystemCommand(\'' + command + '\')">' + conf.btnText + '</button>';
+               
+  openModal(conf.title, body, footer);
+}
+
+function submitSystemCommand(command) {
+  closeModal();
+  showLoading();
+  showToast('작업 실행 중...', 'info');
+  
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res.success) {
+        showToast(res.message, 'success');
+      } else {
+        showToast(res.message, 'warning');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('명령 실행 중 오류 발생: ' + err.message, 'error');
+    })
+    .runSystemCommand(getToken(), command);
+}
+</script>

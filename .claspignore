@@ -1,0 +1,12 @@
+# CLASP 업로드 제외 목록
+node_modules/**
+.git/**
+.gitignore
+.claspignore
+README.md
+*.md
+package.json
+package-lock.json
+
+# 백업 및 레거시 파일 (src/ 안의 파일만 업로드되도록 구성)
+backup/**

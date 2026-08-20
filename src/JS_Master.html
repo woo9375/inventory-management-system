@@ -1,0 +1,330 @@
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  품목 마스터
+// ═══════════════════════════════════════════════════════════════
+function loadItemMaster() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(items) { hideLoading(); renderItemMaster(items); })
+    .withFailureHandler(function(err) { hideLoading(); showToast('품목 로드 실패: ' + err.message, 'error'); })
+    .getItemMasterData(getToken());
+}
+
+function renderItemMaster(items) {
+  var tbody = document.getElementById('masterTableBody');
+  document.getElementById('masterCount').textContent = items.length + '개';
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" class="empty-state"><span class="empty-icon">🗂️</span><p>등록된 품목이 없습니다</p></td></tr>';
+    return;
+  }
+  var canEdit = currentUser && currentUser.role !== 'staff';
+  
+  // [v8.0] DocumentFragment를 이용한 렌더링 최적화
+  var fragment = document.createDocumentFragment();
+  
+  items.forEach(function(item) {
+    var statusClass = 'normal', statusText = '✅ 정상';
+    if (item.status && item.status.indexOf('위험') !== -1) { statusClass = 'risk'; statusText = '🚨 위험'; }
+    else if (item.status && item.status.indexOf('발주') !== -1) { statusClass = 'order'; statusText = '⚠️ 발주필요'; }
+
+    var tr = document.createElement('tr');
+    var html = '<td><strong>' + escapeHtml(item.code) + '</strong></td><td>' + escapeHtml(item.name) + '</td><td>' + escapeHtml(item.category) + '</td>' +
+      '<td>' + escapeHtml(item.grade) + '</td><td>' + escapeHtml(item.unit) + '</td><td>' + item.currentStock + '</td>' +
+      '<td>' + item.dailyUsage + '</td><td>' + item.safetyStock + '</td><td>' + item.rop + '</td>' +
+      '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
+      '<td class="text-right">' + formatNumber(item.unitPrice) + '</td>';
+      
+    if (canEdit) {
+      html += '<td class="text-center"><div class="btn-group">' + 
+              '<button class="action-btn edit" onclick="openEditItemModal(\'' + item.code + '\')" title="수정">✏️</button>' +
+              '<button class="action-btn" style="background:#e0e7ff" onclick="viewItemHistory(\'' + item.code + '\')" title="이력조회">🕒</button>' +
+              '<button class="action-btn" style="background:#ffe0e0" onclick="deleteItemMaster(\'' + item.code + '\')" title="삭제">🗑️</button>' +
+              '</div></td>';
+    } else {
+      html += '<td class="text-center"><button class="action-btn" style="background:#e0e7ff" onclick="viewItemHistory(\'' + item.code + '\')" title="이력조회">🕒</button></td>';
+    }
+    tr.innerHTML = html;
+    fragment.appendChild(tr);
+  });
+  
+  tbody.innerHTML = '';
+  tbody.appendChild(fragment);
+}
+
+function deleteItemMaster(code) {
+  var body = '<p style="text-align:center;">품목 <strong>"' + escapeHtml(code) + '"</strong>을(를) 삭제하시겠습니까?</p>' +
+             '<p style="text-align:center; font-size:0.85rem; color:var(--text-secondary);">과거 거래 내역 유지를 위해 \'사용 안 함\' 상태로 전환됩니다.</p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+               '<button class="btn btn-danger" onclick="doDeleteItemMaster(\'' + escapeHtml(code) + '\')">삭제</button>';
+  openModal('🗑️ 품목 삭제 확인', body, footer);
+}
+
+function doDeleteItemMaster(code) {
+  closeModal();
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res.success) {
+        showToast(res.message, 'success');
+        loadItemMaster();
+      } else {
+        showToast(res.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('삭제 실패: ' + err.message, 'error');
+    })
+    .disableItemMaster(getToken(), code);
+}
+
+function viewItemHistory(code) {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res.success) return showToast(res.message, 'error');
+      
+      var records = res.records;
+      var body = '<div class="data-table-wrapper" style="max-height: 400px; overflow-y: auto;">' +
+                 '<table class="data-table"><thead><tr><th>일시</th><th>변경자</th><th>필드</th><th>이전 값</th><th>새 값</th></tr></thead><tbody>';
+      
+      if (records.length === 0) {
+        body += '<tr><td colspan="5" class="text-center text-secondary" style="padding: 24px;">변경 이력이 없습니다.</td></tr>';
+      } else {
+        records.forEach(function(r) {
+          body += '<tr>' +
+                  '<td style="white-space: nowrap">' + r.date + '</td>' +
+                  '<td style="white-space: nowrap">' + r.user + '</td>' +
+                  '<td>' + escapeHtml(r.field) + '</td>' +
+                  '<td style="color:var(--text-secondary); text-decoration:line-through">' + escapeHtml(r.oldValue) + '</td>' +
+                  '<td style="color:var(--navy-700); font-weight:600">' + escapeHtml(r.newValue) + '</td>' +
+                  '</tr>';
+        });
+      }
+      body += '</tbody></table></div>';
+      var footer = '<button class="btn btn-outline" onclick="closeModal()">닫기</button>';
+      openModal('🕒 품목 마스터 변경 이력 — ' + code, body, footer);
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('이력 조회 실패: ' + err.message, 'error'); })
+    .getItemChangelog(getToken(), code);
+}
+
+function openNewItemModal() {
+  var body = '<div class="form-grid">' +
+    '<div class="form-group"><label>품목코드</label><input type="text" id="newItemCode" placeholder="예: ITM-003"></div>' +
+    '<div class="form-group"><label>품목명</label><input type="text" id="newItemName" placeholder="품목명"></div>' +
+    '<div class="form-group"><label>카테고리</label><select id="newItemCategory"><option value="">선택...</option></select></div>' +
+    '<div class="form-group"><label>규격</label><select id="newItemGrade"><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></div>' +
+    '<div class="form-group"><label>단위</label><input type="text" id="newItemUnit" placeholder="박스, 개, kg..."></div>' +
+    '<div class="form-group"><label>초기재고</label><input type="number" id="newItemStock" value="0" min="0"></div>' +
+    '<div class="form-group"><label>리드타임(일)</label><input type="number" id="newItemLead" value="3" min="1"></div>' +
+    '<div class="form-group"><label>안전재고일수</label><input type="number" id="newItemSafety" value="5" min="1"></div>' +
+    '<div class="form-group"><label>목표유지일수</label><input type="number" id="newItemTarget" value="30" min="1"></div>' +
+    '<div class="form-group"><label>과세구분</label><select id="newItemTax"><option value="과세">과세</option><option value="비과세">비과세</option></select></div>' +
+    '<div class="form-group"><label>매입단가(원)</label><input type="number" id="newItemPrice" value="0" min="0"></div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitNewItem()">등록</button>';
+  openModal('➕ 신규 품목 등록', body, footer);
+
+  google.script.run.withSuccessHandler(function(config) {
+    var catSelect = document.getElementById('newItemCategory');
+    if (config && config.categories) {
+      config.categories.forEach(function(cat) { var opt = document.createElement('option'); opt.value = cat; opt.textContent = cat; catSelect.appendChild(opt); });
+    }
+  }).getConfigData(getToken());
+}
+
+function submitNewItem() {
+  var itemData = {
+    code: document.getElementById('newItemCode').value,
+    name: document.getElementById('newItemName').value,
+    category: document.getElementById('newItemCategory').value,
+    grade: document.getElementById('newItemGrade').value,
+    unit: document.getElementById('newItemUnit').value,
+    initStock: Number(document.getElementById('newItemStock').value),
+    leadTime: Number(document.getElementById('newItemLead').value),
+    safetyDays: Number(document.getElementById('newItemSafety').value),
+    targetDays: Number(document.getElementById('newItemTarget').value),
+    taxType: document.getElementById('newItemTax').value,
+    unitPrice: Number(document.getElementById('newItemPrice').value)
+  };
+  if (!itemData.code || !itemData.name) return showToast('품목코드와 품목명은 필수입니다', 'warning');
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result.success) { showToast(result.message, 'success'); closeModal(); loadItemMaster(); loadItemCodes(); }
+      else { showToast(result.message, 'error'); }
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('등록 실패: ' + err.message, 'error'); })
+    .addNewItem(getToken(), itemData);
+}
+
+function openEditItemModal(code) {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(items) {
+      hideLoading();
+      var item = items.find(function(i) { return i.code === code; });
+      if (!item) return showToast('품목을 찾을 수 없습니다', 'error');
+
+      var body = '<div class="form-grid">' +
+        '<div class="form-group"><label>품목코드</label><input type="text" value="' + item.code + '" readonly style="background:#e8f0fb"></div>' +
+        '<div class="form-group"><label>품목명</label><input type="text" id="editItemName" value="' + escapeHtml(item.name) + '"></div>' +
+        '<div class="form-group"><label>카테고리</label><select id="editItemCategory"><option value="' + escapeHtml(item.category) + '">' + escapeHtml(item.category) + '</option></select></div>' +
+        '<div class="form-group"><label>규격</label><select id="editItemGrade">' +
+          '<option value="A"' + (item.grade==='A'?' selected':'') + '>A</option>' +
+          '<option value="B"' + (item.grade==='B'?' selected':'') + '>B</option>' +
+          '<option value="C"' + (item.grade==='C'?' selected':'') + '>C</option></select></div>' +
+        '<div class="form-group"><label>단위</label><select id="editItemUnit"><option value="' + escapeHtml(item.unit) + '">' + escapeHtml(item.unit) + '</option></select></div>' +
+        '<div class="form-group"><label>초기재고</label><input type="number" id="editItemStock" value="' + item.initStock + '"></div>' +
+        '<div class="form-group"><label>리드타임(일)</label><input type="number" id="editItemLead" value="' + item.leadTime + '"></div>' +
+        '<div class="form-group"><label>안전재고일수</label><input type="number" id="editItemSafety" value="' + item.safetyDays + '"></div>' +
+        '<div class="form-group"><label>목표유지일수</label><input type="number" id="editItemTarget" value="' + item.targetDays + '"></div>' +
+        '<div class="form-group"><label>과세구분</label><select id="editItemTax">' +
+          '<option value="과세"' + (item.taxType==='과세'?' selected':'') + '>과세</option>' +
+          '<option value="비과세"' + (item.taxType==='비과세'?' selected':'') + '>비과세</option></select></div>' +
+        '<div class="form-group"><label>매입단가(원)</label><input type="number" id="editItemPrice" value="' + item.unitPrice + '"></div></div>';
+      var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditItem(\'' + code + '\')">저장</button>';
+      openModal('✏️ 품목 수정 — ' + code, body, footer);
+    })
+    .withFailureHandler(function() { hideLoading(); showToast('데이터 로드 실패', 'error'); })
+    .getItemMasterData(getToken());
+}
+
+function submitEditItem(code) {
+  var updates = {
+    name: document.getElementById('editItemName').value,
+    category: document.getElementById('editItemCategory').value,
+    grade: document.getElementById('editItemGrade').value,
+    unit: document.getElementById('editItemUnit').value,
+    initStock: Number(document.getElementById('editItemStock').value),
+    leadTime: Number(document.getElementById('editItemLead').value),
+    safetyDays: Number(document.getElementById('editItemSafety').value),
+    targetDays: Number(document.getElementById('editItemTarget').value),
+    taxType: document.getElementById('editItemTax').value,
+    unitPrice: Number(document.getElementById('editItemPrice').value)
+  };
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideLoading();
+      if (result.success) { showToast(result.message, 'success'); closeModal(); loadItemMaster(); loadItemCodes(); }
+      else { showToast(result.message, 'error'); }
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('수정 실패: ' + err.message, 'error'); })
+    .updateItem(getToken(), code, updates);
+}
+
+
+
+// [v8.0] 검색 디바운스 적용
+var masterSearchTimeout = null;
+
+function filterItemMaster() {
+  clearTimeout(masterSearchTimeout);
+  
+  masterSearchTimeout = setTimeout(function() {
+    var input = document.getElementById('masterSearchInput');
+    if (!input) return;
+    var filter = input.value.toLowerCase().trim();
+    var tbody = document.getElementById('masterTableBody');
+    if(!tbody) return;
+    var trs = tbody.getElementsByTagName('tr');
+    
+    var visibleCount = 0;
+    for (var i = 0; i < trs.length; i++) {
+      var tdCode = trs[i].getElementsByTagName('td')[0];
+      var tdName = trs[i].getElementsByTagName('td')[1];
+      if (tdCode || tdName) {
+        var code = tdCode ? tdCode.textContent || tdCode.innerText : "";
+        var name = tdName ? tdName.textContent || tdName.innerText : "";
+        if (code.toLowerCase().indexOf(filter) > -1 || name.toLowerCase().indexOf(filter) > -1) {
+          trs[i].style.display = "";
+          visibleCount++;
+        } else {
+          trs[i].style.display = "none";
+        }
+      }
+    }
+    
+    var countEl = document.getElementById('masterCount');
+    if (countEl) {
+      if (filter.length > 0) {
+        countEl.textContent = '검색 결과: ' + visibleCount + '개';
+      } else {
+        countEl.textContent = trs.length + '개';
+      }
+    }
+  }, 300); // 300ms 딜레이
+}
+
+function openCsvUploadModal() {
+  var body = '<div class="form-grid">' +
+    '<div class="form-group" style="grid-column: span 2;">' +
+    '<label>CSV 파일 선택</label>' +
+    '<input type="file" id="csvFileInput" accept=".csv" class="form-control" style="padding: 10px; border: 1px dashed var(--border); width: 100%; border-radius: var(--radius-sm);">' +
+    '<p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">* 품목코드, 품목명, 카테고리, 단위 순서 권장. (기존 품목코드 존재 시 무시됨)</p>' +
+    '</div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="processCsvUpload()">업로드</button>';
+  openModal('📤 품목 마스터 CSV 대량 업로드', body, footer);
+}
+
+function processCsvUpload() {
+  var fileInput = document.getElementById('csvFileInput');
+  if (!fileInput.files || fileInput.files.length === 0) {
+    return showToast('CSV 파일을 선택해주세요.', 'warning');
+  }
+  
+  var file = fileInput.files[0];
+  var reader = new FileReader();
+  
+  reader.onload = function(e) {
+    var text = e.target.result;
+    var lines = text.split('\n');
+    var dataRows = [];
+    
+    // 단순 파싱 (큰따옴표 무시, 쉼표 기준 분리) - 실제 환경에서는 CSV 파서 필요할 수 있음
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
+      // 첫 행(헤더) 무시 방지 조건이 필요하다면 여기에 추가 (예: i===0 이면 continue 등)
+      // 여기서는 백엔드에서 1차적으로 검증한다고 가정
+      var cols = line.split(',');
+      if (cols.length >= 2) {
+        dataRows.push(cols.map(function(c) { return c.replace(/^"|"$/g, '').trim(); }));
+      }
+    }
+    
+    if (dataRows.length === 0) {
+      return showToast('유효한 데이터가 없습니다.', 'error');
+    }
+    
+    showLoading();
+    google.script.run
+      .withSuccessHandler(function(res) {
+        hideLoading();
+        if (res.success) {
+          showToast(res.message, 'success');
+          closeModal();
+          loadItemMaster();
+        } else {
+          showToast(res.message, 'error');
+        }
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('업로드 중 오류 발생: ' + err.message, 'error');
+      })
+      .uploadItemMasterCSV(getToken(), dataRows);
+  };
+  
+  reader.onerror = function() {
+    showToast('파일을 읽는 중 오류가 발생했습니다.', 'error');
+  };
+  
+  reader.readAsText(file, 'UTF-8'); // 만약 한글 깨짐 시 'EUC-KR' 고려
+}
+</script>

@@ -1,0 +1,15 @@
+# Node modules
+node_modules/
+
+# CLASP credentials (절대 업로드 금지)
+.clasprc.json
+
+# OS generated files
+Thumbs.db
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+.vscode/
+.idea/
