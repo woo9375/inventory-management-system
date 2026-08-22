@@ -15,7 +15,7 @@ function openShopSelectionModal() {
   
   shops.forEach(function(opt) {
     if (!opt.value) return; 
-    body += '<button class="btn btn-outline" style="text-align:left; padding:16px 20px; font-size:1.1rem; justify-content:flex-start; border-radius:12px;" onclick="selectShopFromModal(\'' + opt.value + '\', \'' + opt.textContent + '\')">🏪 ' + opt.textContent + '</button>';
+    body += '<button class="btn btn-outline" style="text-align:left; padding:16px 20px; font-size:1.1rem; justify-content:flex-start; border-radius:12px;" onclick="selectShopFromModal(\'' + opt.value + '\', \'' + opt.textContent + '\')">' + opt.textContent + '</button>';
   });
   
   body += '</div>';
@@ -27,7 +27,7 @@ function selectShopFromModal(value, text) {
   var select = document.getElementById('txShopSelect');
   select.value = value;
   var btn = document.getElementById('btnShopSelectModal');
-  if(btn) btn.innerHTML = '🏪 현재 작업 업장: ' + text + ' ▼';
+  if(btn) btn.innerHTML = '🏪 업장 선택: ' + text + ' ▼';
   closeModal();
   loadTransactions();
 }

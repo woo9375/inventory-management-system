@@ -70,12 +70,6 @@ function onLoginSuccess() {
   document.getElementById('loginContainer').classList.add('hidden');
   document.getElementById('appContainer').style.display = 'flex';
 
-  // 사이드바 사용자 정보 표시
-  var initials = currentUser.name ? currentUser.name.charAt(0) : '?';
-  document.getElementById('userAvatar').textContent = initials;
-  document.getElementById('userName').textContent = currentUser.name;
-
-  document.getElementById('userRoleText').textContent = currentUser.role.toLowerCase() + ' · ' + currentUser.dept;
 
   // [NEW] 내 설정 데이터 바인딩
   if (document.getElementById('mySettingsUsername')) {

@@ -103,19 +103,12 @@
         </button>
       </nav>
 
-      <!-- [NEW] 로그인 사용자 정보 -->
-      <div id="sidebarUser" class="sidebar-user">
-        <div class="user-info">
-          <div class="user-name" id="userName">-</div>
-          <div class="user-role-text" id="userRoleText">-</div>
-        </div>
-        <button class="logout-btn" onclick="doLogout()" title="로그아웃">🚪 로그아웃</button>
+      <!-- 로그아웃 버튼 (사이드바 하단 고정) -->
+      <div style="padding: 20px; border-top: 1px solid var(--border);">
+        <button class="logout-btn" onclick="doLogout()" title="로그아웃" style="width: 100%;">🚪 로그아웃</button>
       </div>
 
-      <div class="sidebar-footer">
-        <div id="lastSyncStatus" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">
-          <span class="nav-icon" style="font-size: 0.8rem;">🔄</span> 최신 갱신일: <span id="lastSyncTimeText">-</span>
-        </div>
+      <div class="sidebar-footer" style="padding-top: 0; padding-bottom: 20px;">
         © 2026 (주)호텔덕구온천<br>재고 관리 시스템
       </div>
     </aside>
@@ -213,9 +206,8 @@
             <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()"
               style="border: 1px solid var(--gold); background: #fffdf5;"
               title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
-            <button id="btnShopSelectModal" class="btn btn-outline" onclick="openShopSelectionModal()"
-              style="font-weight:bold; font-size:1.0rem; border: 2px solid var(--navy-600); border-radius: 8px; padding: 6px 16px; color: var(--navy-800); background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-              🏪 작업 업장 선택...
+            <button id="btnShopSelectModal" class="btn btn-outline" onclick="openShopSelectionModal()" style="font-weight:bold; font-size:1.0rem; border: 2px solid var(--navy-600); border-radius: 8px; padding: 6px 16px; color: var(--navy-800); background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+              🏪 업장 선택...
             </button>
             <select id="txShopSelect" style="display:none;" onchange="loadTransactions()">
               <option value="">업장 선택...</option>
