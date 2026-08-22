@@ -115,7 +115,7 @@ function buildBaseDataSheet(ss) {
 
   // 단위 목록 (B열)
   sheet.getRange("B2").setValue("단위 목록").setFontWeight("bold").setHorizontalAlignment("center").setBackground(COLORS.grayBg);
-  const units = [["박스"], ["개"], ["묶음"], ["병"], ["캔"], ["kg"], ["L"], ["포"], ["롤"], ["장"], ["세트"], ["EA"], ["PACK"], ["CASE"], ["봉"], ["통"], ["말"], ["자루"], ["ml"], ["g"], ["대"]];
+  const units = [["박스"], ["개"], ["묶음"], ["병"], ["캔"], ["kg"], ["L"], ["포"], ["롤"], ["장"], ["세트"], ["EA"], ["PACK"], ["CASE"], ["봉"], ["통"], ["말"], ["자루"], ["ml"], ["g"], ["대"], ["미터"], ["포대"], ["봉지"], ["르베"], ["권"], ["갑"]];
   sheet.getRange(3, 2, units.length, 1).setValues(units).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
 
   // 품목 카테고리 (C열)
@@ -198,15 +198,16 @@ function buildTemplateSheet(ss) {
 
 function buildItemMaster(ss) {
   const sheet = ss.insertSheet(SHEET_MASTER);
-  sheet.getRange("A1:W1").merge().setValue("🗂️ 품목 마스터 변수 관리").setBackground(COLORS.grayBg).setFontStyle("italic");
+  // [v9.0] 24열(X열: 사용유무) 포함
+  sheet.getRange("A1:X1").merge().setValue("🗂️ 품목 마스터 변수 관리").setBackground(COLORS.grayBg).setFontStyle("italic");
   
   const headers = [
     "품목코드", "품목명", "카테고리", "규격", "단위", "",
     "초기재고", "현재고", "일평균 사용량", "",
     "리드타임", "안전재고일수", "목표유지일수", "안전재고", "발주점", "적정발주량", "재고 상태", "",
-    "과세구분", "매입단가", "공급단가", "단위 세액", "재고 합계금액"
+    "과세구분", "매입단가", "공급단가", "단위 세액", "재고 합계금액", "사용유무"
   ];
-  sheet.getRange("A2:W2").setValues([headers]).setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("A2:X2").setValues([headers]).setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
   sheet.setFrozenRows(2);
 
   // 헤더 그룹화 시각적 효과 (Spacer 제외 색상)
@@ -217,12 +218,13 @@ function buildItemMaster(ss) {
   sheet.getRange("K2:Q2").setBackground("#8e44ad"); // 발주설정
   sheet.getRange("R2").setBackground(COLORS.grayBg); // Spacer
   sheet.getRange("S2:W2").setBackground("#27ae60"); // 회계금액
+  sheet.getRange("X2").setBackground("#7f8c8d"); // [v9.0] 사용유무
 
   const rawData = [
-    ["ITM-001", "세탁 세제 (10kg)", "세제류", "A", "박스", "", 20, 20, 0, "", 3, 5, 30, "", "", "", "", "", "과세", 15000, "", "", ""],
-    ["ITM-002", "샴푸 (30ml)", "어메니티", "A", "박스", "", 50, 50, 0, "", 3, 5, 30, "", "", "", "", "", "과세", 25000, "", "", ""]
+    ["ITM-001", "세탁 세제 (10kg)", "세제류", "A", "박스", "", 20, 20, 0, "", 3, 5, 30, "", "", "", "", "", "과세", 15000, "", "", "", "사용"],
+    ["ITM-002", "샴푸 (30ml)", "어메니티", "A", "박스", "", 50, 50, 0, "", 3, 5, 30, "", "", "", "", "", "과세", 25000, "", "", "", "사용"]
   ];
-  sheet.getRange(3, 1, rawData.length, 23).setValues(rawData);
+  sheet.getRange(3, 1, rawData.length, 24).setValues(rawData);
 
   // 안전재고 (N3) — [v7.0] 시즌 배수 참조를 시즌설정 시트로 변경
   sheet.getRange("N3").setFormula(`=ARRAYFORMULA(IF(A3:A="", "", ROUNDUP(I3:I * L3:L * '${SHEET_SEASONS}'!$D$2, 0)))`);
@@ -247,6 +249,8 @@ function buildItemMaster(ss) {
   }
   sheet.getRange(3, 4, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["A", "B", "C"]).setAllowInvalid(false).build());
   sheet.getRange(3, 19, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["과세", "비과세"]).setAllowInvalid(false).build());
+  // [v9.0] 사용유무 드롭다운 (X열 = 24번째 열)
+  sheet.getRange(3, 24, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["사용", "미사용"]).setAllowInvalid(false).build());
 
   // Number format
   sheet.getRange(3, 20, VALIDATION_ROWS, 4).setNumberFormat("#,##0");
@@ -256,6 +260,7 @@ function buildItemMaster(ss) {
   sheet.getRange(3, 7, VALIDATION_ROWS, 1).setBackground(COLORS.inputBg); // 초기재고
   sheet.getRange(3, 11, VALIDATION_ROWS, 3).setBackground(COLORS.inputBg); // 발주설정
   sheet.getRange(3, 19, VALIDATION_ROWS, 2).setBackground(COLORS.inputBg); // 과세, 매입단가
+  sheet.getRange(3, 24, VALIDATION_ROWS, 1).setBackground(COLORS.inputBg); // [v9.0] 사용유무
 
   // 자동 컬럼 (파란색 톤)
   sheet.getRange(3, 8, VALIDATION_ROWS, 2).setBackground(COLORS.autoBg); // 현재고, 일평균
@@ -267,12 +272,14 @@ function buildItemMaster(ss) {
   sheet.getRange(2, 10, VALIDATION_ROWS+1, 1).setBackground(COLORS.grayBg);
   sheet.getRange(2, 18, VALIDATION_ROWS+1, 1).setBackground(COLORS.grayBg);
 
-  sheet.getRange(3, 1, VALIDATION_ROWS, 23).setHorizontalAlignment("center");
+  sheet.getRange(3, 1, VALIDATION_ROWS, 24).setHorizontalAlignment("center");
 
   const cfRules = [
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(STATUS_RISK).setBackground(COLORS.riskBg).setFontColor("#fff").setRanges([sheet.getRange(3, 17, VALIDATION_ROWS, 1)]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(STATUS_ORDER).setBackground(COLORS.orderBg).setFontColor("#fff").setRanges([sheet.getRange(3, 17, VALIDATION_ROWS, 1)]).build(),
-    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(STATUS_OK).setBackground(COLORS.normalBg).setFontColor("#fff").setRanges([sheet.getRange(3, 17, VALIDATION_ROWS, 1)]).build()
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(STATUS_OK).setBackground(COLORS.normalBg).setFontColor("#fff").setRanges([sheet.getRange(3, 17, VALIDATION_ROWS, 1)]).build(),
+    // [v9.0] 미사용 행 전체를 회색 처리
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$X3="미사용"').setBackground("#f0f0f0").setFontColor("#999999").setRanges([sheet.getRange(3, 1, VALIDATION_ROWS, 24)]).build()
   ];
   sheet.setConditionalFormatRules(cfRules);
   sheet.setColumnWidth(1, 120); sheet.setColumnWidth(2, 220); sheet.setColumnWidth(3, 120); 
@@ -284,6 +291,7 @@ function buildItemMaster(ss) {
   sheet.setColumnWidth(17, 100); sheet.setColumnWidth(18, 20); // Spacer
   sheet.setColumnWidth(19, 100); sheet.setColumnWidth(20, 120); sheet.setColumnWidth(21, 120); 
   sheet.setColumnWidth(22, 120); sheet.setColumnWidth(23, 140);
+  sheet.setColumnWidth(24, 90); // [v9.0] 사용유무
 }
 
 
@@ -322,10 +330,11 @@ function buildDashboard(ss) {
   sheet.getRange("C3").setFormula(`='${SHEET_SEASONS}'!B2`).setFontColor("blue").setFontWeight("bold"); 
 
   const kpis = [
-    { range: "B5:C8", title: "전체 관리 품목", formula: `COUNTA('${SHEET_MASTER}'!A3:A)`, bg: COLORS.headerBg },
-    { range: "D5:E8", title: "🚨 위험", formula: `COUNTIF('${SHEET_MASTER}'!Q3:Q,"${STATUS_RISK}")`, bg: COLORS.riskBg },
-    { range: "F5:G8", title: "⚠️ 발주필요", formula: `COUNTIF('${SHEET_MASTER}'!Q3:Q,"${STATUS_ORDER}")`, bg: COLORS.orderBg },
-    { range: "H5:I8", title: "✅ 정상", formula: `COUNTIF('${SHEET_MASTER}'!Q3:Q,"${STATUS_OK}")`, bg: COLORS.normalBg }
+    // [v9.0] COUNTIFS 사용하여 미사용 품목 제외
+    { range: "B5:C8", title: "전체 관리 품목", formula: `COUNTIFS('${SHEET_MASTER}'!A3:A,"<>",IFERROR('${SHEET_MASTER}'!X3:X,"사용"),"<>미사용")`, bg: COLORS.headerBg },
+    { range: "D5:E8", title: "🚨 위험", formula: `COUNTIFS('${SHEET_MASTER}'!Q3:Q,"${STATUS_RISK}",IFERROR('${SHEET_MASTER}'!X3:X,"사용"),"<>미사용")`, bg: COLORS.riskBg },
+    { range: "F5:G8", title: "⚠️ 발주필요", formula: `COUNTIFS('${SHEET_MASTER}'!Q3:Q,"${STATUS_ORDER}",IFERROR('${SHEET_MASTER}'!X3:X,"사용"),"<>미사용")`, bg: COLORS.orderBg },
+    { range: "H5:I8", title: "✅ 정상", formula: `COUNTIFS('${SHEET_MASTER}'!Q3:Q,"${STATUS_OK}",IFERROR('${SHEET_MASTER}'!X3:X,"사용"),"<>미사용")`, bg: COLORS.normalBg }
   ];
   kpis.forEach(kpi => {
     const r = sheet.getRange(kpi.range).merge();

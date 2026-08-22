@@ -25,53 +25,73 @@ function loadShopList() {
 function loadItemCodes() {
   google.script.run
     .withSuccessHandler(function(items) { itemCodeList = items || []; })
-    .withFailureHandler(function() {})
+    .withFailureHandler(function(err) { 
+      console.error('품목 코드 로드 실패:', err);
+      itemCodeList = []; // 실패 시 빈 배열로 초기화
+    })
     .getItemCodes(getToken());
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  품목명 기반 자동완성 (Phase 4)
+//  품목명 기반 자동완성 — [v9.0] 서버 사이드 검색으로 전환
 // ═══════════════════════════════════════════════════════════════
-// [v8.0] 자동완성 검색 디바운스 적용
 var txSearchTimeout = null;
 
 function onItemNameInput(value) {
   clearTimeout(txSearchTimeout);
   
+  var dropdown = document.getElementById('itemNameDropdown');
+  var codeField = document.getElementById('txItemCode');
+  
+  if (!value || value.trim().length < 1) { 
+    dropdown.style.display = 'none'; 
+    codeField.value = ''; 
+    return; 
+  }
+
   txSearchTimeout = setTimeout(function() {
-    var dropdown = document.getElementById('itemNameDropdown');
-    var codeField = document.getElementById('txItemCode');
-    
-    if (!value || value.trim().length < 1) { 
-      dropdown.style.display = 'none'; 
-      codeField.value = ''; 
-      return; 
-    }
+    // [v9.0] 서버 사이드 검색 API 호출 (4,000개+ 품목 대응)
+    google.script.run
+      .withSuccessHandler(function(matches) {
+        if (!matches || matches.length === 0) { 
+          dropdown.style.display = 'none'; 
+          codeField.value = ''; 
+          return; 
+        }
 
-    var query = value.toLowerCase().trim();
-    var matches = itemCodeList.filter(function(item) {
-      return item.name.toLowerCase().indexOf(query) !== -1 || item.code.toLowerCase().indexOf(query) !== -1;
-    }).slice(0, 10);
+        var html = '';
+        matches.forEach(function(item) {
+          html += '<div class="autocomplete-item" onclick="selectItemName(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
+            '<span class="item-name">' + item.name + '</span> <span class="item-code" style="color:#888; font-size:0.85em;">(' + item.code + ')</span></div>';
+        });
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
 
-    if (matches.length === 0) { 
-      dropdown.style.display = 'none'; 
-      codeField.value = ''; 
-      return; 
-    }
-
-    var html = '';
-    matches.forEach(function(item) {
-      html += '<div class="autocomplete-item" onclick="selectItemName(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
-        '<span class="item-name">' + item.name + '</span> <span class="item-code" style="color:#888; font-size:0.85em;">(' + item.code + ')</span></div>';
-    });
-    dropdown.innerHTML = html;
-    dropdown.style.display = 'block';
-
-    // 정확히 일치하는 이름이 있으면 자동으로 코드 기입 (옵션)
-    var exact = itemCodeList.find(function(item) { return item.name.trim() === value.trim(); });
-    if (exact) codeField.value = exact.code;
-    else codeField.value = '';
-  }, 200); // 200ms 딜레이
+        // 정확히 일치하는 이름이 있으면 자동으로 코드 기입
+        var inputVal = document.getElementById('txItemNameSearch').value.trim();
+        var exact = matches.find(function(item) { return item.name.trim() === inputVal; });
+        if (exact) codeField.value = exact.code;
+        else codeField.value = '';
+      })
+      .withFailureHandler(function(err) {
+        console.error('품목 검색 실패:', err);
+        // 서버 검색 실패 시 클라이언트 사이드 폴백
+        var query = value.toLowerCase().trim();
+        var fallbackMatches = itemCodeList.filter(function(item) {
+          return item.name.toLowerCase().indexOf(query) > -1 || item.code.toLowerCase().indexOf(query) > -1;
+        }).slice(0, 10);
+        
+        if (fallbackMatches.length === 0) { dropdown.style.display = 'none'; codeField.value = ''; return; }
+        var html = '';
+        fallbackMatches.forEach(function(item) {
+          html += '<div class="autocomplete-item" onclick="selectItemName(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
+            '<span class="item-name">' + item.name + '</span> <span class="item-code" style="color:#888; font-size:0.85em;">(' + item.code + ')</span></div>';
+        });
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
+      })
+      .searchItemCodes(getToken(), value.trim());
+  }, 300); // 300ms 디바운스
 }
 
 function selectItemName(code, name) {

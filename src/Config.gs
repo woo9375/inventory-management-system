@@ -32,7 +32,7 @@ const ALERT_EMAIL = "[EMAIL_ADDRESS]";
 const SEND_EMAIL_ALERT = false; 
 const VALIDATION_ROWS = 500; // 성능 최적화를 위한 검증/서식 고정 적용 범위
 
-const CURRENT_SCHEMA_VERSION = 8; // [v7.0] v8 스키마
+const CURRENT_SCHEMA_VERSION = 9; // [v9.0] v9 스키마: 사용유무 컬럼 + 단위 추가
 
 // [v8.0] 성능 최적화용 캐시 키 & TTL 상수
 const CACHE_KEYS = {

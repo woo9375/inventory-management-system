@@ -252,6 +252,86 @@ const MIGRATIONS = {
     
     Logger.log("[Migration v8] v8 마이그레이션 완료!");
   },
+
+  // [v9.0] v8 → v9: 사용유무 컬럼 추가 + 단위 6종 추가
+  9: function migrate_to_v9(ss) {
+    Logger.log("[Migration v9] 사용유무 컬럼 + 단위 추가 시작...");
+    
+    // ── Step 1: 품목 마스터 시트에 X열(24번째) '사용유무' 헤더 추가 ──
+    const masterSheet = ss.getSheetByName(SHEET_MASTER);
+    if (masterSheet) {
+      // 현재 X2 헤더 확인 — 이미 있으면 스킵
+      const currentX2 = masterSheet.getRange("X2").getValue();
+      if (!currentX2 || currentX2 !== "사용유무") {
+        masterSheet.getRange("X2").setValue("사용유무")
+          .setBackground("#7f8c8d").setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
+        Logger.log("[Migration v9] X열 헤더 '사용유무' 추가 완료");
+      }
+      
+      // 기존 품목에 '사용' 기본값 설정 (비어있는 경우만)
+      const lastRow = masterSheet.getLastRow();
+      if (lastRow >= 3) {
+        const xData = masterSheet.getRange(3, 24, lastRow - 2, 1).getValues();
+        const updates = xData.map(function(row) {
+          return [row[0] || "사용"]; // 비어있으면 '사용', 이미 값이 있으면 유지
+        });
+        masterSheet.getRange(3, 24, updates.length, 1).setValues(updates)
+          .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+        
+        // 사용유무 드롭다운 검증 추가
+        masterSheet.getRange(3, 24, VALIDATION_ROWS, 1).setDataValidation(
+          SpreadsheetApp.newDataValidation()
+            .requireValueInList(["사용", "미사용"])
+            .setAllowInvalid(false).build()
+        );
+        
+        // 미사용 행 조건부 서식 추가
+        const existingRules = masterSheet.getConditionalFormatRules();
+        const disabledRule = SpreadsheetApp.newConditionalFormatRule()
+          .whenFormulaSatisfied('=$X3="미사용"')
+          .setBackground("#f0f0f0").setFontColor("#999999")
+          .setRanges([masterSheet.getRange(3, 1, VALIDATION_ROWS, 24)])
+          .build();
+        existingRules.push(disabledRule);
+        masterSheet.setConditionalFormatRules(existingRules);
+        
+        masterSheet.setColumnWidth(24, 90);
+        Logger.log("[Migration v9] 기존 " + (lastRow - 2) + "개 품목에 '사용' 상태 설정 완료");
+      }
+      
+      // A1 머지 범위 확장 (W → X)
+      masterSheet.getRange("A1:X1").merge().setValue("🗂️ 품목 마스터 변수 관리")
+        .setBackground(COLORS.grayBg).setFontStyle("italic");
+    }
+    
+    // ── Step 2: 기초데이터 시트에 단위 6종 추가 ──
+    const baseSheet = ss.getSheetByName(SHEET_BASE_DATA);
+    if (baseSheet) {
+      const baseLastRow = Math.max(baseSheet.getLastRow(), 3);
+      const existingUnits = baseSheet.getRange(3, 2, baseLastRow - 2, 1).getValues().flat().filter(function(v) { return v; });
+      const newUnits = ["미터", "포대", "봉지", "르베", "권", "갑"];
+      const toAdd = newUnits.filter(function(u) { return !existingUnits.includes(u); });
+      
+      if (toAdd.length > 0) {
+        // 기존 단위 목록 끝에 추가
+        const unitCol = baseSheet.getRange(3, 2, baseLastRow + 10 - 2, 1).getValues().flat();
+        let insertRow = -1;
+        for (let i = 0; i < unitCol.length; i++) {
+          if (!unitCol[i]) { insertRow = i + 3; break; }
+        }
+        if (insertRow === -1) insertRow = baseLastRow + 1;
+        
+        const addData = toAdd.map(function(u) { return [u]; });
+        baseSheet.getRange(insertRow, 2, addData.length, 1).setValues(addData)
+          .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+        Logger.log("[Migration v9] 단위 " + toAdd.length + "종 추가: " + toAdd.join(", "));
+      } else {
+        Logger.log("[Migration v9] 추가할 단위 없음 (이미 존재)");
+      }
+    }
+    
+    Logger.log("[Migration v9] v9 마이그레이션 완료!");
+  },
 };
 
 /**

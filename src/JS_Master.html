@@ -304,6 +304,10 @@ function openCsvUploadModal() {
     '<input type="file" id="csvFileInput" accept=".csv" class="form-control" style="padding: 10px; border: 1px dashed var(--border); width: 100%; border-radius: var(--radius-sm);">' +
     '<p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">* 품목코드, 품목명, 카테고리, 단위 순서 권장. (기존 품목코드 존재 시 무시됨)</p>' +
     '<p style="font-size: 0.85rem; color: var(--gold); margin-top: 5px; font-weight: bold;">⚠️ 데이터는 첫 번째 열부터 순서대로 파싱됩니다.</p>' +
+    '<div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">' +
+    '<input type="checkbox" id="csvSkipHeader" checked>' +
+    '<label for="csvSkipHeader" style="margin: 0; cursor: pointer;">첫 행은 헤더(제목)입니다 (업로드 시 제외)</label>' +
+    '</div>' +
     '</div></div>';
   var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="processCsvUpload()">업로드</button>';
   openModal('📤 품목 마스터 CSV 대량 업로드', body, footer);
@@ -315,6 +319,7 @@ function processCsvUpload() {
     return showToast('CSV 파일을 선택해주세요.', 'warning');
   }
   
+  var skipHeader = document.getElementById('csvSkipHeader').checked;
   var file = fileInput.files[0];
   var reader = new FileReader();
   
@@ -351,6 +356,10 @@ function processCsvUpload() {
       if (cols.length >= 2) {
         dataRows.push(cols);
       }
+    }
+    
+    if (skipHeader && dataRows.length > 0) {
+      dataRows.shift(); // 첫 번째 행(헤더) 제거
     }
     
     if (dataRows.length === 0) {

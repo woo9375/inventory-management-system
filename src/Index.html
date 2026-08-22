@@ -82,9 +82,7 @@
       <button class="nav-item" onclick="showTab('transactions', this)">
         <span class="nav-icon">📝</span> 입출고 기록
       </button>
-      <button class="nav-item" onclick="showTab('master', this)">
-        <span class="nav-icon">🗂️</span> 품목 마스터
-      </button>
+
       <button id="navShop" class="nav-item admin-only" onclick="showTab('shop', this)">
         <span class="nav-icon">🏪</span> 업장 관리
       </button>
@@ -128,10 +126,17 @@
       <div class="page-header">
         <h2>📊 대시보드</h2>
         <div class="header-meta">
-          <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)" style="margin-right:4px;" title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
+          <div class="dropdown" style="display:inline-block; margin-right: 8px;">
+            <button class="btn btn-primary btn-sm dropbtn">🖨️ 인쇄/다운로드 ▼</button>
+            <div class="dropdown-content">
+              <button onclick="printPhysicalCheckList()">🖨️ 실사 양식 인쇄 (PDF)</button>
+              <button onclick="downloadPhysicalCheckListExcel()">📥 실사 양식 다운로드 (Excel)</button>
+            </div>
+          </div>
           <span id="dashDate">-</span>
           <span id="dashSeason" class="season-badge">-</span>
-          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('refreshDashboard')" title="통합 갱신">🔄</button>
+          <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)" style="margin-right:4px;" title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
+          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('refreshDashboard')" title="통합 갱신">🔄 통합갱신</button>
         </div>
       </div>
 
@@ -180,9 +185,10 @@
     <!-- ━━━━━━━━━ 입출고 기록 탭 ━━━━━━━━━ -->
     <div id="tab-transactions" class="tab-content">
       <div class="page-header">
-        <h2 style="display:flex; align-items:center;">📝 입출고 기록 <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTx)" style="margin-left:12px;" title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button></h2>
+        <h2 style="display:flex; align-items:center;">📝 입출고 기록</h2>
         <div class="header-meta">
-          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('incrementalSync')" title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다.">⚡</button>
+          <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTx)" style="margin-right:4px;" title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
+          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('incrementalSync')" title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다.">⚡ 신규 내역 취합</button>
           <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()" style="border: 1px solid var(--gold); background: #fffdf5;" title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
           <select id="txShopSelect" class="form-group select" onchange="loadTransactions()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:0.85rem;">
             <option value="">업장 선택...</option>
@@ -265,53 +271,7 @@
       </div>
     </div>
 
-    <!-- ━━━━━━━━━ 품목 마스터 탭 ━━━━━━━━━ -->
-    <div id="tab-master" class="tab-content">
-      <div class="page-header">
-        <h2 style="display:flex; align-items:center;">🗂️ 품목 마스터 <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadItemMaster)" style="margin-left:12px;" title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button></h2>
-        <div id="masterActions" class="btn-group">
-          <button class="btn btn-gold btn-sm" onclick="openNewItemModal()">➕ 신규 품목 등록</button>
-          <button class="btn btn-outline btn-sm" onclick="openCsvUploadModal()">📤 CSV 업로드</button>
-          <div class="dropdown" style="display:inline-block; margin: 0 4px;">
-            <button class="btn btn-primary btn-sm dropbtn">🖨️ 인쇄/다운로드 ▼</button>
-            <div class="dropdown-content">
-              <button onclick="printPhysicalCheckList()">🖨️ 실사 양식 인쇄 (PDF)</button>
-              <button onclick="downloadPhysicalCheckListExcel()">📥 실사 양식 다운로드 (Excel)</button>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h3 style="display:inline-block; margin-right:8px;">📦 등록 품목 목록</h3>
-            <span id="masterCount" style="font-size:0.8rem;color:var(--text-secondary)">0개</span>
-          </div>
-          <div>
-            <input type="text" id="masterSearchInput" placeholder="🔍 품목명 또는 코드 검색..." oninput="filterItemMaster()" style="padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 200px;">
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="data-table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>품목코드</th><th>품목명</th><th>카테고리</th>
-                  <th>규격</th><th>단위</th><th>현재고</th>
-                  <th>일평균</th><th>안전재고</th><th>발주점</th>
-                  <th>상태</th><th>매입단가</th><th class="text-center">관리</th>
-                </tr>
-              </thead>
-              <tbody id="masterTableBody">
-                <tr><td colspan="12" class="empty-state"><span class="empty-icon">🗂️</span><p>데이터를 불러오는 중...</p></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div id="masterPagination" class="pagination-container" style="margin-top: 16px; text-align: center; display: flex; justify-content: center; gap: 4px;"></div>
-        </div>
-      </div>
-    </div>
 
     <!-- ━━━━━━━━━ 업장 관리 탭 ━━━━━━━━━ -->
     <div id="tab-shop" class="tab-content">
@@ -339,7 +299,7 @@
       <div class="page-header">
         <h2>📅 시즌 관리</h2>
         <div class="header-meta">
-          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('validateSeason')" title="시즌 설정이 올바른지 검증하고 누락된 설정을 확인합니다.">✅ 시즌 설정 검증</button>
+          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('validateSeason')" title="시즌 설정이 올바른지 검증하고 누락된 설정을 확인합니다.">✅ 시즌 설정 검증</button>
         </div>
       </div>
       <div class="card">
@@ -363,8 +323,8 @@
       <div class="page-header">
         <h2>👥 계정 관리</h2>
         <div class="header-meta">
-          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('syncPermissions')" title="사용자 권한 변경 사항을 각 시트에 강제로 동기화합니다.">🔐 권한 재동기화</button>
-          <button class="btn btn-outline btn-sm admin-only" onclick="execCommand('backupCSV')" title="현재 데이터를 CSV 파일로 즉시 백업합니다.">💾 CSV 백업 실행</button>
+          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('syncPermissions')" title="사용자 권한 변경 사항을 각 시트에 강제로 동기화합니다.">🔐 권한 재동기화</button>
+          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('backupCSV')" title="현재 데이터를 CSV 파일로 즉시 백업합니다.">💾 CSV 백업 실행</button>
         </div>
       </div>
       <div class="card">
@@ -495,7 +455,7 @@
 <?!= include('JS_Auth') ?>
 <?!= include('JS_UI') ?>
 <?!= include('JS_Tx') ?>
-<?!= include('JS_Master') ?>
+
 <?!= include('JS_Config') ?>
 <?!= include('JS_BaseData') ?>
 </body>

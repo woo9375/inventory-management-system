@@ -94,6 +94,40 @@ function onEdit(e) {
     }
   }
 
+  // [v9.0] 품목 마스터 시트 직접 편집 시 변경이력 자동 기록
+  if (sheetName === SHEET_MASTER && row >= 3) {
+    const col = e.range.getColumn();
+    // 변경 추적 대상 컬럼: B(품목명), C(카테고리), D(규격), E(단위), G(초기재고),
+    // K(리드타임), L(안전재고일수), M(목표유지일수), S(과세구분), T(매입단가), X(사용유무)
+    const TRACKED_COLS = { 
+      2: "품목명", 3: "카테고리", 4: "규격", 5: "단위", 7: "초기재고",
+      11: "리드타임", 12: "안전재고일수", 13: "목표유지일수", 
+      19: "과세구분", 20: "매입단가", 24: "사용유무"
+    };
+    
+    if (TRACKED_COLS[col] && e.range.getNumRows() === 1 && e.range.getNumColumns() === 1) {
+      try {
+        const itemCode = sheet.getRange(row, 1).getValue(); // A열: 품목코드
+        const itemName = sheet.getRange(row, 2).getValue(); // B열: 품목명
+        const oldValue = (e.oldValue !== undefined && e.oldValue !== null) ? e.oldValue : "(이전값 없음)";
+        const newValue = e.range.getValue();
+        const fieldName = TRACKED_COLS[col];
+        
+        // 값이 실제로 변경되었을 때만 기록
+        if (String(oldValue) !== String(newValue) && itemCode) {
+          const changelogSheet = ss.getSheetByName(SHEET_CHANGELOG);
+          if (changelogSheet) {
+            const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+            const editor = Session.getActiveUser().getEmail() || "시트편집";
+            changelogSheet.appendRow([timestamp, editor, itemCode, itemName, fieldName, oldValue, newValue]);
+          }
+        }
+      } catch(clErr) {
+        Logger.log("[onEdit ChangeLog] 이력 기록 실패: " + clErr.message);
+      }
+    }
+  }
+
   // [v7.0] 시스템 시트 목록 업데이트
   const SYSTEM_SHEETS = [SHEET_DASHBOARD, SHEET_INOUT, SHEET_MASTER, SHEET_TEMPLATE, SHEET_SHOPS, SHEET_SEASONS, SHEET_USERS, SHEET_BASE_DATA, SHEET_CHANGELOG];
   if (SYSTEM_SHEETS.includes(sheetName)) return;

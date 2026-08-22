@@ -85,6 +85,11 @@ function submitNewShop() {
   };
   if (!data.category || !data.name || !data.tag) return showToast('필수 필드를 입력해주세요', 'warning');
 
+  // [v9.0] 태그 ID 유효성 검사: 영어 대문자 2~3자만 허용
+  if (!/^[A-Z]{2,3}$/.test(data.tag)) {
+    return showToast('태그 ID는 영어 대문자 2~3자로만 입력해야 합니다. (예: TX, MB, AXC)', 'warning');
+  }
+
   showLoading();
   google.script.run
     .withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); loadShopList(); } })
@@ -93,9 +98,9 @@ function submitNewShop() {
 }
 
 function confirmDeleteShop(name) {
-  var body = '<p style="text-align:center;font-size:1rem;">업장 <strong>"' + name + '"</strong>을(를) 삭제하시겠습니까?<br><span style="color:var(--risk);font-size:0.85rem;">⚠️ 해당 업장의 모든 입출고 데이터가 삭제됩니다.</span></p>';
-  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteShop(\'' + escapeHtml(name) + '\')">삭제</button>';
-  openModal('🗑️ 업장 삭제 확인', body, footer);
+  var body = '<p style="text-align:center;font-size:1rem;">업장 <strong>"' + name + '"</strong>을(를) 비활성화하시겠습니까?<br><span style="color:var(--normal);font-size:0.85rem;">✅ 입출고 데이터는 보존되며, 시트는 숨김 처리됩니다.</span></p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteShop(\'' + escapeHtml(name) + '\')"> 비활성화</button>';
+  openModal('🗑️ 업장 비활성화 확인', body, footer);
 }
 
 function doDeleteShop(name) {
@@ -367,7 +372,7 @@ function submitMonthlyClosing(year, month) {
 // ═══════════════════════════════════════════════════════════════
 //  [NEW] 시스템 명령 실행기
 // ═══════════════════════════════════════════════════════════════
-function execCommand(command) {
+function doSystemCommand(command) {
   if (currentUser && currentUser.role !== 'admin') {
     return showToast('최고 관리자만 실행할 수 있습니다.', 'error');
   }

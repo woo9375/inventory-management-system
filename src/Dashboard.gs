@@ -94,9 +94,12 @@ function runDashboardSync(ss) {
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
   if (masterLastRow < 3) return _renderNoOrderMessage(dashSheet);
   
-  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 17).getValues();
+  // [v9.0] 24열 읽기 + 미사용 품목 제외
+  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
   const outputList = [];
   masterData.forEach(row => {
+    // [v9.0] 미사용 품목은 대시보드에서 제외
+    if (row[23] === '미사용') return;
     if (row[16] === STATUS_RISK || row[16] === STATUS_ORDER) {
       outputList.push([row[0], row[1], row[3], row[7], row[13], row[14], row[15], row[16]]);
     }
