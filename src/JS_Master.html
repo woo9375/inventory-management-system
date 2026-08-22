@@ -323,15 +323,33 @@ function processCsvUpload() {
     var lines = text.split('\n');
     var dataRows = [];
     
-    // 단순 파싱 (큰따옴표 무시, 쉼표 기준 분리) - 실제 환경에서는 CSV 파서 필요할 수 있음
+    // 따옴표 안의 쉼표를 처리하는 개선된 파서
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim();
       if (!line) continue;
-      // 첫 행(헤더) 무시 방지 조건이 필요하다면 여기에 추가 (예: i===0 이면 continue 등)
-      // 여기서는 백엔드에서 1차적으로 검증한다고 가정
-      var cols = line.split(',');
+      
+      var cols = [];
+      var current = '';
+      var inQuotes = false;
+      
+      for (var j = 0; j < line.length; j++) {
+        var char = line[j];
+        if (char === '"' && line[j+1] === '"') {
+          current += '"';
+          j++; // 이스케이프된 따옴표 건너뛰기
+        } else if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          cols.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      cols.push(current.trim());
+      
       if (cols.length >= 2) {
-        dataRows.push(cols.map(function(c) { return c.replace(/^"|"$/g, '').trim(); }));
+        dataRows.push(cols);
       }
     }
     
