@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      color: #333;
+    }
+    h2 {
+      font-size: 18px;
+      margin-top: 0;
+      margin-bottom: 16px;
+      color: #1e3a5f;
+    }
+    .file-input-wrapper {
+      margin-bottom: 20px;
+    }
+    input[type=file] {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      border: 1px dashed #ccc;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #d4af37;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      width: 100%;
+    }
+    button:hover {
+      background-color: #bfa02e;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    #message {
+      margin-top: 16px;
+      font-size: 14px;
+      text-align: center;
+      min-height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h2>📥 품목마스터 CSV 업로드</h2>
+  <div class="file-input-wrapper">
+    <input type="file" id="csvFile" accept=".csv" />
+  </div>
+  <button id="uploadBtn" onclick="uploadFile()">업로드 실행</button>
+  <div id="message"></div>
+
+  <script>
+    function uploadFile() {
+      const fileInput = document.getElementById('csvFile');
+      const messageDiv = document.getElementById('message');
+      const uploadBtn = document.getElementById('uploadBtn');
+      
+      if (fileInput.files.length === 0) {
+        messageDiv.innerText = "⚠️ 파일을 선택해주세요.";
+        messageDiv.style.color = "#d9534f";
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+
+      uploadBtn.disabled = true;
+      messageDiv.innerText = "⏳ 업로드 및 처리 중...";
+      messageDiv.style.color = "#333";
+
+      reader.onload = function(e) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            messageDiv.style.color = "#5cb85c";
+            messageDiv.innerText = res;
+            setTimeout(function() { google.script.host.close(); }, 2000);
+          })
+          .withFailureHandler(function(err) {
+            uploadBtn.disabled = false;
+            messageDiv.style.color = "#d9534f";
+            messageDiv.innerText = "❌ 오류: " + err.message;
+          })
+          .processCsvUploadFromSheet(e.target.result);
+      };
+
+      reader.readAsText(file, "UTF-8");
+    }
+  </script>
+</body>
+</html>

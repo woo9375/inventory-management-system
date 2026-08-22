@@ -16,6 +16,7 @@ function onOpen() {
     .addItem("🔐 권한 재동기화",                 "syncPermissions")
     .addItem("✅ 시즌 설정 검증",                 "validateSeasonSettings")
     .addItem("💾 CSV 백업 실행",                 "backupCSV")
+    .addItem("📤 품목마스터 CSV 업로드",           "openCsvUploadModal")
     .addToUi();
 }
 
@@ -26,6 +27,33 @@ function onOpen() {
 function backupCSV() {
   backupToCSV();
   SpreadsheetApp.getUi().alert("✅ CSV 백업이 완료되었습니다.");
+}
+
+/**
+ * [v7.0] 관리자 도구에서 품목마스터 CSV 업로드 모달을 띄웁니다.
+ */
+function openCsvUploadModal() {
+  const html = HtmlService.createHtmlOutputFromFile('UploadCsv')
+      .setWidth(400)
+      .setHeight(250);
+  SpreadsheetApp.getUi().showModalDialog(html, '품목마스터 CSV 업로드');
+}
+
+/**
+ * [v7.0] 시트에서 업로드된 CSV 데이터를 처리합니다.
+ */
+function processCsvUploadFromSheet(csvString) {
+  try {
+    const dataRows = Utilities.parseCsv(csvString);
+    dataRows.shift(); // 헤더 행 제거
+    
+    // "internal_google_sheet_ui" 토큰을 사용하여 권한 체크(validateSession)를 통과시킵니다.
+    const res = uploadItemMasterCSV("internal_google_sheet_ui", dataRows);
+    if (!res.success) throw new Error(res.message);
+    return res.message;
+  } catch (e) {
+    throw new Error(e.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

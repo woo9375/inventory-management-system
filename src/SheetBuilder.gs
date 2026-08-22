@@ -247,7 +247,7 @@ function buildItemMaster(ss) {
     sheet.getRange(3, 3, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(baseDataSheet.getRange("C3:C50")).setAllowInvalid(false).build());
     sheet.getRange(3, 5, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(baseDataSheet.getRange("B3:B50")).setAllowInvalid(false).build());
   }
-  sheet.getRange(3, 4, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["A", "B", "C"]).setAllowInvalid(false).build());
+
   sheet.getRange(3, 19, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["과세", "비과세"]).setAllowInvalid(false).build());
   // [v9.0] 사용유무 드롭다운 (X열 = 24번째 열)
   sheet.getRange(3, 24, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["사용", "미사용"]).setAllowInvalid(false).build());

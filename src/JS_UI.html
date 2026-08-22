@@ -114,7 +114,7 @@ function loadDashboard() {
 }
 
 function renderDashboard(data) {
-  document.getElementById('dashDate').textContent = '통합갱신 일시: ' + data.date;
+  document.getElementById('dashDate').textContent = '최신 갱신일: ' + data.date;
   document.getElementById('dashSeason').textContent = data.season + ' (×' + data.seasonMultiplier + ')';
   document.getElementById('kpiTotal').textContent = data.kpi.total;
   document.getElementById('kpiRisk').textContent = data.kpi.risk;

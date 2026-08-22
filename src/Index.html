@@ -114,7 +114,7 @@
 
       <div class="sidebar-footer">
         <div id="lastSyncStatus" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">
-          <span class="nav-icon" style="font-size: 0.8rem;">🔄</span> 통합 갱신 일시: <span id="lastSyncTimeText">-</span>
+          <span class="nav-icon" style="font-size: 0.8rem;">🔄</span> 최신 갱신일: <span id="lastSyncTimeText">-</span>
         </div>
         © 2026 (주)호텔덕구온천<br>재고 관리 시스템
       </div>
@@ -128,7 +128,8 @@
         <div class="page-header">
           <div style="display: flex; align-items: center; gap: 12px;">
             <h2 style="margin: 0;">📊 대시보드</h2>
-            <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: normal; background: #f1f5f9; padding: 4px 12px; border-radius: 12px; border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px;">
+            <div
+              style="font-size: 0.85rem; color: var(--text-muted); font-weight: normal; background: #f1f5f9; padding: 4px 12px; border-radius: 12px; border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px;">
               <span style="font-size: 0.9rem;">🕒</span>
               <span id="dashDate" style="font-weight: 600; color: var(--navy-700);">-</span>
             </div>
@@ -212,7 +213,8 @@
             <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()"
               style="border: 1px solid var(--gold); background: #fffdf5;"
               title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
-            <button id="btnShopSelectModal" class="btn btn-outline" onclick="openShopSelectionModal()" style="font-weight:bold; font-size:1.0rem; border: 2px solid var(--navy-600); border-radius: 8px; padding: 6px 16px; color: var(--navy-800); background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <button id="btnShopSelectModal" class="btn btn-outline" onclick="openShopSelectionModal()"
+              style="font-weight:bold; font-size:1.0rem; border: 2px solid var(--navy-600); border-radius: 8px; padding: 6px 16px; color: var(--navy-800); background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
               🏪 작업 업장 선택...
             </button>
             <select id="txShopSelect" style="display:none;" onchange="loadTransactions()">

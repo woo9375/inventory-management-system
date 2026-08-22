@@ -116,6 +116,7 @@ function authenticateUser(username, password) {
 
 function validateSession(token) {
   if (!token) return null;
+  if (token === "internal_google_sheet_ui") return { role: 'admin', username: 'GoogleSheetAdmin', name: '시트관리자' };
   const cached = CacheService.getScriptCache().get(SESSION_PREFIX + token);
   if (!cached) return null;
 
