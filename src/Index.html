@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,456 +8,529 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <?!= include('Stylesheet') ?>
 </head>
+
 <body>
 
-<!-- ═══════ [NEW] 로그인 화면 ═══════ -->
-<div id="loginContainer" class="login-container">
-  <div class="login-card">
-    <div class="login-header">
-      <span class="login-icon">🏨</span>
-      <h2>호텔덕구온천</h2>
-      <p>재고 관리 시스템 v1.0.0</p>
-    </div>
-    <div class="login-body">
-      <div class="form-group">
-        <label>아이디 (회사 이메일)</label>
-        <input type="email" id="loginUsername" placeholder="예: yw_bae@dukgu.com" autocomplete="username">
+  <!-- ═══════ [NEW] 로그인 화면 ═══════ -->
+  <div id="loginContainer" class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <span class="login-icon">🏨</span>
+        <h2>호텔덕구온천</h2>
+        <p>재고 관리 시스템 v1.0.0</p>
       </div>
-      <div class="form-group">
-        <label>비밀번호</label>
-        <input type="password" id="loginPassword" placeholder="비밀번호 입력" autocomplete="current-password" onkeypress="if(event.key==='Enter') submitLogin()">
+      <div class="login-body">
+        <div class="form-group">
+          <label>아이디 (회사 이메일)</label>
+          <input type="email" id="loginUsername" placeholder="예: yw_bae@dukgu.com" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label>비밀번호</label>
+          <input type="password" id="loginPassword" placeholder="비밀번호 입력" autocomplete="current-password"
+            onkeypress="if(event.key==='Enter') submitLogin()">
+        </div>
+        <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px;">
+          <input type="checkbox" id="rememberMe" style="width: auto; margin: 0;">
+          <label for="rememberMe" style="margin: 0; font-weight: 500; cursor: pointer;">✅ 로그인 상태 유지</label>
+        </div>
+        <button class="login-btn" id="loginBtn" onclick="submitLogin()">로그인</button>
+        <div id="loginError" class="login-error"></div>
       </div>
-      <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px;">
-        <input type="checkbox" id="rememberMe" style="width: auto; margin: 0;">
-        <label for="rememberMe" style="margin: 0; font-weight: 500; cursor: pointer;">✅ 로그인 상태 유지</label>
-      </div>
-      <button class="login-btn" id="loginBtn" onclick="submitLogin()">로그인</button>
-      <div id="loginError" class="login-error"></div>
     </div>
   </div>
-</div>
 
-<!-- ═══════ 모바일 헤더 ═══════ -->
-<div class="mobile-header">
-  <button class="hamburger" onclick="toggleSidebar()">☰</button>
-  <span class="brand">🏨 호텔덕구온천</span>
-  <span></span>
-</div>
-
-<!-- ═══════ 로딩 오버레이 ═══════ -->
-<div id="loadingOverlay" class="loading-overlay">
-  <div class="spinner"></div>
-</div>
-
-<!-- ═══════ 토스트 컨테이너 ═══════ -->
-<div id="toastContainer" class="toast-container"></div>
-
-<!-- ═══════ 모달 ═══════ -->
-<div id="modalOverlay" class="modal-overlay">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <h3 id="modalTitle">품목 등록</h3>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-body" id="modalBody"></div>
-    <div class="modal-footer" id="modalFooter"></div>
+  <!-- ═══════ 모바일 헤더 ═══════ -->
+  <div class="mobile-header">
+    <button class="hamburger" onclick="toggleSidebar()">☰</button>
+    <span class="brand">🏨 호텔덕구온천</span>
+    <span></span>
   </div>
-</div>
 
-<!-- ═══════ 메인 앱 (로그인 후 표시) ═══════ -->
-<div id="appContainer" class="app-container" style="display:none;">
+  <!-- ═══════ 로딩 오버레이 ═══════ -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner"></div>
+  </div>
 
-  <!-- ═══════ 사이드바 ═══════ -->
-  <aside id="sidebar" class="sidebar">
-    <div class="sidebar-header">
-      <span class="brand-icon">🏨</span>
-      <h1>호텔덕구온천<br>재고 관리 시스템</h1>
-      <div class="brand-sub">Inventory Management v1.0.0</div>
+  <!-- ═══════ 토스트 컨테이너 ═══════ -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ═══════ 모달 ═══════ -->
+  <div id="modalOverlay" class="modal-overlay">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 id="modalTitle">품목 등록</h3>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-footer" id="modalFooter"></div>
     </div>
+  </div>
 
-    <nav class="sidebar-nav">
-      <button class="nav-item active" onclick="showTab('dashboard', this)">
-        <span class="nav-icon">📊</span> 대시보드
-        <span id="alertBadge" class="nav-badge" style="display:none">0</span>
-      </button>
-      <button class="nav-item" onclick="showTab('transactions', this)">
-        <span class="nav-icon">📝</span> 입출고 기록
-      </button>
+  <!-- ═══════ 메인 앱 (로그인 후 표시) ═══════ -->
+  <div id="appContainer" class="app-container" style="display:none;">
 
-      <button id="navShop" class="nav-item admin-only" onclick="showTab('shop', this)">
-        <span class="nav-icon">🏪</span> 업장 관리
-      </button>
-      <button id="navSeason" class="nav-item admin-only" onclick="showTab('season', this)">
-        <span class="nav-icon">📅</span> 시즌 관리
-      </button>
-      <button id="navUser" class="nav-item admin-only" onclick="showTab('user', this)">
-        <span class="nav-icon">👥</span> 계정 관리
-      </button>
-      <button id="navBaseData" class="nav-item admin-only" onclick="showTab('basedata', this)">
-        <span class="nav-icon">📂</span> 기초데이터
-      </button>
-      <button id="navMySettings" class="nav-item" onclick="showTab('mysettings', this)">
-        <span class="nav-icon">⚙️</span> 내 설정
-      </button>
-    </nav>
-
-    <!-- [NEW] 로그인 사용자 정보 -->
-    <div id="sidebarUser" class="sidebar-user">
-      <div class="user-avatar" id="userAvatar">?</div>
-      <div class="user-info">
-        <div class="user-name" id="userName">-</div>
-        <div class="user-role-text" id="userRoleText">-</div>
+    <!-- ═══════ 사이드바 ═══════ -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <span class="brand-icon">🏨</span>
+        <h1>호텔덕구온천<br>재고 관리 시스템</h1>
+        <div class="brand-sub">Inventory Management v1.0.0</div>
       </div>
-      <button class="logout-btn" onclick="doLogout()" title="로그아웃">🚪 로그아웃</button>
-    </div>
 
-    <div class="sidebar-footer">
-      <div id="lastSyncStatus" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">
-        <span class="nav-icon" style="font-size: 0.8rem;">🔄</span> 마지막 취합: <span id="lastSyncTimeText">-</span>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" onclick="showTab('dashboard', this)">
+          <span class="nav-icon">📊</span> 대시보드
+          <span id="alertBadge" class="nav-badge" style="display:none">0</span>
+        </button>
+        <button class="nav-item" onclick="showTab('transactions', this)">
+          <span class="nav-icon">📝</span> 입출고 기록
+        </button>
+
+        <button id="navShop" class="nav-item admin-only" onclick="showTab('shop', this)">
+          <span class="nav-icon">🏪</span> 업장 관리
+        </button>
+        <button id="navSeason" class="nav-item admin-only" onclick="showTab('season', this)">
+          <span class="nav-icon">📅</span> 시즌 관리
+        </button>
+        <button id="navUser" class="nav-item admin-only" onclick="showTab('user', this)">
+          <span class="nav-icon">👥</span> 계정 관리
+        </button>
+        <button id="navBaseData" class="nav-item admin-only" onclick="showTab('basedata', this)">
+          <span class="nav-icon">📂</span> 기초데이터
+        </button>
+        <button id="navMySettings" class="nav-item" onclick="showTab('mysettings', this)">
+          <span class="nav-icon">⚙️</span> 내 설정
+        </button>
+      </nav>
+
+      <!-- [NEW] 로그인 사용자 정보 -->
+      <div id="sidebarUser" class="sidebar-user">
+        <div class="user-info">
+          <div class="user-name" id="userName">-</div>
+          <div class="user-role-text" id="userRoleText">-</div>
+        </div>
+        <button class="logout-btn" onclick="doLogout()" title="로그아웃">🚪 로그아웃</button>
       </div>
-      © 2026 (주)호텔덕구온천<br>구매 재고 관리 시스템
-    </div>
-  </aside>
 
-  <!-- ═══════ 메인 콘텐츠 ═══════ -->
-  <main class="main-content">
+      <div class="sidebar-footer">
+        <div id="lastSyncStatus" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">
+          <span class="nav-icon" style="font-size: 0.8rem;">🔄</span> 통합 갱신 일시: <span id="lastSyncTimeText">-</span>
+        </div>
+        © 2026 (주)호텔덕구온천<br>재고 관리 시스템
+      </div>
+    </aside>
 
-    <!-- ━━━━━━━━━ 대시보드 탭 ━━━━━━━━━ -->
-    <div id="tab-dashboard" class="tab-content active">
-      <div class="page-header">
-        <h2>📊 대시보드</h2>
-        <div class="header-meta">
-          <div class="dropdown" style="display:inline-block; margin-right: 8px;">
-            <button class="btn btn-primary btn-sm dropbtn">🖨️ 인쇄/다운로드 ▼</button>
-            <div class="dropdown-content">
-              <button onclick="printPhysicalCheckList()">🖨️ 실사 양식 인쇄 (PDF)</button>
-              <button onclick="downloadPhysicalCheckListExcel()">📥 실사 양식 다운로드 (Excel)</button>
+    <!-- ═══════ 메인 콘텐츠 ═══════ -->
+    <main class="main-content">
+
+      <!-- ━━━━━━━━━ 대시보드 탭 ━━━━━━━━━ -->
+      <div id="tab-dashboard" class="tab-content active">
+        <div class="page-header">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <h2 style="margin: 0;">📊 대시보드</h2>
+            <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: normal; background: #f1f5f9; padding: 4px 12px; border-radius: 12px; border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 0.9rem;">🕒</span>
+              <span id="dashDate" style="font-weight: 600; color: var(--navy-700);">-</span>
             </div>
           </div>
-          <span id="dashDate">-</span>
-          <span id="dashSeason" class="season-badge">-</span>
-          <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)" style="margin-right:4px;" title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
-          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('refreshDashboard')" title="통합 갱신">🔄 통합갱신</button>
-        </div>
-      </div>
-
-      <div class="kpi-grid">
-        <div class="kpi-card total">
-          <div class="kpi-label">전체 관리 품목</div>
-          <div><span id="kpiTotal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
-        </div>
-        <div class="kpi-card risk">
-          <div class="kpi-label">🚨 위험</div>
-          <div><span id="kpiRisk" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
-        </div>
-        <div class="kpi-card order">
-          <div class="kpi-label">⚠️ 발주필요</div>
-          <div><span id="kpiOrder" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
-        </div>
-        <div class="kpi-card normal">
-          <div class="kpi-label">✅ 정상</div>
-          <div><span id="kpiNormal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h3>🔔 위험 · 발주필요 품목</h3>
-        </div>
-        <div class="card-body">
-          <div class="data-table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>품목코드</th><th>품목명</th><th>규격</th>
-                  <th>현재고</th><th>안전재고</th><th>발주점</th>
-                  <th>적정발주량</th><th>상태</th>
-                </tr>
-              </thead>
-              <tbody id="alertTableBody">
-                <tr><td colspan="8" class="empty-state"><span class="empty-icon">📋</span><p>데이터를 불러오는 중...</p></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ━━━━━━━━━ 입출고 기록 탭 ━━━━━━━━━ -->
-    <div id="tab-transactions" class="tab-content">
-      <div class="page-header">
-        <h2 style="display:flex; align-items:center;">📝 입출고 기록</h2>
-        <div class="header-meta">
-          <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTx)" style="margin-right:4px;" title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
-          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('incrementalSync')" title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다.">⚡ 신규 내역 취합</button>
-          <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()" style="border: 1px solid var(--gold); background: #fffdf5;" title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
-          <select id="txShopSelect" class="form-group select" onchange="loadTransactions()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:0.85rem;">
-            <option value="">업장 선택...</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h3>➕ 새 입출고 기록</h3>
-        </div>
-        <div class="card-body">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>날짜</label>
-              <input type="date" id="txDate">
-            </div>
-            <div class="form-group autocomplete-wrapper">
-              <label>품목명 검색</label>
-              <input type="text" id="txItemNameSearch" placeholder="품목명 입력 후 선택..." autocomplete="off" oninput="onItemNameInput(this.value)">
-              <div id="itemNameDropdown" class="autocomplete-list" style="display:none"></div>
-            </div>
-            <div class="form-group">
-              <label>품목코드</label>
-              <input type="text" id="txItemCode" readonly style="background:#e8f0fb" placeholder="자동 입력">
-            </div>
-            <div class="form-group">
-              <label>구분</label>
-              <select id="txType">
-                <option value="">선택...</option>
-                <option value="입고">입고</option>
-                <option value="출고">출고</option>
-                <option value="폐기">폐기</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>수량</label>
-              <input type="number" id="txQty" min="1" placeholder="0">
-            </div>
-            <div class="form-group">
-              <label>담당자</label>
-              <input type="text" id="txPerson" placeholder="이름">
-            </div>
-            <div class="form-group" style="grid-column: span 2">
-              <label>비고</label>
-              <input type="text" id="txNote" placeholder="메모 (선택)">
-            </div>
-          </div>
-          <div class="mt-16">
-            <button class="btn btn-gold" onclick="saveTransaction()">💾 기록 저장</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h3>📋 최근 입출고 내역</h3>
-          <span id="txCount" style="font-size:0.8rem;color:var(--text-secondary)">0건</span>
-        </div>
-        <div class="card-body">
-          <div style="background:linear-gradient(135deg,#f0f4ff,#e8f0fb); border-left:4px solid var(--navy-600,#1e3a5f); border-radius:8px; padding:10px 16px; margin-bottom:12px; font-size:0.85rem; color:var(--navy-800,#0f2033); display:flex; align-items:center; gap:8px;">
-            <span>📌</span>
-            <span>표시 건수: 업장별 최대 <strong>50건</strong> / 정렬: 최신 등록일 기준 <strong>내림차순</strong></span>
-          </div>
-          <div class="data-table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>날짜</th><th>품목코드</th><th>품목명</th>
-                  <th>구분</th><th>수량</th><th>담당자</th>
-                  <th>비고</th><th>거래ID</th>
-                </tr>
-              </thead>
-              <tbody id="txTableBody">
-                <tr><td colspan="8" class="empty-state"><span class="empty-icon">📝</span><p>업장을 선택하세요</p></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-
-
-    <!-- ━━━━━━━━━ 업장 관리 탭 ━━━━━━━━━ -->
-    <div id="tab-shop" class="tab-content">
-      <div class="page-header">
-        <h2>🏪 업장 관리</h2>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <h3>업장 목록</h3>
-          <button class="btn btn-gold btn-sm admin-only" onclick="openAddShopModal()">➕ 추가</button>
-        </div>
-        <div class="card-body">
-          <div class="data-table-wrapper">
-            <table class="data-table">
-              <thead><tr><th>분류</th><th>업장명</th><th>태그</th><th>상태</th><th class="admin-only">관리</th></tr></thead>
-              <tbody id="shopTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ━━━━━━━━━ 시즌 관리 탭 ━━━━━━━━━ -->
-    <div id="tab-season" class="tab-content">
-      <div class="page-header">
-        <h2>📅 시즌 관리</h2>
-        <div class="header-meta">
-          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('validateSeason')" title="시즌 설정이 올바른지 검증하고 누락된 설정을 확인합니다.">✅ 시즌 설정 검증</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <h3>시즌 설정</h3>
-          <button class="btn btn-gold btn-sm admin-only" onclick="openAddSeasonModal()">➕ 추가</button>
-        </div>
-        <div class="card-body">
-          <div class="data-table-wrapper">
-            <table class="data-table">
-              <thead><tr><th>시즌명</th><th>시작일</th><th>종료일</th><th>배수</th><th class="admin-only">관리</th></tr></thead>
-              <tbody id="seasonTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ━━━━━━━━━ 계정 관리 탭 ━━━━━━━━━ -->
-    <div id="tab-user" class="tab-content">
-      <div class="page-header">
-        <h2>👥 계정 관리</h2>
-        <div class="header-meta">
-          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('syncPermissions')" title="사용자 권한 변경 사항을 각 시트에 강제로 동기화합니다.">🔐 권한 재동기화</button>
-          <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('backupCSV')" title="현재 데이터를 CSV 파일로 즉시 백업합니다.">💾 CSV 백업 실행</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <h3>사용자 계정</h3>
-          <button class="btn btn-gold btn-sm admin-only" onclick="openCreateUserModal()">➕ 계정 생성</button>
-        </div>
-        <div class="card-body">
-          <div class="data-table-wrapper">
-            <table class="data-table">
-              <thead><tr><th>아이디</th><th>성함</th><th>부서</th><th>역할</th><th class="admin-only">관리</th></tr></thead>
-              <tbody id="userTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-
-
-    <!-- ━━━━━━━━━ 기초데이터 관리 탭 ━━━━━━━━━ -->
-    <div id="tab-basedata" class="tab-content">
-      <div class="page-header">
-        <h2>📂 기초데이터 관리</h2>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h3>대분류 (업장 분류)</h3></div>
-        <div class="card-body">
-          <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
-            <input type="text" id="newMainCat" placeholder="새 분류명" style="flex: 1; max-width: 200px;">
-            <button class="btn btn-gold" onclick="addBaseDataItem('mainCategory')">추가</button>
-          </div>
-          <div class="chip-list" id="mainCatList">
-            <span class="empty-state">데이터를 불러오는 중...</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h3>단위 목록</h3></div>
-        <div class="card-body">
-          <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
-            <input type="text" id="newUnit" placeholder="새 단위명" style="flex: 1; max-width: 200px;">
-            <button class="btn btn-gold" onclick="addBaseDataItem('unit')">추가</button>
-          </div>
-          <div class="chip-list" id="unitList"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h3>품목 카테고리</h3></div>
-        <div class="card-body">
-          <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
-            <input type="text" id="newItemCat" placeholder="새 카테고리명" style="flex: 1; max-width: 200px;">
-            <button class="btn btn-gold" onclick="addBaseDataItem('itemCategory')">추가</button>
-          </div>
-          <div class="chip-list" id="itemCatList"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ━━━━━━━━━ 내 설정 탭 ━━━━━━━━━ -->
-    <div id="tab-mysettings" class="tab-content">
-      <div class="page-header">
-        <h2>⚙️ 내 설정</h2>
-      </div>
-
-      <div class="card" style="max-width: 600px; margin-bottom: 24px;">
-        <div class="card-header">
-          <h3>내 계정 정보</h3>
-        </div>
-        <div class="card-body">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>아이디</label>
-              <input type="text" id="mySettingsUsername" readonly style="background:#e8f0fb">
-            </div>
-            <div class="form-group">
-              <label>성함</label>
-              <input type="text" id="mySettingsName" readonly style="background:#e8f0fb">
-            </div>
-            <div class="form-group">
-              <label>역할</label>
-              <input type="text" id="mySettingsRole" readonly style="background:#e8f0fb">
-            </div>
-            <div class="form-group">
-              <label>부서</label>
-              <input type="text" id="mySettingsDept" readonly style="background:#e8f0fb">
-            </div>
-            <div class="form-group" style="grid-column: span 2;">
-              <label>배정된 업장</label>
-              <div id="mySettingsShops" class="chip-container" style="min-height: 40px; padding: 10px; border: 1px solid var(--border); border-radius: 4px; background: #f8fafc;">
-                <!-- 자바스크립트로 배정된 업장이 배지 형태로 표시됩니다. -->
+          <div class="header-meta">
+            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)" style="margin-right:4px;"
+              title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
+            <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('refreshDashboard')"
+              title="통합 갱신" style="margin-right:4px;">🔄 통합갱신</button>
+            <div class="dropdown" style="display:inline-block; margin-right: 8px;">
+              <button class="btn btn-primary btn-sm dropbtn">🖨️ 인쇄/다운로드 ▼</button>
+              <div class="dropdown-content">
+                <button onclick="printPhysicalCheckList()">🖨️ 실사 양식 인쇄 (PDF)</button>
+                <button onclick="downloadPhysicalCheckListExcel()">📥 실사 양식 다운로드 (Excel)</button>
               </div>
-              <small class="form-text text-muted" style="margin-top:5px;">접근 가능한 업장 목록입니다. 권한 변경이 필요하면 관리자에게 문의하세요.</small>
+            </div>
+            <span id="dashSeason" class="season-badge">-</span>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card total">
+            <div class="kpi-label">전체 관리 품목</div>
+            <div><span id="kpiTotal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+          </div>
+          <div class="kpi-card risk">
+            <div class="kpi-label">🚨 위험</div>
+            <div><span id="kpiRisk" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+          </div>
+          <div class="kpi-card order">
+            <div class="kpi-label">⚠️ 발주필요</div>
+            <div><span id="kpiOrder" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+          </div>
+          <div class="kpi-card normal">
+            <div class="kpi-label">✅ 정상</div>
+            <div><span id="kpiNormal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>🔔 위험 · 발주필요 품목</h3>
+          </div>
+          <div class="card-body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>품목코드</th>
+                    <th>품목명</th>
+                    <th>규격</th>
+                    <th>현재고</th>
+                    <th>안전재고</th>
+                    <th>발주점</th>
+                    <th>적정발주량</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody id="alertTableBody">
+                  <tr>
+                    <td colspan="8" class="empty-state"><span class="empty-icon">📋</span>
+                      <p>데이터를 불러오는 중...</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="card" style="max-width: 500px;">
-        <div class="card-header"><h3>비밀번호 변경</h3></div>
-        <div class="card-body">
-          <div class="form-grid" style="grid-template-columns: 1fr;">
-            <div class="form-group">
-              <label>현재 비밀번호</label>
-              <input type="password" id="myOldPw" placeholder="현재 비밀번호">
+      <!-- ━━━━━━━━━ 입출고 기록 탭 ━━━━━━━━━ -->
+      <div id="tab-transactions" class="tab-content">
+        <div class="page-header">
+          <h2 style="display:flex; align-items:center;">📝 입출고 기록</h2>
+          <div class="header-meta">
+            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTransactions)" style="margin-right:4px;"
+              title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
+            <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('incrementalSync')"
+              title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다.">⚡ 신규 내역 취합</button>
+            <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()"
+              style="border: 1px solid var(--gold); background: #fffdf5;"
+              title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
+            <button id="btnShopSelectModal" class="btn btn-outline" onclick="openShopSelectionModal()" style="font-weight:bold; font-size:1.0rem; border: 2px solid var(--navy-600); border-radius: 8px; padding: 6px 16px; color: var(--navy-800); background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+              🏪 작업 업장 선택...
+            </button>
+            <select id="txShopSelect" style="display:none;" onchange="loadTransactions()">
+              <option value="">업장 선택...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>➕ 새 입출고 기록</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>날짜</label>
+                <input type="date" id="txDate">
+              </div>
+              <div class="form-group autocomplete-wrapper">
+                <label>품목명 검색</label>
+                <input type="text" id="txItemNameSearch" placeholder="품목명 입력 후 선택..." autocomplete="off"
+                  oninput="onItemNameInput(this.value)">
+                <div id="itemNameDropdown" class="autocomplete-list" style="display:none"></div>
+              </div>
+              <div class="form-group">
+                <label>품목코드</label>
+                <input type="text" id="txItemCode" readonly style="background:#e8f0fb" placeholder="자동 입력">
+              </div>
+              <div class="form-group">
+                <label>구분</label>
+                <select id="txType">
+                  <option value="">선택...</option>
+                  <option value="입고">입고</option>
+                  <option value="출고">출고</option>
+                  <option value="폐기">폐기</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>수량</label>
+                <input type="number" id="txQty" min="1" placeholder="0">
+              </div>
+              <div class="form-group">
+                <label>담당자</label>
+                <input type="text" id="txPerson" placeholder="이름">
+              </div>
+              <div class="form-group" style="grid-column: span 2">
+                <label>비고</label>
+                <input type="text" id="txNote" placeholder="메모 (선택)">
+              </div>
             </div>
-            <div class="form-group">
-              <label>새 비밀번호</label>
-              <input type="password" id="myNewPw" placeholder="새 비밀번호 (4자 이상)">
+            <div class="mt-16">
+              <button class="btn btn-gold" onclick="saveTransaction()">💾 기록 저장</button>
             </div>
           </div>
-          <div class="mt-16 text-right">
-            <button class="btn btn-gold" onclick="submitMyPasswordChange()">저장</button>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>📋 최근 입출고 내역</h3>
+            <span id="txCount" style="font-size:0.8rem;color:var(--text-secondary)">0건</span>
+          </div>
+          <div class="card-body">
+            <div
+              style="background:linear-gradient(135deg,#f0f4ff,#e8f0fb); border-left:4px solid var(--navy-600,#1e3a5f); border-radius:8px; padding:10px 16px; margin-bottom:12px; font-size:0.85rem; color:var(--navy-800,#0f2033); display:flex; align-items:center; gap:8px;">
+              <span>📌</span>
+              <span>표시 건수: 업장별 최대 <strong>50건</strong> / 정렬: 최신 등록일 기준 <strong>내림차순</strong></span>
+            </div>
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>날짜</th>
+                    <th>품목코드</th>
+                    <th>품목명</th>
+                    <th>구분</th>
+                    <th>수량</th>
+                    <th>담당자</th>
+                    <th>비고</th>
+                    <th>거래ID</th>
+                  </tr>
+                </thead>
+                <tbody id="txTableBody">
+                  <tr>
+                    <td colspan="8" class="empty-state"><span class="empty-icon">📝</span>
+                      <p>업장을 선택하세요</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </main>
-</div>
 
 
-<!-- ═══════ 인쇄 전용 영역 ═══════ -->
-<div id="printContainer" class="print-container"></div>
 
-<?!= include('JS_Auth') ?>
-<?!= include('JS_UI') ?>
-<?!= include('JS_Tx') ?>
+      <!-- ━━━━━━━━━ 업장 관리 탭 ━━━━━━━━━ -->
+      <div id="tab-shop" class="tab-content">
+        <div class="page-header">
+          <h2>🏪 업장 관리</h2>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>업장 목록</h3>
+            <button class="btn btn-gold btn-sm admin-only" onclick="openAddShopModal()">➕ 추가</button>
+          </div>
+          <div class="card-body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>분류</th>
+                    <th>업장명</th>
+                    <th>태그</th>
+                    <th>상태</th>
+                    <th class="admin-only">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="shopTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
 
-<?!= include('JS_Config') ?>
-<?!= include('JS_BaseData') ?>
+      <!-- ━━━━━━━━━ 시즌 관리 탭 ━━━━━━━━━ -->
+      <div id="tab-season" class="tab-content">
+        <div class="page-header">
+          <h2>📅 시즌 관리</h2>
+          <div class="header-meta">
+            <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('validateSeason')"
+              title="시즌 설정이 올바른지 검증하고 누락된 설정을 확인합니다.">✅ 시즌 설정 검증</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>시즌 설정</h3>
+            <button class="btn btn-gold btn-sm admin-only" onclick="openAddSeasonModal()">➕ 추가</button>
+          </div>
+          <div class="card-body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>시즌명</th>
+                    <th>시작일</th>
+                    <th>종료일</th>
+                    <th>배수</th>
+                    <th class="admin-only">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="seasonTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ━━━━━━━━━ 계정 관리 탭 ━━━━━━━━━ -->
+      <div id="tab-user" class="tab-content">
+        <div class="page-header">
+          <h2>👥 계정 관리</h2>
+          <div class="header-meta">
+            <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('syncPermissions')"
+              title="사용자 권한 변경 사항을 각 시트에 강제로 동기화합니다.">🔐 권한 재동기화</button>
+            <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('backupCSV')"
+              title="현재 데이터를 CSV 파일로 즉시 백업합니다.">💾 CSV 백업 실행</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>사용자 계정</h3>
+            <button class="btn btn-gold btn-sm admin-only" onclick="openCreateUserModal()">➕ 계정 생성</button>
+          </div>
+          <div class="card-body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>아이디</th>
+                    <th>성함</th>
+                    <th>부서</th>
+                    <th>역할</th>
+                    <th class="admin-only">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="userTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+
+      <!-- ━━━━━━━━━ 기초데이터 관리 탭 ━━━━━━━━━ -->
+      <div id="tab-basedata" class="tab-content">
+        <div class="page-header">
+          <h2>📂 기초데이터 관리</h2>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>대분류 (업장 분류)</h3>
+          </div>
+          <div class="card-body">
+            <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
+              <input type="text" id="newMainCat" placeholder="새 분류명" style="flex: 1; max-width: 200px;">
+              <button class="btn btn-gold" onclick="addBaseDataItem('mainCategory')">추가</button>
+            </div>
+            <div class="chip-list" id="mainCatList">
+              <span class="empty-state">데이터를 불러오는 중...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>단위 목록</h3>
+          </div>
+          <div class="card-body">
+            <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
+              <input type="text" id="newUnit" placeholder="새 단위명" style="flex: 1; max-width: 200px;">
+              <button class="btn btn-gold" onclick="addBaseDataItem('unit')">추가</button>
+            </div>
+            <div class="chip-list" id="unitList"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>품목 카테고리</h3>
+          </div>
+          <div class="card-body">
+            <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
+              <input type="text" id="newItemCat" placeholder="새 카테고리명" style="flex: 1; max-width: 200px;">
+              <button class="btn btn-gold" onclick="addBaseDataItem('itemCategory')">추가</button>
+            </div>
+            <div class="chip-list" id="itemCatList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ━━━━━━━━━ 내 설정 탭 ━━━━━━━━━ -->
+      <div id="tab-mysettings" class="tab-content">
+        <div class="page-header">
+          <h2>⚙️ 내 설정</h2>
+        </div>
+
+        <div class="card" style="max-width: 600px; margin-bottom: 24px;">
+          <div class="card-header">
+            <h3>내 계정 정보</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>아이디</label>
+                <input type="text" id="mySettingsUsername" readonly style="background:#e8f0fb">
+              </div>
+              <div class="form-group">
+                <label>성함</label>
+                <input type="text" id="mySettingsName" readonly style="background:#e8f0fb">
+              </div>
+              <div class="form-group">
+                <label>역할</label>
+                <input type="text" id="mySettingsRole" readonly style="background:#e8f0fb">
+              </div>
+              <div class="form-group">
+                <label>부서</label>
+                <input type="text" id="mySettingsDept" readonly style="background:#e8f0fb">
+              </div>
+              <div class="form-group" style="grid-column: span 2;">
+                <label>배정된 업장</label>
+                <div id="mySettingsShops" class="chip-container"
+                  style="min-height: 40px; padding: 10px; border: 1px solid var(--border); border-radius: 4px; background: #f8fafc;">
+                  <!-- 자바스크립트로 배정된 업장이 배지 형태로 표시됩니다. -->
+                </div>
+                <small class="form-text text-muted" style="margin-top:5px;">접근 가능한 업장 목록입니다. 권한 변경이 필요하면 관리자에게
+                  문의하세요.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width: 500px;">
+          <div class="card-header">
+            <h3>비밀번호 변경</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-grid" style="grid-template-columns: 1fr;">
+              <div class="form-group">
+                <label>현재 비밀번호</label>
+                <input type="password" id="myOldPw" placeholder="현재 비밀번호">
+              </div>
+              <div class="form-group">
+                <label>새 비밀번호</label>
+                <input type="password" id="myNewPw" placeholder="새 비밀번호 (4자 이상)">
+              </div>
+            </div>
+            <div class="mt-16 text-right">
+              <button class="btn btn-gold" onclick="submitMyPasswordChange()">저장</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+
+  <!-- ═══════ 인쇄 전용 영역 ═══════ -->
+  <div id="printContainer" class="print-container"></div>
+
+  <?!= include('JS_Auth') ?>
+  <?!= include('JS_UI') ?>
+  <?!= include('JS_Tx') ?>
+
+  <?!= include('JS_Config') ?>
+  <?!= include('JS_BaseData') ?>
 </body>
+
 </html>

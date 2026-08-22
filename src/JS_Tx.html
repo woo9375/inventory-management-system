@@ -1,5 +1,38 @@
 <script>
 // ═══════════════════════════════════════════════════════════════
+//  [NEW] 업장 선택 모달
+// ═══════════════════════════════════════════════════════════════
+function openShopSelectionModal() {
+  var shops = Array.from(document.getElementById('txShopSelect').options);
+  if (shops.length <= 1) { 
+    loadShopList(); 
+    showToast('업장 목록을 불러오는 중입니다. 잠시 후 다시 시도해주세요.', 'info');
+    return;
+  }
+  
+  var body = '<div style="display:flex; flex-direction:column; gap:10px; max-height:400px; overflow-y:auto; padding-right:5px;">';
+  body += '<p style="margin-bottom:12px; color:var(--text-secondary); text-align:center;">입출고 기록을 조회 및 등록할 업장을 명확히 선택해주세요.</p>';
+  
+  shops.forEach(function(opt) {
+    if (!opt.value) return; 
+    body += '<button class="btn btn-outline" style="text-align:left; padding:16px 20px; font-size:1.1rem; justify-content:flex-start; border-radius:12px;" onclick="selectShopFromModal(\'' + opt.value + '\', \'' + opt.textContent + '\')">🏪 ' + opt.textContent + '</button>';
+  });
+  
+  body += '</div>';
+  
+  openModal('작업 업장 선택', body, '');
+}
+
+function selectShopFromModal(value, text) {
+  var select = document.getElementById('txShopSelect');
+  select.value = value;
+  var btn = document.getElementById('btnShopSelectModal');
+  if(btn) btn.innerHTML = '🏪 현재 작업 업장: ' + text + ' ▼';
+  closeModal();
+  loadTransactions();
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  업장 목록 & 품목코드 로드
 // ═══════════════════════════════════════════════════════════════
 function loadShopList() {
