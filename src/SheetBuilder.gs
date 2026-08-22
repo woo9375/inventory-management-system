@@ -220,11 +220,7 @@ function buildItemMaster(ss) {
   sheet.getRange("S2:W2").setBackground("#27ae60"); // 회계금액
   sheet.getRange("X2").setBackground("#7f8c8d"); // [v9.0] 사용유무
 
-  const rawData = [
-    ["ITM-001", "세탁 세제 (10kg)", "세제류", "A", "박스", "", 20, 20, 0, "", 3, 5, 30, "", "", "", "", "", "과세", 15000, "", "", "", "사용"],
-    ["ITM-002", "샴푸 (30ml)", "어메니티", "A", "박스", "", 50, 50, 0, "", 3, 5, 30, "", "", "", "", "", "과세", 25000, "", "", "", "사용"]
-  ];
-  sheet.getRange(3, 1, rawData.length, 24).setValues(rawData);
+
 
   // 안전재고 (N3) — [v7.0] 시즌 배수 참조를 시즌설정 시트로 변경
   sheet.getRange("N3").setFormula(`=ARRAYFORMULA(IF(A3:A="", "", ROUNDUP(I3:I * L3:L * '${SHEET_SEASONS}'!$D$2, 0)))`);
