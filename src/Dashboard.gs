@@ -5,11 +5,8 @@
 
 function consolidateAllSheets(ss) {
   const consolidated = ss.getSheetByName(SHEET_INOUT);
-  // [v7.0] 업장관리 시트에서 업장 목록 조회
   const shopSheet = ss.getSheetByName(SHEET_SHOPS);
-  const lastRow = consolidated.getLastRow();
-  if (lastRow >= 3) consolidated.getRange(3, 1, lastRow - 2, TX_COLS).clearContent();
-
+  
   const shopLastRow = shopSheet.getLastRow();
   if (shopLastRow < 3) return;
   const configRows = shopSheet.getRange(3, 1, shopLastRow - 2, 6).getValues();
@@ -25,7 +22,6 @@ function consolidateAllSheets(ss) {
     const last = sh.getLastRow();
     if (last < 3) return;
 
-    // [v7.0] 9열 구조
     const rows = sh.getRange(3, 1, last - 2, TX_COLS).getValues();
     rows.forEach(r => { if (r[1]) allDataRows.push(r); });
   });
@@ -38,6 +34,11 @@ function consolidateAllSheets(ss) {
     return da - db;
   });
 
+  // [FIX] 데이터 유실 방지(Write-then-Clear): 모든 데이터 수집 후 마지막에 덮어쓰기
+  const lastRow = consolidated.getLastRow();
+  if (lastRow >= 3) {
+    consolidated.getRange(3, 1, lastRow - 2, TX_COLS).clearContent();
+  }
   consolidated.getRange(3, 1, allDataRows.length, TX_COLS).setValues(allDataRows).setHorizontalAlignment("center").setBackground(COLORS.autoBg);
 }
 

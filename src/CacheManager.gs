@@ -118,7 +118,8 @@ const CacheManager = {
     const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
     if (masterLastRow < 3) return {};
     
-    const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 20).getValues();
+    // [FIX] 20열 -> 24열로 늘려서 24번째 열(인덱스 23, 사용 여부)을 정상적으로 가져오도록 수정
+    const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
     const itemMap = {};
     masterData.forEach(r => { 
       if(r[0] && r[23] !== '미사용') { 

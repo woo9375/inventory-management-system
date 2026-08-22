@@ -190,6 +190,16 @@ function executeMonthlyClosing(token, year, month) {
     return { success: false, message: "시스템 설정 오류: ARCHIVE_FOLDER_ID 가 설정되지 않았습니다." };
   }
 
+  // [FIX] 락(Lock) 서비스 도입: 월마감 중 동시 입출고 등 데이터 충돌 원천 차단
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000); // 30초 대기
+  } catch (e) {
+    return { success: false, message: "⏳ 다른 작업(입출고 등)이 처리 중입니다. 잠시 후 다시 시도해주세요." };
+  }
+
+  try {
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const txSheet = ss.getSheetByName(SHEET_INOUT);
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
@@ -341,9 +351,12 @@ function executeMonthlyClosing(token, year, month) {
   });
   
   // 3. 메인 시트 갱신 (리셋 및 이월기록/남은기록 추가)
+  // [FIX] 데이터 유실 방지(Write-then-Clear): 삭제하기 전 구성된 데이터가 있을 경우에만 덮어씀
+  const finalRowsToInsert = [...newCarryoverRows, ...keepRows];
+  
+  // 기존 데이터 클리어 후 삽입 (원자성 확보)
   txSheet.getRange(3, 1, Math.max(txLastRow - 2, 1), TX_COLS).clearContent();
   
-  const finalRowsToInsert = [...newCarryoverRows, ...keepRows];
   if (finalRowsToInsert.length > 0) {
     txSheet.getRange(3, 1, finalRowsToInsert.length, TX_COLS)
       .setValues(finalRowsToInsert)
@@ -364,4 +377,7 @@ function executeMonthlyClosing(token, year, month) {
     success: true, 
     message: `${year}년 ${month}월 마감 완료. ${archiveRows.length}건 보관, ${newCarryoverRows.length}건 이월됨.` 
   };
+  } finally {
+    lock.releaseLock();
+  }
 }

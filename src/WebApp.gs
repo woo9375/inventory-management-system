@@ -8,13 +8,15 @@
 // ═══════════════════════════════════════════════════════════════════
 
 function doGet(e) {
-  if (e && e.parameter.action === 'test') {
-    generateStressTestData();
-    runProfiling();
-    testFIFO();
-    testMonthlyClosing();
-    return ContentService.createTextOutput("테스트 및 프로파일링 완료. Apps Script 편집기에서 로그(실행)를 확인하세요.");
-  }
+  // [FIX] 스트레스 테스트 엔드포인트는 인증 없이 호출될 수 없도록 막습니다 (로컬 디버그용으로만 제한)
+  // if (e && e.parameter.action === 'test') {
+  //   generateStressTestData();
+  //   runProfiling();
+  //   testFIFO();
+  //   testMonthlyClosing();
+  //   return ContentService.createTextOutput("테스트 및 프로파일링 완료. Apps Script 편집기에서 로그(실행)를 확인하세요.");
+  // }
+  
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('호텔덕구온천 재고 관리 시스템')
@@ -174,6 +176,15 @@ function addNewItem(token, itemData) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   const lastRow = masterSheet.getLastRow();
+  
+  // [FIX] 품목코드 중복 검증
+  if (lastRow >= 3) {
+    const existingCodes = masterSheet.getRange(3, 1, lastRow - 2, 1).getValues().flat();
+    if (existingCodes.includes(itemData.code)) {
+      return { success: false, message: `❌ 품목코드 '${itemData.code}'는 이미 존재합니다.` };
+    }
+  }
+
   const newRow = Math.max(lastRow + 1, 3);
 
   masterSheet.getRange(newRow, 1, 1, 5).setValues([[
@@ -459,43 +470,45 @@ function addTransaction(token, shopName, txData) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "인증이 필요합니다." };
 
-  // [CR-02 FIX] IDOR 방어: Staff는 자신의 담당 업장만 접근 가능
+  // [CR-02 FIX] IDOR 방어: Staff는 자신의 담당 업장만 접근 가능 (복수 업장 배열 검증으로 수정)
   if (session.role === ROLES.STAFF) {
-    if (!session.assignedShop || session.assignedShop !== shopName) {
+    if (!session.assignedShops || !session.assignedShops.includes(shopName)) {
       return { success: false, message: "⛔ 담당 업장이 아닙니다." };
     }
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(shopName);
-  if (!sheet) return { success: false, message: `❌ 업장 '${shopName}'을 찾을 수 없습니다.` };
+  // [FIX] 락(Lock) 서비스 도입: 동시 입출고 충돌 방지
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000); // 10초 대기
+  } catch (e) {
+    return { success: false, message: "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요." };
+  }
 
-  // 품목명 & 매입단가 자동 조회
-  const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
-  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 20).getValues();
-  const itemMap = {};
-  const priceMap = {};
-  masterData.forEach(r => { 
-    if(r[0]) {
-      itemMap[r[0]] = r[1]; 
-      priceMap[r[0]] = r[19] || 0; // T열 = 매입단가
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(shopName);
+    if (!sheet) return { success: false, message: `❌ 업장 '${shopName}'을 찾을 수 없습니다.` };
+
+    // [FIX] 품목명 & 매입단가 자동 조회 시 마스터 시트 풀 스캔 대신 캐시 활용
+    let itemInfoMap = CacheManager.get(CACHE_KEYS.ITEM_MAP);
+    if (!itemInfoMap) {
+      itemInfoMap = CacheManager.buildItemMapCache(ss);
     }
-  });
 
-  // [v7.0] 품목코드 유효성 검증 (오기입 방지)
-  if (!itemMap[txData.code]) {
-    return { success: false, message: "❌ 품목 마스터에 등록되지 않은 품목코드입니다. 등록된 품목을 선택해주세요." };
-  }
+    // [v7.0] 품목코드 유효성 검증 (오기입 방지)
+    if (!itemInfoMap[txData.code]) {
+      return { success: false, message: "❌ 품목 마스터에 등록되지 않은 품목코드입니다. 등록된 품목을 선택해주세요." };
+    }
 
-  // [NF-05 FIX] 수량 유효성 검증: 0 이하 값 차단
-  const qty = Number(txData.qty);
-  if (!qty || qty <= 0 || !Number.isFinite(qty)) {
-    return { success: false, message: "❌ 수량은 0보다 큰 유효한 숫자여야 합니다." };
-  }
+    // [NF-05 FIX] 수량 유효성 검증: 0 이하 값 차단
+    const qty = Number(txData.qty);
+    if (!qty || qty <= 0 || !Number.isFinite(qty)) {
+      return { success: false, message: "❌ 수량은 0보다 큰 유효한 숫자여야 합니다." };
+    }
 
-  const itemName = itemMap[txData.code];
-  const unitPrice = priceMap[txData.code] || 0;
+    const itemName = itemInfoMap[txData.code].name;
+    const unitPrice = itemInfoMap[txData.code].price || 0;
 
   // 거래ID 자동 생성
   const shopSheet = ss.getSheetByName(SHEET_SHOPS);
@@ -518,12 +531,15 @@ function addTransaction(token, shopName, txData) {
     txData.person || session.name, txData.note || "", txId
   ]]);
   sheet.getRange(newRow, 1, 1, TX_COLS).setHorizontalAlignment("center");
-  sheet.getRange(newRow, 3).setBackground(COLORS.autoBg);  // 품목명
-  sheet.getRange(newRow, 6).setBackground(COLORS.autoBg);  // 단가
-  sheet.getRange(newRow, 9).setBackground(COLORS.autoBg);  // 거래ID
+    sheet.getRange(newRow, 3).setBackground(COLORS.autoBg);  // 품목명
+    sheet.getRange(newRow, 6).setBackground(COLORS.autoBg);  // 단가
+    sheet.getRange(newRow, 9).setBackground(COLORS.autoBg);  // 거래ID
 
-  CacheManager.invalidateAll();
-  return { success: true, message: `✅ ${shopName} 입출고 기록 저장 완료 (거래ID: ${txId})`, txId: txId };
+    CacheManager.invalidateAll();
+    return { success: true, message: `✅ ${shopName} 입출고 기록 저장 완료 (거래ID: ${txId})`, txId: txId };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 
@@ -664,6 +680,19 @@ function deleteShop(token, shopName) {
 
   const rowNum = targetRowIdx + 3;
   shopSheet.getRange(rowNum, 1, 1, 6).clearContent();
+
+  // [FIX] 빈 행 정리 (위로 당기기)
+  const remainingData = data.filter((_, idx) => idx !== targetRowIdx);
+  shopSheet.getRange(3, 1, data.length, 6).clearContent();
+  
+  // 배경색 초기화 (새로운 범위에 맞게 재적용하기 위해)
+  shopSheet.getRange(3, 1, data.length, 6).setBackground(null);
+  
+  if (remainingData.length > 0) {
+    shopSheet.getRange(3, 1, remainingData.length, 6).setValues(remainingData);
+    shopSheet.getRange(3, 1, remainingData.length, 3).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+    shopSheet.getRange(3, 4, remainingData.length, 3).setBackground(COLORS.autoBg).setHorizontalAlignment("center");
+  }
 
   _refreshPermissionDropdown(ss);
   CacheManager.invalidateAll();
