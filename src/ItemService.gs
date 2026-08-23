@@ -160,8 +160,10 @@ function addNewItem(token, itemData) {
 // [v7.0] 변경이력 기록 추가
 
 function uploadItemMasterCSV(token, dataRows) {
-  const session = validateSession(token);
-  if (!session || session.role === 'staff') return { success: false, message: "권한이 없습니다." };
+  if (token !== 'SHEET_UI') {
+    const session = validateSession(token);
+    if (!session || session.role === 'staff') return { success: false, message: "권한이 없습니다." };
+  }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
@@ -467,3 +469,33 @@ function _sortMasterByUsageStatus(masterSheet) {
   }
 }
 
+/**
+ * 구글 시트 UI(모달)에서 CSV 문자열을 받아 처리하는 함수
+ */
+function processCsvUploadFromSheet(csvString) {
+  try {
+    const lines = csvString.split('\n');
+    const dataRows = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const cols = line.split(',');
+      if (cols.length >= 2) {
+        dataRows.push(cols.map(c => c.replace(/^"|"$/g, '').trim()));
+      }
+    }
+    
+    if (dataRows.length === 0) {
+      throw new Error("유효한 데이터가 없습니다.");
+    }
+    
+    const result = uploadItemMasterCSV("SHEET_UI", dataRows);
+    if (result.success) {
+      return result.message;
+    } else {
+      throw new Error(result.message);
+    }
+  } catch (err) {
+    throw new Error(err.message);
+  }
+}

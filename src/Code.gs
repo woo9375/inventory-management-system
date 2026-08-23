@@ -28,6 +28,16 @@ function backupCSV() {
   SpreadsheetApp.getUi().alert("✅ CSV 백업이 완료되었습니다.");
 }
 
+/**
+ * 시트 관리자 도구 탭 등에서 버튼 클릭으로 CSV 업로드 모달을 띄우는 함수
+ */
+function openCsvUploadModal() {
+  const html = HtmlService.createHtmlOutputFromFile('UploadCsv')
+    .setWidth(400)
+    .setHeight(300);
+  SpreadsheetApp.getUi().showModalDialog(html, '📤 품목마스터 CSV 업로드');
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  시스템 초기 구축
 // ═══════════════════════════════════════════════════════════════════
