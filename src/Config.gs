@@ -51,15 +51,22 @@ const ROLES = { ADMIN: "admin", MANAGER: "manager", STAFF: "staff" };
 
 const SESSION_TIMEOUT_SECONDS = 21600; // 6시간 (CacheService 최대값)
 const SESSION_PREFIX = "session_";     // CacheService 키 접두어
+const LOGIN_ATTEMPT_PREFIX = "login_attempt_";
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_ATTEMPT_WINDOW_SECONDS = 900;
+const MIN_PASSWORD_LENGTH = 8;
 
-// 기본 계정 리스트 (createAll 초기화 시 자동 생성)
-const DEFAULT_USERS = [
-  { username: "mh_kwon@dukgu.com", password: "dukgu1013!", name: "권미화", dept: "경영지원팀", role: "admin" },
-  { username: "yw_bae@dukgu.com", password: "dukgu1013!", name: "배영우", dept: "관리팀", role: "admin" },
-  { username: "ss_shim@dukgu.com", password: "dukgu1013!", name: "심순섭", dept: "관리팀", role: "admin" },
-  { username: "js_seo@dukgu.com", password: "dukgu1013!", name: "서정승", dept: "구매팀", role: "manager" },
-  { username: "gy_jeong@dukgu.com", password: "dukgu1013!", name: "정경용", dept: "구매팀", role: "staff" }
-];
+// 최초 관리자 계정은 소스가 아닌 Script Properties에서만 읽습니다.
+const INITIAL_ADMIN_PROPERTY_KEYS = {
+  USERNAME: "INITIAL_ADMIN_USERNAME",
+  PASSWORD: "INITIAL_ADMIN_PASSWORD",
+  NAME: "INITIAL_ADMIN_NAME",
+  DEPT: "INITIAL_ADMIN_DEPT"
+};
+
+const VALID_TRANSACTION_TYPES = ["입고", "출고", "폐기"];
+const MAX_TRANSACTION_QTY = 100000000;
+const MAX_TRANSACTION_NOTE_LENGTH = 500;
 
 // [v7.0] 사용자 데이터 열 매핑 (👤 사용자관리 시트 A~E열)
 const USER_COLS = {

@@ -10,24 +10,29 @@ function openShopSelectionModal() {
     return;
   }
   
-  var body = '<div style="display:flex; flex-direction:column; gap:10px; max-height:400px; overflow-y:auto; padding-right:5px;">';
-  body += '<p style="margin-bottom:12px; color:var(--text-secondary); text-align:center;">입출고 기록을 조회 및 등록할 업장을 명확히 선택해주세요.</p>';
-  
+  openModal('작업 업장 선택', '<div id="shopSelectionList"></div>', '');
+  var list = document.getElementById('shopSelectionList');
+  list.style.cssText = 'display:flex; flex-direction:column; gap:10px; max-height:400px; overflow-y:auto; padding-right:5px;';
+  var help = document.createElement('p');
+  help.style.cssText = 'margin-bottom:12px; color:var(--text-secondary); text-align:center;';
+  help.textContent = '입출고 기록을 조회 및 등록할 업장을 명확히 선택해주세요.';
+  list.appendChild(help);
   shops.forEach(function(opt) {
-    if (!opt.value) return; 
-    body += '<button class="btn btn-outline" style="text-align:left; padding:16px 20px; font-size:1.1rem; justify-content:flex-start; border-radius:12px;" onclick="selectShopFromModal(\'' + opt.value + '\', \'' + opt.textContent + '\')">' + opt.textContent + '</button>';
+    if (!opt.value) return;
+    var shopButton = document.createElement('button');
+    shopButton.className = 'btn btn-outline';
+    shopButton.style.cssText = 'text-align:left; padding:16px 20px; font-size:1.1rem; justify-content:flex-start; border-radius:12px;';
+    shopButton.textContent = opt.textContent;
+    shopButton.addEventListener('click', function() { selectShopFromModal(opt.value, opt.textContent); });
+    list.appendChild(shopButton);
   });
-  
-  body += '</div>';
-  
-  openModal('작업 업장 선택', body, '');
 }
 
 function selectShopFromModal(value, text) {
   var select = document.getElementById('txShopSelect');
   select.value = value;
   var btn = document.getElementById('btnShopSelectModal');
-  if(btn) btn.innerHTML = '🏪 업장 선택: ' + text + ' ▼';
+  if(btn) btn.textContent = '🏪 업장 선택: ' + text + ' ▼';
   closeModal();
   loadTransactions();
 }
@@ -39,16 +44,16 @@ function loadShopList() {
   google.script.run
     .withSuccessHandler(function(shops) {
       var select = document.getElementById('txShopSelect');
-      select.innerHTML = '<option value="">업장 선택...</option>';
+      select.replaceChildren();
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = '업장 선택...';
+      select.appendChild(placeholder);
       shops.forEach(function(shop) {
-        var isAdmin = currentUser && currentUser.role === 'admin';
-        var isAssignee = currentUser && shop.assignees && (shop.assignees.indexOf(currentUser.name) !== -1 || shop.assignees.indexOf(currentUser.username) !== -1);
-        if (isAdmin || isAssignee) {
-          var opt = document.createElement('option');
-          opt.value = shop.name;
-          opt.textContent = shop.name + ' (' + shop.category + ')';
-          select.appendChild(opt);
-        }
+        var opt = document.createElement('option');
+        opt.value = shop.name;
+        opt.textContent = shop.name + ' (' + shop.category + ')';
+        select.appendChild(opt);
       });
     })
     .withFailureHandler(function() {})
@@ -92,12 +97,7 @@ function onItemNameInput(value) {
           return; 
         }
 
-        var html = '';
-        matches.forEach(function(item) {
-          html += '<div class="autocomplete-item" onclick="selectItemName(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
-            '<span class="item-name">' + item.name + '</span> <span class="item-code" style="color:#888; font-size:0.85em;">(' + item.code + ')</span></div>';
-        });
-        dropdown.innerHTML = html;
+        renderItemMatches(dropdown, matches);
         dropdown.style.display = 'block';
 
         // 정확히 일치하는 이름이 있으면 자동으로 코드 기입
@@ -115,16 +115,31 @@ function onItemNameInput(value) {
         }).slice(0, 10);
         
         if (fallbackMatches.length === 0) { dropdown.style.display = 'none'; codeField.value = ''; return; }
-        var html = '';
-        fallbackMatches.forEach(function(item) {
-          html += '<div class="autocomplete-item" onclick="selectItemName(\'' + item.code + '\', \'' + escapeHtml(item.name) + '\')">' +
-            '<span class="item-name">' + item.name + '</span> <span class="item-code" style="color:#888; font-size:0.85em;">(' + item.code + ')</span></div>';
-        });
-        dropdown.innerHTML = html;
+        renderItemMatches(dropdown, fallbackMatches);
         dropdown.style.display = 'block';
       })
       .searchItemCodes(getToken(), value.trim());
   }, 300); // 300ms 디바운스
+}
+
+function renderItemMatches(dropdown, matches) {
+  var fragment = document.createDocumentFragment();
+  matches.forEach(function(item) {
+    var row = document.createElement('div');
+    row.className = 'autocomplete-item';
+    var name = document.createElement('span');
+    name.className = 'item-name';
+    name.textContent = item.name;
+    var code = document.createElement('span');
+    code.className = 'item-code';
+    code.style.cssText = 'color:#888; font-size:0.85em;';
+    code.textContent = ' (' + item.code + ')';
+    row.appendChild(name);
+    row.appendChild(code);
+    row.addEventListener('click', function() { selectItemName(item.code, item.name); });
+    fragment.appendChild(row);
+  });
+  dropdown.replaceChildren(fragment);
 }
 
 function selectItemName(code, name) {
@@ -161,15 +176,20 @@ function renderTransactions(records) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">📝</span><p>입출고 기록이 없습니다</p></td></tr>';
     return;
   }
-  var html = '';
+  var fragment = document.createDocumentFragment();
   records.forEach(function(r) {
-    var typeClass = r.type === '입고' ? 'color:var(--normal)' : (r.type === '폐기' ? 'color:var(--risk)' : 'color:var(--order)');
-    html += '<tr><td>' + r.date + '</td><td><strong>' + r.code + '</strong></td><td>' + r.name + '</td>' +
-      '<td style="font-weight:600;' + typeClass + '">' + r.type + '</td><td>' + r.qty + '</td>' +
-      '<td>' + (r.person || '-') + '</td><td>' + (r.note || '-') + '</td>' +
-      '<td style="font-size:0.75rem;color:var(--text-secondary)">' + (r.txId || '-') + '</td></tr>';
+    var tr = document.createElement('tr');
+    [r.date, r.code, r.name, r.type, r.qty, r.person || '-', r.note || '-', r.txId || '-'].forEach(function(value, index) {
+      var td = document.createElement('td');
+      td.textContent = value == null ? '' : String(value);
+      if (index === 1) td.style.fontWeight = '600';
+      if (index === 3) { td.style.fontWeight = '600'; td.style.color = r.type === '입고' ? 'var(--normal)' : (r.type === '폐기' ? 'var(--risk)' : 'var(--order)'); }
+      if (index === 7) td.style.cssText = 'font-size:0.75rem;color:var(--text-secondary)';
+      tr.appendChild(td);
+    });
+    fragment.appendChild(tr);
   });
-  tbody.innerHTML = html;
+  tbody.replaceChildren(fragment);
 }
 
 function saveTransaction() {

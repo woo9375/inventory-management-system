@@ -2,6 +2,8 @@
 // ═══════════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════════
+var modalActionContext = {};
+
 function loadConfig() {
   showLoading();
   google.script.run
@@ -20,41 +22,63 @@ function renderConfig(config) {
 
   // 업장 테이블
   var shopBody = document.getElementById('shopTableBody');
-  shopBody.innerHTML = config.shops.map(function(s) {
-    var statusStyle = s.status === '생성완료' ? 'color:var(--normal);font-weight:600' : 'color:var(--order)';
-    var row = '<tr><td>' + s.category + '</td><td>' + s.name + '</td><td>' + s.tag + '</td><td style="' + statusStyle + '">' + s.status + '</td>';
+  shopBody.replaceChildren();
+  (config.shops || []).forEach(function(s) {
+    var tr = document.createElement('tr');
+    [s.category, s.name, s.tag, s.status].forEach(function(value, index) {
+      var td = createConfigCell(value);
+      if (index === 3) td.style.cssText = s.status === '생성완료' ? 'color:var(--normal);font-weight:600' : 'color:var(--order)';
+      tr.appendChild(td);
+    });
     if (isAdmin) {
-      row += '<td><button class="action-btn delete" onclick="confirmDeleteShop(\'' + escapeHtml(s.name) + '\')" title="삭제">🗑️</button></td>';
+      var action = document.createElement('button');
+      action.className = 'action-btn delete'; action.title = '삭제'; action.textContent = '🗑️';
+      action.addEventListener('click', function() { confirmDeleteShop(s.name); });
+      var actionCell = document.createElement('td'); actionCell.appendChild(action); tr.appendChild(actionCell);
     }
-    return row + '</tr>';
-  }).join('');
+    shopBody.appendChild(tr);
+  });
 
   // 시즌 테이블
   var seasonBody = document.getElementById('seasonTableBody');
-  seasonBody.innerHTML = config.seasons.map(function(s) {
-    var row = '<tr><td>' + s.name + '</td><td>' + s.start + '</td><td>' + s.end + '</td><td>×' + s.multiplier + '</td>';
+  seasonBody.replaceChildren();
+  (config.seasons || []).forEach(function(s) {
+    var tr = document.createElement('tr');
+    [s.name, s.start, s.end, '×' + s.multiplier].forEach(function(value) { tr.appendChild(createConfigCell(value)); });
     if (isAdmin) {
-      row += '<td>' +
-        '<button class="action-btn edit" onclick="openEditSeasonModal(\'' + escapeHtml(s.name) + '\', \'' + s.start + '\', \'' + s.end + '\', ' + s.multiplier + ')" title="수정">✏️</button> ' +
-        '<button class="action-btn delete" onclick="confirmDeleteSeason(\'' + escapeHtml(s.name) + '\')" title="삭제">🗑️</button></td>';
+      var actionCell = document.createElement('td');
+      var edit = document.createElement('button'); edit.className = 'action-btn edit'; edit.title = '수정'; edit.textContent = '✏️';
+      edit.addEventListener('click', function() { openEditSeasonModal(s.name, s.start, s.end, s.multiplier); });
+      var remove = document.createElement('button'); remove.className = 'action-btn delete'; remove.title = '삭제'; remove.textContent = '🗑️';
+      remove.addEventListener('click', function() { confirmDeleteSeason(s.name); });
+      actionCell.appendChild(edit); actionCell.appendChild(document.createTextNode(' ')); actionCell.appendChild(remove); tr.appendChild(actionCell);
     }
-    return row + '</tr>';
-  }).join('');
+    seasonBody.appendChild(tr);
+  });
 
   // 사용자 테이블
   var userBody = document.getElementById('userTableBody');
-  userBody.innerHTML = config.users.map(function(u) {
-    var roleBadge = '<span class="role-badge ' + u.role + '">' + u.role + '</span>';
-    var shopsStr = u.assignedShops ? u.assignedShops.join(',') : '';
-    var row = '<tr><td>' + u.username + '</td><td>' + u.name + '</td><td>' + u.dept + '</td><td>' + roleBadge + '</td>';
+  userBody.replaceChildren();
+  (config.users || []).forEach(function(u) {
+    var tr = document.createElement('tr');
+    [u.username, u.name, u.dept].forEach(function(value) { tr.appendChild(createConfigCell(value)); });
+    var roleCell = document.createElement('td'); var roleBadge = document.createElement('span');
+    roleBadge.className = 'role-badge ' + u.role; roleBadge.textContent = u.role; roleCell.appendChild(roleBadge); tr.appendChild(roleCell);
     if (isAdmin) {
-      row += '<td>' +
-        '<button class="action-btn edit" onclick="openEditUserModal(\'' + escapeHtml(u.username) + '\', \'' + escapeHtml(u.name) + '\', \'' + escapeHtml(u.dept) + '\', \'' + u.role + '\', \'' + escapeHtml(shopsStr) + '\')" title="수정">✏️</button> ' +
-        '<button class="action-btn key" onclick="openResetPasswordModal(\'' + escapeHtml(u.username) + '\')" title="비밀번호 초기화">🔑</button> ' +
-        '<button class="action-btn delete" onclick="confirmDeleteUser(\'' + escapeHtml(u.username) + '\')" title="삭제">🗑️</button></td>';
+      var actionCell = document.createElement('td');
+      [['edit', '✏️', '수정', function() { openEditUserModal(u.username, u.name, u.dept, u.role, (u.assignedShops || []).join(',')); }], ['key', '🔑', '비밀번호 초기화', function() { openResetPasswordModal(u.username); }], ['delete', '🗑️', '삭제', function() { confirmDeleteUser(u.username); }]].forEach(function(def) {
+        var button = document.createElement('button'); button.className = 'action-btn ' + def[0]; button.textContent = def[1]; button.title = def[2]; button.addEventListener('click', def[3]); actionCell.appendChild(button); actionCell.appendChild(document.createTextNode(' '));
+      });
+      tr.appendChild(actionCell);
     }
-    return row + '</tr>';
-  }).join('');
+    userBody.appendChild(tr);
+  });
+}
+
+function createConfigCell(value) {
+  var td = document.createElement('td');
+  td.textContent = value == null ? '' : String(value);
+  return td;
 }
 
 
@@ -98,8 +122,9 @@ function submitNewShop() {
 }
 
 function confirmDeleteShop(name) {
-  var body = '<p style="text-align:center;font-size:1rem;">업장 <strong>"' + name + '"</strong>을(를) 비활성화하시겠습니까?<br><span style="color:var(--normal);font-size:0.85rem;">✅ 입출고 데이터는 보존되며, 시트는 숨김 처리됩니다.</span></p>';
-  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteShop(\'' + escapeHtml(name) + '\')"> 비활성화</button>';
+  modalActionContext.name = name;
+  var body = '<p style="text-align:center;font-size:1rem;">업장 <strong>"' + escapeHtml(name) + '"</strong>을(를) 비활성화하시겠습니까?<br><span style="color:var(--normal);font-size:0.85rem;">✅ 입출고 데이터는 보존되며, 시트는 숨김 처리됩니다.</span></p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteShop(modalActionContext.name)"> 비활성화</button>';
   openModal('🗑️ 업장 비활성화 확인', body, footer);
 }
 
@@ -134,12 +159,13 @@ function submitNewSeason() {
 }
 
 function openEditSeasonModal(name, start, end, mult) {
+  modalActionContext.name = name;
   var body = '<div class="form-grid">' +
     '<div class="form-group"><label>시즌명</label><input type="text" id="editSeasonName" value="' + escapeHtml(name) + '" readonly style="background:#e8f0fb"></div>' +
     '<div class="form-group"><label>시작일</label><input type="date" id="editSeasonStart" value="' + start + '"></div>' +
     '<div class="form-group"><label>종료일</label><input type="date" id="editSeasonEnd" value="' + end + '"></div>' +
     '<div class="form-group"><label>안전재고 배수</label><input type="number" id="editSeasonMult" value="' + mult + '" step="0.1" min="0.1"></div></div>';
-  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditSeason(\'' + escapeHtml(name) + '\')">저장</button>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditSeason(modalActionContext.name)">저장</button>';
   openModal('✏️ 시즌 수정 — ' + name, body, footer);
 }
 
@@ -151,8 +177,9 @@ function submitEditSeason(name) {
 }
 
 function confirmDeleteSeason(name) {
-  var body = '<p style="text-align:center;">시즌 <strong>"' + name + '"</strong>을(를) 삭제하시겠습니까?</p>';
-  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteSeason(\'' + escapeHtml(name) + '\')">삭제</button>';
+  modalActionContext.name = name;
+  var body = '<p style="text-align:center;">시즌 <strong>"' + escapeHtml(name) + '"</strong>을(를) 삭제하시겠습니까?</p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteSeason(modalActionContext.name)">삭제</button>';
   openModal('🗑️ 시즌 삭제 확인', body, footer);
 }
 
@@ -169,7 +196,7 @@ function doDeleteSeason(name) {
 function openCreateUserModal() {
   var body = '<div class="form-grid">' +
     '<div class="form-group"><label>아이디 (회사 이메일)</label><input type="email" id="newUserUsername" placeholder="예: hong_gd@dukgu.com"></div>' +
-    '<div class="form-group"><label>초기 비밀번호</label><input type="text" id="newUserPassword" placeholder="4자 이상"></div>' +
+    '<div class="form-group"><label>초기 비밀번호</label><input type="password" id="newUserPassword" placeholder="8자 이상"></div>' +
     '<div class="form-group"><label>성함</label><input type="text" id="newUserName" placeholder="이름"></div>' +
     '<div class="form-group"><label>부서</label><input type="text" id="newUserDept" placeholder="부서명"></div>' +
     '<div class="form-group"><label>역할</label><select id="newUserRole"><option value="staff">staff (담당자)</option><option value="manager">manager (매니저)</option><option value="admin">admin (관리자)</option></select></div></div>';
@@ -186,7 +213,7 @@ function submitCreateUser() {
     role: document.getElementById('newUserRole').value
   };
   if (!data.username || !data.password || !data.name || !data.role) return showToast('모든 필수 필드를 입력해주세요', 'warning');
-  if (data.password.length < 4) return showToast('비밀번호는 4자 이상이어야 합니다', 'warning');
+  if (data.password.length < 8) return showToast('비밀번호는 8자 이상이어야 합니다', 'warning');
 
   showLoading();
   google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
@@ -194,6 +221,7 @@ function submitCreateUser() {
 }
 
 function openEditUserModal(username, name, dept, role, shopsStr) {
+  modalActionContext.username = username;
   var assigned = (shopsStr || '').split(',').map(s => s.trim()).filter(Boolean);
   
   var shopsHtml = '<div id="editUserShopsContainer" class="checkbox-group" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">';
@@ -220,7 +248,7 @@ function openEditUserModal(username, name, dept, role, shopsStr) {
       '<option value="admin"' + (role==='admin'?' selected':'') + '>admin</option></select></div>' +
     '<div class="form-group" style="grid-column: span 2"><label>배정된 업장</label>' + shopsHtml + '</div></div>';
     
-  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditUser(\'' + escapeHtml(username) + '\')">저장</button>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitEditUser(modalActionContext.username)">저장</button>';
   openModal('✏️ 사용자 수정 — ' + username, body, footer);
   
   // 모달 열 때 초기 상태 설정
@@ -269,22 +297,24 @@ function submitEditUser(username) {
 }
 
 function openResetPasswordModal(username) {
-  var body = '<div class="form-grid"><div class="form-group" style="grid-column:span 2"><label><strong>' + escapeHtml(username) + '</strong>의 새 비밀번호</label><input type="text" id="resetNewPw" placeholder="4자 이상"></div></div>';
-  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitResetPassword(\'' + escapeHtml(username) + '\')">초기화</button>';
+  modalActionContext.username = username;
+  var body = '<div class="form-grid"><div class="form-group" style="grid-column:span 2"><label><strong>' + escapeHtml(username) + '</strong>의 새 비밀번호</label><input type="password" id="resetNewPw" placeholder="8자 이상"></div></div>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-gold" onclick="submitResetPassword(modalActionContext.username)">초기화</button>';
   openModal('🔑 비밀번호 초기화', body, footer);
 }
 
 function submitResetPassword(username) {
   var newPw = document.getElementById('resetNewPw').value;
-  if (!newPw || newPw.length < 4) return showToast('비밀번호는 4자 이상이어야 합니다', 'warning');
+  if (!newPw || newPw.length < 8) return showToast('비밀번호는 8자 이상이어야 합니다', 'warning');
   showLoading();
   google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) closeModal(); })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).resetPassword(getToken(), username, newPw);
 }
 
 function confirmDeleteUser(username) {
-  var body = '<p style="text-align:center;">계정 <strong>"' + username + '"</strong>을(를) 삭제하시겠습니까?</p>';
-  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteUser(\'' + escapeHtml(username) + '\')">삭제</button>';
+  modalActionContext.username = username;
+  var body = '<p style="text-align:center;">계정 <strong>"' + escapeHtml(username) + '"</strong>을(를) 삭제하시겠습니까?</p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="doDeleteUser(modalActionContext.username)">삭제</button>';
   openModal('🗑️ 계정 삭제 확인', body, footer);
 }
 

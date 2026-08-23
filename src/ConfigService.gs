@@ -9,9 +9,12 @@ function getConfigData(token) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "인증이 필요합니다." };
 
+  // Staff 결과는 업장 배정에 따라 달라지므로 공유 캐시에 저장하지 않습니다.
   const CACHE_KEY = `CONFIG_DATA_${session.role}`;
-  let cachedData = CacheManager.get(CACHE_KEY);
-  if (cachedData) return cachedData;
+  if (session.role !== ROLES.STAFF) {
+    const cachedData = CacheManager.get(CACHE_KEY);
+    if (cachedData) return cachedData;
+  }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tz = Session.getScriptTimeZone();
@@ -63,8 +66,11 @@ function getConfigData(token) {
   const categories = baseDataSheet.getRange("C3:C50").getValues().flat().filter(v => v);
   const units = baseDataSheet.getRange("B3:B50").getValues().flat().filter(v => v);
 
-  const finalData = { success: true, shops, seasons, users, categories, units, userRole: session.role };
-  CacheManager.set(CACHE_KEY, finalData);
+  const visibleShops = session.role === ROLES.STAFF
+    ? shops.filter(shop => (session.assignedShops || []).includes(shop.name) && shop.status === "생성완료")
+    : shops;
+  const finalData = { success: true, shops: visibleShops, seasons, users, categories, units, userRole: session.role };
+  if (session.role !== ROLES.STAFF) CacheManager.set(CACHE_KEY, finalData);
   return finalData;
 }
 
@@ -289,4 +295,3 @@ function deleteSeason(token, seasonName) {
   CacheManager.invalidateAll();
   return { success: true, message: `✅ 시즌 '${seasonName}' 삭제 완료` };
 }
-

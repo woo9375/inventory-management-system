@@ -26,7 +26,7 @@ function submitMyPasswordChange() {
   var oldPw = document.getElementById('myOldPw').value;
   var newPw = document.getElementById('myNewPw').value;
   if (!oldPw || !newPw) return showToast('비밀번호를 모두 입력해주세요', 'warning');
-  if (newPw.length < 4) return showToast('새 비밀번호는 4자 이상이어야 합니다', 'warning');
+  if (newPw.length < 8) return showToast('새 비밀번호는 8자 이상이어야 합니다', 'warning');
 
   showLoading();
   google.script.run
@@ -73,7 +73,12 @@ function showToast(message, type) {
   var icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
   var toast = document.createElement('div');
   toast.className = 'toast ' + type;
-  toast.innerHTML = '<span>' + (icons[type] || '') + '</span><span>' + message + '</span>';
+  var icon = document.createElement('span');
+  icon.textContent = icons[type] || '';
+  var text = document.createElement('span');
+  text.textContent = String(message || '');
+  toast.appendChild(icon);
+  toast.appendChild(text);
   container.appendChild(toast);
   setTimeout(function() {
     toast.style.opacity = '0';
@@ -131,15 +136,27 @@ function renderDashboard(data) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">🎉</span><p>발주 필요 품목이 없습니다</p></td></tr>';
     return;
   }
-  var html = '';
+  var fragment = document.createDocumentFragment();
   data.alertItems.forEach(function(item) {
     var statusClass = item.status === 'risk' ? 'risk' : 'order';
     var statusText = item.status === 'risk' ? '🚨 위험' : '⚠️ 발주필요';
-    html += '<tr><td><strong>' + item.code + '</strong></td><td>' + item.name + '</td><td>' + item.grade + '</td>' +
-      '<td>' + item.currentStock + '</td><td>' + item.safetyStock + '</td><td>' + item.rop + '</td>' +
-      '<td><strong>' + item.orderQty + '</strong></td><td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td></tr>';
+    var tr = document.createElement('tr');
+    [item.code, item.name, item.grade, item.currentStock, item.safetyStock, item.rop, item.orderQty].forEach(function(value, index) {
+      var td = document.createElement('td');
+      var node = (index === 0 || index === 6) ? document.createElement('strong') : document.createElement('span');
+      node.textContent = value == null ? '' : String(value);
+      td.appendChild(node);
+      tr.appendChild(td);
+    });
+    var statusCell = document.createElement('td');
+    var badge = document.createElement('span');
+    badge.className = 'status-badge ' + statusClass;
+    badge.textContent = statusText;
+    statusCell.appendChild(badge);
+    tr.appendChild(statusCell);
+    fragment.appendChild(tr);
   });
-  tbody.innerHTML = html;
+  tbody.replaceChildren(fragment);
 }
 
 // ═══════════════════════════════════════════════════════════════

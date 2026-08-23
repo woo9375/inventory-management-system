@@ -9,6 +9,15 @@
 // ═══════════════════════════════════════════════════════════════════
 
 function archiveOldRecords() {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    Logger.log("[Archive] 다른 작업이 실행 중이어서 자동 보관을 건너뜁니다.");
+    return;
+  }
+
+  try {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const consolidated = ss.getSheetByName(SHEET_INOUT);
   const consLastRow = consolidated.getLastRow();
@@ -67,10 +76,18 @@ function archiveOldRecords() {
       archiveSheet.setFrozenRows(1);
     }
     
-    const startRow = Math.max(archiveSheet.getLastRow() + 1, 2);
     const rows = monthBuckets[monthKey];
-    archiveSheet.getRange(startRow, 1, rows.length, TX_COLS).setValues(rows)
-      .setHorizontalAlignment("center");
+    const existingIds = new Set();
+    if (archiveSheet.getLastRow() >= 2) {
+      archiveSheet.getRange(2, 9, archiveSheet.getLastRow() - 1, 1).getValues()
+        .forEach(row => { if (row[0]) existingIds.add(String(row[0])); });
+    }
+    const newRows = rows.filter(row => row[8] && !existingIds.has(String(row[8])));
+    if (newRows.length > 0) {
+      const startRow = Math.max(archiveSheet.getLastRow() + 1, 2);
+      archiveSheet.getRange(startRow, 1, newRows.length, TX_COLS).setValues(newRows)
+        .setHorizontalAlignment("center");
+    }
   });
   
   // 기본 Sheet1 제거
@@ -81,17 +98,14 @@ function archiveOldRecords() {
     }
   } catch(e) {}
   
-  // 메인 시트 갱신
-  consolidated.getRange(3, 1, consLastRow - 2, TX_COLS).clearContent();
-  if (keepRows.length > 0) {
-    consolidated.getRange(3, 1, keepRows.length, TX_COLS)
-      .setValues(keepRows)
-      .setHorizontalAlignment("center")
-      .setBackground(COLORS.autoBg);
-  }
-  
   SpreadsheetApp.flush();
-  console.log(`[Archive] ${archiveRows.length}건 → ${archiveName} 이관 완료 (${Object.keys(monthBuckets).length}개 월별 시트)`);
+  Logger.log(`[Archive] ${archiveRows.length}건 안전 보관 완료 (${Object.keys(monthBuckets).length}개 월별 시트, 원본 유지)`);
+  } catch (e) {
+    _logError(e, "archiveOldRecords");
+    throw e;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function _getOrCreateArchiveSpreadsheet(name) {

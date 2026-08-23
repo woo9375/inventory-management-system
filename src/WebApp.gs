@@ -49,6 +49,7 @@ function forceRefreshData(token) {
 function getDashboardData(token) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "인증이 필요합니다." };
+  if (session.role === ROLES.STAFF) return { success: false, message: "대시보드 조회 권한이 없습니다." };
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);

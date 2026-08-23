@@ -16,7 +16,6 @@ function onOpen() {
     .addItem("🔐 권한 재동기화",                 "syncPermissions")
     .addItem("✅ 시즌 설정 검증",                 "validateSeasonSettings")
     .addItem("💾 CSV 백업 실행",                 "backupCSV")
-    .addItem("📤 품목마스터 CSV 업로드",           "openCsvUploadModal")
     .addToUi();
 }
 
@@ -29,39 +28,18 @@ function backupCSV() {
   SpreadsheetApp.getUi().alert("✅ CSV 백업이 완료되었습니다.");
 }
 
-/**
- * [v7.0] 관리자 도구에서 품목마스터 CSV 업로드 모달을 띄웁니다.
- */
-function openCsvUploadModal() {
-  const html = HtmlService.createHtmlOutputFromFile('UploadCsv')
-      .setWidth(400)
-      .setHeight(250);
-  SpreadsheetApp.getUi().showModalDialog(html, '품목마스터 CSV 업로드');
-}
-
-/**
- * [v7.0] 시트에서 업로드된 CSV 데이터를 처리합니다.
- */
-function processCsvUploadFromSheet(csvString) {
-  try {
-    const dataRows = Utilities.parseCsv(csvString);
-    dataRows.shift(); // 헤더 행 제거
-    
-    // "internal_google_sheet_ui" 토큰을 사용하여 권한 체크(validateSession)를 통과시킵니다.
-    const res = uploadItemMasterCSV("internal_google_sheet_ui", dataRows);
-    if (!res.success) throw new Error(res.message);
-    return res.message;
-  } catch (e) {
-    throw new Error(e.message);
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════════
 //  시스템 초기 구축
 // ═══════════════════════════════════════════════════════════════════
 
 function createAll() {
   const ui = SpreadsheetApp.getUi();
+  try {
+    _getInitialAdminConfiguration();
+  } catch (e) {
+    ui.alert("초기화 중단", e.message, ui.ButtonSet.OK);
+    return;
+  }
   const response = ui.alert("⚠️ 시스템 초기화 경고", "모든 시트가 삭제되고 시스템이 초기화됩니다.\n계속하시겠습니까?", ui.ButtonSet.YES_NO);
   if (response !== ui.Button.YES) return;
 
@@ -90,7 +68,7 @@ function createAll() {
   refreshDashboard(true);
   _refreshPermissionDropdown(ss);
   _protectSystemSheets(ss);
-  ui.alert("✅ 시스템 초기화가 완료되었습니다.\n\n5개의 기본 계정이 생성되었습니다. 초기 비밀번호는 dukgu1013! 입니다.\n\n웹앱 배포 후 해당 계정으로 로그인하세요.");
+  ui.alert("✅ 시스템 초기화가 완료되었습니다.\n\nScript Properties에 설정한 최초 관리자 계정이 생성되었습니다.\n\n웹앱 배포 후 해당 계정으로 로그인하세요.");
 }
 
 

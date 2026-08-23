@@ -47,22 +47,17 @@ function getRecentTransactions(token, shopName, limit) {
   if (!session) return [];
 
   // [CR-02 FIX] IDOR 방어: Staff는 자신의 담당 업장만 조회 가능
-  if (session.role === ROLES.STAFF && shopName && shopName !== "all") {
-    if (!session.assignedShops || !session.assignedShops.includes(shopName)) {
-      return [];
-    }
+  if (shopName === "all" && session.role === ROLES.STAFF) return [];
+  if (!shopName || !_canAccessShop(session, shopName)) {
+    return [];
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  limit = limit || 50;
+  limit = Math.max(1, Math.min(Number(limit) || 50, 100));
 
   let sheet;
-  if (shopName && shopName !== "all") {
-    sheet = ss.getSheetByName(shopName);
-    if (!sheet) return [];
-  } else {
-    sheet = ss.getSheetByName(SHEET_INOUT);
-  }
+  sheet = ss.getSheetByName(shopName);
+  if (!sheet) return [];
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 3) return [];
@@ -91,12 +86,26 @@ function getRecentTransactions(token, shopName, limit) {
 function addTransaction(token, shopName, txData) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "인증이 필요합니다." };
+  if (!txData || typeof txData !== "object") return { success: false, message: "거래 정보가 올바르지 않습니다." };
 
-  // [CR-02 FIX] IDOR 방어: Staff는 자신의 담당 업장만 접근 가능 (복수 업장 배열 검증으로 수정)
-  if (session.role === ROLES.STAFF) {
-    if (!session.assignedShops || !session.assignedShops.includes(shopName)) {
-      return { success: false, message: "⛔ 담당 업장이 아닙니다." };
-    }
+  if (!_canAccessShop(session, shopName)) {
+    return { success: false, message: "⛔ 접근할 수 없거나 활성 상태가 아닌 업장입니다." };
+  }
+
+  const code = String(txData.code || "").trim();
+  const type = String(txData.type || "").trim();
+  const note = String(txData.note || "").trim();
+  const dateText = String(txData.date || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+    return { success: false, message: "❌ 거래일은 YYYY-MM-DD 형식으로 입력해야 합니다." };
+  }
+  const transactionDate = new Date(dateText + "T00:00:00");
+  if (isNaN(transactionDate.getTime())) return { success: false, message: "❌ 유효한 거래일을 입력하세요." };
+  if (!VALID_TRANSACTION_TYPES.includes(type)) {
+    return { success: false, message: "❌ 유효하지 않은 거래 구분입니다." };
+  }
+  if (note.length > MAX_TRANSACTION_NOTE_LENGTH) {
+    return { success: false, message: `❌ 비고는 ${MAX_TRANSACTION_NOTE_LENGTH}자 이내로 입력하세요.` };
   }
 
   // [FIX] 락(Lock) 서비스 도입: 동시 입출고 충돌 방지
@@ -119,18 +128,18 @@ function addTransaction(token, shopName, txData) {
     }
 
     // [v7.0] 품목코드 유효성 검증 (오기입 방지)
-    if (!itemInfoMap[txData.code]) {
+    if (!itemInfoMap[code]) {
       return { success: false, message: "❌ 품목 마스터에 등록되지 않은 품목코드입니다. 등록된 품목을 선택해주세요." };
     }
 
     // [NF-05 FIX] 수량 유효성 검증: 0 이하 값 차단
     const qty = Number(txData.qty);
-    if (!qty || qty <= 0 || !Number.isFinite(qty)) {
+    if (!qty || qty <= 0 || qty > MAX_TRANSACTION_QTY || !Number.isFinite(qty)) {
       return { success: false, message: "❌ 수량은 0보다 큰 유효한 숫자여야 합니다." };
     }
 
-    const itemName = itemInfoMap[txData.code].name;
-    const unitPrice = itemInfoMap[txData.code].price || 0;
+    const itemName = itemInfoMap[code].name;
+    const unitPrice = itemInfoMap[code].price || 0;
 
   // 거래ID 자동 생성
   const shopSheet = ss.getSheetByName(SHEET_SHOPS);
@@ -139,7 +148,7 @@ function addTransaction(token, shopName, txData) {
   const prefix = shopConfig ? shopConfig[2] : "XX";
 
   const tz = Session.getScriptTimeZone();
-  const dateStr = Utilities.formatDate(new Date(txData.date), tz, "yyyyMMdd");
+  const dateStr = Utilities.formatDate(transactionDate, tz, "yyyyMMdd");
   const uniqueSuffix = Utilities.getUuid().replace(/-/g,"").substring(0,8).toUpperCase();
   const txId = `${prefix}-${dateStr}-${uniqueSuffix}`;
 
@@ -148,9 +157,9 @@ function addTransaction(token, shopName, txData) {
   
   // [v7.0] 9열 구조: 단가 스냅샷 포함
   sheet.getRange(newRow, 1, 1, TX_COLS).setValues([[
-    new Date(txData.date), txData.code, itemName, txData.type,
-    Number(txData.qty), unitPrice, // [v7.0] 단가 스냅샷
-    txData.person || session.name, txData.note || "", txId
+    transactionDate, code, itemName, type,
+    qty, unitPrice,
+    session.name, note, txId
   ]]);
   sheet.getRange(newRow, 1, 1, TX_COLS).setHorizontalAlignment("center");
     sheet.getRange(newRow, 3).setBackground(COLORS.autoBg);  // 품목명
@@ -163,4 +172,3 @@ function addTransaction(token, shopName, txData) {
     lock.releaseLock();
   }
 }
-

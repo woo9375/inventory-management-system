@@ -26,8 +26,6 @@ function consolidateAllSheets(ss) {
     rows.forEach(r => { if (r[1]) allDataRows.push(r); });
   });
 
-  if (allDataRows.length === 0) return;
-  
   allDataRows.sort((a, b) => {
     const da = toLocalDate(a[0]);
     const db = toLocalDate(b[0]);
@@ -39,7 +37,9 @@ function consolidateAllSheets(ss) {
   if (lastRow >= 3) {
     consolidated.getRange(3, 1, lastRow - 2, TX_COLS).clearContent();
   }
-  consolidated.getRange(3, 1, allDataRows.length, TX_COLS).setValues(allDataRows).setHorizontalAlignment("center").setBackground(COLORS.autoBg);
+  if (allDataRows.length > 0) {
+    consolidated.getRange(3, 1, allDataRows.length, TX_COLS).setValues(allDataRows).setHorizontalAlignment("center").setBackground(COLORS.autoBg);
+  }
 }
 
 function refreshDashboard(isSilent = false) {

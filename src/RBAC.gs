@@ -30,6 +30,40 @@ function _verifyPassword(password, storedHash) {
   return result.hash === expected;
 }
 
+function _normalizeUsername(username) {
+  return String(username || "").trim().toLowerCase();
+}
+
+function _getInitialAdminConfiguration() {
+  const properties = PropertiesService.getScriptProperties();
+  const username = _normalizeUsername(properties.getProperty(INITIAL_ADMIN_PROPERTY_KEYS.USERNAME));
+  const password = properties.getProperty(INITIAL_ADMIN_PROPERTY_KEYS.PASSWORD) || "";
+  const name = String(properties.getProperty(INITIAL_ADMIN_PROPERTY_KEYS.NAME) || "").trim();
+  const dept = String(properties.getProperty(INITIAL_ADMIN_PROPERTY_KEYS.DEPT) || "").trim();
+
+  if (!username || !password || !name || !dept) {
+    throw new Error("Script Properties에 INITIAL_ADMIN_USERNAME, INITIAL_ADMIN_PASSWORD, INITIAL_ADMIN_NAME, INITIAL_ADMIN_DEPT를 모두 설정한 뒤 다시 실행하세요.");
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`INITIAL_ADMIN_PASSWORD는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.`);
+  }
+  return { username, password, name, dept };
+}
+
+function _getActiveShopNames() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SHOPS);
+  if (!sheet || sheet.getLastRow() < 3) return [];
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 4).getValues()
+    .filter(row => row[1] && row[3] === "생성완료")
+    .map(row => String(row[1]).trim());
+}
+
+function _canAccessShop(session, shopName) {
+  if (!session || !shopName) return false;
+  if (session.role === ROLES.ADMIN || session.role === ROLES.MANAGER) return _getActiveShopNames().includes(shopName);
+  return (session.assignedShops || []).includes(shopName) && _getActiveShopNames().includes(shopName);
+}
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  사용자 데이터 I/O 헬퍼
@@ -47,7 +81,7 @@ function _getAllUsers() {
     if (row[0]) { // username이 있는 행만
       users.push({
         row: idx + 3, // [v7.0] 헤더가 2행이므로 데이터는 3행부터
-        username: row[0].toString().trim(),
+        username: _normalizeUsername(row[0]),
         passHash: row[1].toString().trim(),
         name: row[2].toString().trim(),
         dept: row[3].toString().trim(),
@@ -62,7 +96,7 @@ function _getAllUsers() {
 /** username으로 사용자 찾기 */
 function _findUser(username) {
   const users = _getAllUsers();
-  return users.find(u => u.username === username.trim()) || null;
+  return users.find(u => u.username === _normalizeUsername(username)) || null;
 }
 
 
@@ -71,18 +105,30 @@ function _findUser(username) {
 // ═══════════════════════════════════════════════════════════════════
 
 function authenticateUser(username, password) {
-  if (!username || !password) {
+  const normalizedUsername = _normalizeUsername(username);
+  if (!normalizedUsername || !password) {
     return { success: false, message: "아이디와 비밀번호를 입력해 주세요." };
   }
 
-  const user = _findUser(username);
+  const cache = CacheService.getScriptCache();
+  const attemptKey = LOGIN_ATTEMPT_PREFIX + _hashPassword(normalizedUsername, "login").hash;
+  const attempts = Number(cache.get(attemptKey) || 0);
+  if (attempts >= LOGIN_MAX_ATTEMPTS) {
+    return { success: false, message: "로그인 시도가 너무 많습니다. 15분 후 다시 시도해 주세요." };
+  }
+
+  const user = _findUser(normalizedUsername);
   if (!user) {
-    return { success: false, message: "등록되지 않은 계정입니다." };
+    cache.put(attemptKey, String(attempts + 1), LOGIN_ATTEMPT_WINDOW_SECONDS);
+    return { success: false, message: "아이디 또는 비밀번호가 일치하지 않습니다." };
   }
 
   if (!_verifyPassword(password, user.passHash)) {
-    return { success: false, message: "비밀번호가 일치하지 않습니다." };
+    cache.put(attemptKey, String(attempts + 1), LOGIN_ATTEMPT_WINDOW_SECONDS);
+    return { success: false, message: "아이디 또는 비밀번호가 일치하지 않습니다." };
   }
+
+  cache.remove(attemptKey);
 
   const token = Utilities.getUuid();
 
@@ -116,7 +162,6 @@ function authenticateUser(username, password) {
 
 function validateSession(token) {
   if (!token) return null;
-  if (token === "internal_google_sheet_ui") return { role: 'admin', username: 'GoogleSheetAdmin', name: '시트관리자' };
   const cached = CacheService.getScriptCache().get(SESSION_PREFIX + token);
   if (!cached) return null;
 
@@ -150,11 +195,14 @@ function createUserAccount(adminToken, userData) {
   if (!_requireAdmin(adminToken)) {
     return { success: false, message: "관리자 권한이 필요합니다." };
   }
-  if (!userData.username || !userData.password || !userData.name || !userData.role) {
+  if (!userData || !userData.username || !userData.password || !userData.name || !userData.role) {
     return { success: false, message: "아이디, 비밀번호, 성함, 역할은 필수입니다." };
   }
   if (![ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF].includes(userData.role)) {
     return { success: false, message: "유효하지 않은 역할입니다. (admin/manager/staff)" };
+  }
+  if (String(userData.password).length < MIN_PASSWORD_LENGTH) {
+    return { success: false, message: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` };
   }
 
   if (_findUser(userData.username)) {
@@ -169,7 +217,7 @@ function createUserAccount(adminToken, userData) {
   const newRow = Math.max(lastRow + 1, 3);
 
   userSheet.getRange(newRow, USER_COLS.USERNAME, 1, 5).setValues([[
-    userData.username.trim(),
+    _normalizeUsername(userData.username),
     hashResult.stored,
     userData.name.trim(),
     (userData.dept || "").trim(),
@@ -217,7 +265,8 @@ function deleteUserAccount(adminToken, username) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const userSheet = ss.getSheetByName(SHEET_USERS);
-  userSheet.getRange(user.row, USER_COLS.USERNAME, 1, 5).clearContent();
+  userSheet.getRange(user.row, USER_COLS.USERNAME, 1, 6).clearContent();
+  CacheManager.invalidateAll();
 
   return { success: true, message: `✅ '${username}' 계정 삭제 완료` };
 }
@@ -226,8 +275,8 @@ function resetUserPassword(adminToken, username, newPassword) {
   if (!_requireAdmin(adminToken)) {
     return { success: false, message: "관리자 권한이 필요합니다." };
   }
-  if (!newPassword || newPassword.length < 4) {
-    return { success: false, message: "비밀번호는 4자 이상이어야 합니다." };
+  if (!newPassword || newPassword.length < MIN_PASSWORD_LENGTH) {
+    return { success: false, message: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` };
   }
   const user = _findUser(username);
   if (!user) return { success: false, message: "사용자를 찾을 수 없습니다." };
@@ -243,8 +292,8 @@ function resetUserPassword(adminToken, username, newPassword) {
 function changeMyPassword(token, oldPassword, newPassword) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "세션이 만료되었습니다. 다시 로그인하세요." };
-  if (!newPassword || newPassword.length < 4) {
-    return { success: false, message: "새 비밀번호는 4자 이상이어야 합니다." };
+  if (!newPassword || newPassword.length < MIN_PASSWORD_LENGTH) {
+    return { success: false, message: `새 비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` };
   }
 
   const user = _findUser(session.username);

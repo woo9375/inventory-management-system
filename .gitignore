@@ -1,6 +1,3 @@
-# Node modules
-node_modules/
-
 # CLASP credentials (절대 업로드 금지)
 .clasprc.json
 

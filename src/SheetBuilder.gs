@@ -78,24 +78,25 @@ function buildSeasonsSheet(ss) {
 
 function buildUsersSheet(ss) {
   const sheet = ss.insertSheet(SHEET_USERS);
-  sheet.getRange("A1:E1").merge().setValue("👤 사용자 계정 관리").setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("A1:F1").merge().setValue("👤 사용자 계정 관리").setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
 
-  sheet.getRange("A2:E2").setValues([["아이디 (회사이메일)", "비밀번호 해시", "성함", "부서", "역할"]]).setBackground("#2c3e50").setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("A2:F2").setValues([["아이디 (회사이메일)", "비밀번호 해시", "성함", "부서", "역할", "배정 업장"]]).setBackground("#2c3e50").setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
 
-  // 다중 기본 계정 자동 생성 (SHA-256 해싱)
-  const userData = DEFAULT_USERS.map(user => {
-    const salt = Utilities.getUuid().substring(0, 16);
-    const rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + user.password);
-    const hashHex = rawHash.map(b => ("0" + ((b < 0 ? b + 256 : b)).toString(16)).slice(-2)).join("");
-    const storedHash = salt + ":" + hashHex;
-    return [user.username, storedHash, user.name, user.dept, user.role];
-  });
+  // 최초 계정은 배포 환경의 Script Properties에서만 가져옵니다.
+  const initialAdmin = _getInitialAdminConfiguration();
+  const userData = [[
+    initialAdmin.username,
+    _hashPassword(initialAdmin.password).stored,
+    initialAdmin.name,
+    initialAdmin.dept,
+    ROLES.ADMIN
+  ]];
 
-  sheet.getRange(3, 1, userData.length, 5).setValues(userData);
-  sheet.getRange("A3:E30").setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+  sheet.getRange(3, 1, userData.length, 6).setValues(userData.map(row => row.concat([""])));
+  sheet.getRange("A3:F30").setBackground(COLORS.inputBg).setHorizontalAlignment("center");
   sheet.getRange("B3:B30").setFontSize(7).setFontColor("#999999"); // 해시 컬럼은 작게 표시
 
-  sheet.setColumnWidth(1, 180); sheet.setColumnWidth(2, 100); sheet.setColumnWidth(3, 80); sheet.setColumnWidth(4, 100); sheet.setColumnWidth(5, 80);
+  sheet.setColumnWidth(1, 180); sheet.setColumnWidth(2, 100); sheet.setColumnWidth(3, 80); sheet.setColumnWidth(4, 100); sheet.setColumnWidth(5, 80); sheet.setColumnWidth(6, 180);
   sheet.setFrozenRows(2);
 }
 
