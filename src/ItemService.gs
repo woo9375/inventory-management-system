@@ -216,7 +216,7 @@ function uploadItemMasterCSV(token, dataRows) {
         newRow[MASTER_COLS.CODE] = code;
         newRow[MASTER_COLS.NAME] = row[1] || "";
         newRow[MASTER_COLS.CATEGORY] = cat;
-        newRow[MASTER_COLS.GRADE] = row[3] || "C";
+        newRow[MASTER_COLS.GRADE] = row[3] || ""; // [FIX] 규격은 빈 값 허용 (과거 ABC등급의 "C" 기본값 제거)
         newRow[MASTER_COLS.UNIT] = row[4] || "";
         const initStock = Number(row[5]) || 0;
         newRow[MASTER_COLS.INIT_STOCK] = initStock;

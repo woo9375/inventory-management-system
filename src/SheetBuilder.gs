@@ -116,7 +116,7 @@ function buildBaseDataSheet(ss) {
 
   // 단위 목록 (B열)
   sheet.getRange("B2").setValue("단위 목록").setFontWeight("bold").setHorizontalAlignment("center").setBackground(COLORS.grayBg);
-  const units = [["박스"], ["개"], ["묶음"], ["병"], ["캔"], ["kg"], ["L"], ["포"], ["롤"], ["장"], ["세트"], ["EA"], ["PACK"], ["CASE"], ["봉"], ["통"], ["말"], ["자루"], ["ml"], ["g"], ["대"], ["미터"], ["포대"], ["봉지"], ["르베"], ["권"], ["갑"]];
+  const units = [["박스"], ["개"], ["묶음"], ["병"], ["캔"], ["kg"], ["L"], ["포"], ["롤"], ["장"], ["세트"], ["EA"], ["PACK"], ["CASE"], ["봉"], ["통"], ["말"], ["자루"], ["ml"], ["g"], ["대"], ["미터"], ["포대"], ["봉지"], ["르베"], ["권"], ["갑"], ["단"]];
   sheet.getRange(3, 2, units.length, 1).setValues(units).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
 
   // 품목 카테고리 (C열)
