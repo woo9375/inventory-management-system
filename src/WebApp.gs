@@ -95,7 +95,7 @@ function getDashboardData(token) {
     success: true,
     season: currentSeason,
     seasonMultiplier: seasonMultiplier,
-    date: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"),
+    date: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm"),
     kpi: { total: totalItems, risk: riskCount, order: orderCount, normal: normalCount },
     alertItems: alertItems
   };

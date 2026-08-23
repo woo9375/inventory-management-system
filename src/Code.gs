@@ -16,6 +16,7 @@ function onOpen() {
     .addItem("🔐 권한 재동기화",                 "syncPermissions")
     .addItem("✅ 시즌 설정 검증",                 "validateSeasonSettings")
     .addItem("💾 CSV 백업 실행",                 "backupCSV")
+    .addItem("📤 품목마스터 CSV 업로드",           "openCsvUploadModal")
     .addToUi();
 }
 
