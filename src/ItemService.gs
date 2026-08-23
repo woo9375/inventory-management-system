@@ -479,9 +479,28 @@ function processCsvUploadFromSheet(csvString) {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
-      const cols = line.split(',');
+      const cols = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let j = 0; j < line.length; j++) {
+        const char = line[j];
+        if (char === '"' && line[j+1] === '"') {
+          current += '"';
+          j++; // 이스케이프된 따옴표 건너뛰기
+        } else if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          cols.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      cols.push(current.trim());
+      
       if (cols.length >= 2) {
-        dataRows.push(cols.map(c => c.replace(/^"|"$/g, '').trim()));
+        dataRows.push(cols);
       }
     }
     
