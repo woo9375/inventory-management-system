@@ -167,12 +167,24 @@ function uploadItemMasterCSV(token, dataRows) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
+  
+  // [FIX] ARRAYFORMULA 등으로 인해 getLastRow()가 빈 행을 포함하는 문제 해결 (A열 기준 실제 마지막 행 탐색)
+  const maxRows = masterSheet.getMaxRows();
+  let masterLastRow = 2; // 헤더 2행
+  if (maxRows >= 3) {
+    const allCodes = masterSheet.getRange(3, 1, maxRows - 2, 1).getValues();
+    for (let i = allCodes.length - 1; i >= 0; i--) {
+      if (allCodes[i][0] !== "") {
+        masterLastRow = i + 3;
+        break;
+      }
+    }
+  }
   
   // 기존 코드 가져오기 (O(1) 조회를 위해 Set 사용)
   const existingCodes = new Set();
   if (masterLastRow >= 3) {
-    const codeValues = masterSheet.getRange(3, MASTER_COLS.CODE + 1, masterLastRow - 2, 1).getValues();
+    const codeValues = masterSheet.getRange(3, 1, masterLastRow - 2, 1).getValues();
     codeValues.forEach(row => { if (row[0]) existingCodes.add(row[0].toString()); });
   }
   
