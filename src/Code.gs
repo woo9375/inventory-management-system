@@ -80,6 +80,7 @@ function createAll() {
   buildItemMaster(ss);   
   buildConsolidatedLog(ss); 
   buildDashboard(ss);    
+  buildSystemLogsSheet(ss); // [v10.0] 시스템 에러 로그 시트
 
   ss.deleteSheet(tempSheet);
   SpreadsheetApp.flush();
@@ -115,7 +116,7 @@ function onEdit(e) {
           e.range.setValue(e.oldValue);
         } else {
           e.range.clearContent();
-          Logger.log(`[RBAC Guard] 다중 셀 편집 롤백: ${sheetName} R${row}C${col}`);
+          console.log(`[RBAC Guard] 다중 셀 편집 롤백: ${sheetName} R${row}C${col}`);
         }
         return;
       }
@@ -145,7 +146,7 @@ function onEdit(e) {
           }
         }
       } catch(clErr) {
-        Logger.log("[onEdit ChangeLog] 이력 기록 실패: " + clErr.message);
+        console.error("[onEdit ChangeLog] 이력 기록 실패: " + clErr.message);
       }
     }
   }
@@ -287,5 +288,40 @@ function onEdit(e) {
   const INVALIDATE_SHEETS = [SHEET_MASTER, SHEET_SHOPS, SHEET_SEASONS, SHEET_BASE_DATA];
   if (INVALIDATE_SHEETS.includes(sheetName)) {
     try { CacheManager.invalidateAll(); } catch(err) {}
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  🚨 시스템 에러 로깅 헬퍼 (v10.0)
+// ═══════════════════════════════════════════════════════════════════
+
+function _logError(err, contextName = "Unknown Context", severity = "ERROR") {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return; // 트리거 등에서 SS가 없는 경우 예외 처리
+    const logSheet = ss.getSheetByName(SHEET_SYSTEM_LOGS);
+    if (!logSheet) return;
+    
+    // 현재 세션 사용자명 가져오기 (가급적 시도)
+    let username = "SYSTEM";
+    try {
+      const activeUser = Session.getActiveUser().getEmail();
+      if (activeUser) username = activeUser;
+    } catch(e) {}
+
+    const now = new Date();
+    const errMsg = err.message || String(err);
+    const stack = err.stack || "";
+    
+    // 로그 시트에 추가
+    logSheet.appendRow([now, contextName, username, errMsg, stack, severity]);
+    
+    // 심각도가 HIGH인 경우 콘솔에도 출력
+    if (severity === "HIGH") {
+      console.error(`[${contextName}] ${errMsg}\n${stack}`);
+    }
+  } catch(e) {
+    // 로깅 중 발생하는 에러는 무시 (무한루프 방지)
+    console.error("Failed to write to System_Logs: " + e.message);
   }
 }

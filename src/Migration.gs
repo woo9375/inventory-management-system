@@ -22,7 +22,7 @@ function setSchemaVersion(version) {
 const MIGRATIONS = {
   // v0 → v7: 초기 스키마 등록
   7: function migrate_to_v7(ss) {
-    Logger.log("[Migration v7] 초기 스키마 등록 — 기존 시스템 편입");
+    console.log("[Migration v7] 초기 스키마 등록 — 기존 시스템 편입");
     
     const shopSheet = ss.getSheetByName(SHEET_SHOPS) || ss.getSheetByName("⚙️ 통합 설정");
     if (!shopSheet) return;
@@ -30,7 +30,7 @@ const MIGRATIONS = {
     // v7이면 이미 새 구조일 수도 있음 — 안전 체크
     const name = shopSheet.getName();
     if (name === SHEET_SHOPS) {
-      Logger.log("[Migration v7] 이미 새 구조 — 스킵");
+      console.log("[Migration v7] 이미 새 구조 — 스킵");
       return;
     }
     
@@ -56,12 +56,12 @@ const MIGRATIONS = {
       }
     });
     
-    Logger.log("[Migration v7] 완료");
+    console.log("[Migration v7] 완료");
   },
 
   // [v7.0] v7 → v8: 통합 설정 시트 분리 + 9열 입출고 구조 + 변경이력 시트
   8: function migrate_to_v8(ss) {
-    Logger.log("[Migration v8] 통합 설정 시트 분리 시작...");
+    console.log("[Migration v8] 통합 설정 시트 분리 시작...");
     
     const oldConfigSheet = ss.getSheetByName("⚙️ 통합 설정");
     
@@ -103,7 +103,7 @@ const MIGRATIONS = {
         if (row[2]) baseData.itemCats.push(row[2]);
       });
       
-      Logger.log(`[Migration v8] 읽기 완료 — 업장: ${shopData.length}, 사용자: ${userData.length}, 시즌: ${seasonData.length}`);
+      console.log(`[Migration v8] 읽기 완료 — 업장: ${shopData.length}, 사용자: ${userData.length}, 시즌: ${seasonData.length}`);
     }
     
     // ── Step 2: 새 개별 시트 생성 (이미 있으면 스킵 — 멱등성) ──
@@ -127,7 +127,7 @@ const MIGRATIONS = {
       
       shopSheet.setColumnWidth(1, 110); shopSheet.setColumnWidth(2, 130); shopSheet.setColumnWidth(3, 100);
       shopSheet.setColumnWidth(4, 120); shopSheet.setColumnWidth(5, 140); shopSheet.setColumnWidth(6, 120);
-      Logger.log("[Migration v8] 🏢 업장관리 시트 생성 완료");
+      console.log("[Migration v8] 🏢 업장관리 시트 생성 완료");
     }
     
     // 📅 시즌설정
@@ -150,7 +150,7 @@ const MIGRATIONS = {
       }
       
       seasonSheet.setColumnWidth(1, 120); seasonSheet.setColumnWidth(2, 120); seasonSheet.setColumnWidth(3, 120); seasonSheet.setColumnWidth(4, 120);
-      Logger.log("[Migration v8] 📅 시즌설정 시트 생성 완료");
+      console.log("[Migration v8] 📅 시즌설정 시트 생성 완료");
     }
     
     // 👤 사용자관리
@@ -167,7 +167,7 @@ const MIGRATIONS = {
       }
       
       userSheet.setColumnWidth(1, 180); userSheet.setColumnWidth(2, 100); userSheet.setColumnWidth(3, 80); userSheet.setColumnWidth(4, 100); userSheet.setColumnWidth(5, 80);
-      Logger.log("[Migration v8] 👤 사용자관리 시트 생성 완료");
+      console.log("[Migration v8] 👤 사용자관리 시트 생성 완료");
     }
     
     // 📂 기초데이터
@@ -189,7 +189,7 @@ const MIGRATIONS = {
       baseSheet.getRange(3, 3, itemCats.length, 1).setValues(itemCats.map(v => [v])).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
       
       baseSheet.setColumnWidth(1, 120); baseSheet.setColumnWidth(2, 100); baseSheet.setColumnWidth(3, 120);
-      Logger.log("[Migration v8] 📂 기초데이터 시트 생성 완료");
+      console.log("[Migration v8] 📂 기초데이터 시트 생성 완료");
     }
     
     // 📋 변경이력
@@ -202,16 +202,16 @@ const MIGRATIONS = {
       clSheet.setColumnWidth(1, 160); clSheet.setColumnWidth(2, 100); clSheet.setColumnWidth(3, 100);
       clSheet.setColumnWidth(4, 150); clSheet.setColumnWidth(5, 120); clSheet.setColumnWidth(6, 150); clSheet.setColumnWidth(7, 150);
       clSheet.protect().setDescription("변경이력 보호").setWarningOnly(true);
-      Logger.log("[Migration v8] 📋 변경이력 시트 생성 완료");
+      console.log("[Migration v8] 📋 변경이력 시트 생성 완료");
     }
     
     // ── Step 3: 기존 통합 설정 시트 삭제 ──
     if (oldConfigSheet) {
       try {
         ss.deleteSheet(oldConfigSheet);
-        Logger.log("[Migration v8] 기존 통합 설정 시트 삭제 완료");
+        console.log("[Migration v8] 기존 통합 설정 시트 삭제 완료");
       } catch(e) {
-        Logger.log("[Migration v8] 통합 설정 시트 삭제 실패 (수동 삭제 필요): " + e.message);
+        console.error("[Migration v8] 통합 설정 시트 삭제 실패 (수동 삭제 필요): " + e.message);
       }
     }
     
@@ -250,12 +250,12 @@ const MIGRATIONS = {
       masterSheet.getRange("N3").setFormula(`=ARRAYFORMULA(IF(A3:A="", "", ROUNDUP(I3:I * L3:L * '${SHEET_SEASONS}'!$D$2, 0)))`);
     }
     
-    Logger.log("[Migration v8] v8 마이그레이션 완료!");
+    console.log("[Migration v8] v8 마이그레이션 완료!");
   },
 
   // [v9.0] v8 → v9: 사용유무 컬럼 추가 + 단위 6종 추가
   9: function migrate_to_v9(ss) {
-    Logger.log("[Migration v9] 사용유무 컬럼 + 단위 추가 시작...");
+    console.log("[Migration v9] 사용유무 컬럼 + 단위 추가 시작...");
     
     // ── Step 1: 품목 마스터 시트에 X열(24번째) '사용유무' 헤더 추가 ──
     const masterSheet = ss.getSheetByName(SHEET_MASTER);
@@ -265,7 +265,7 @@ const MIGRATIONS = {
       if (!currentX2 || currentX2 !== "사용유무") {
         masterSheet.getRange("X2").setValue("사용유무")
           .setBackground("#7f8c8d").setFontColor("#fff").setFontWeight("bold").setHorizontalAlignment("center");
-        Logger.log("[Migration v9] X열 헤더 '사용유무' 추가 완료");
+        console.log("[Migration v9] X열 헤더 '사용유무' 추가 완료");
       }
       
       // 기존 품목에 '사용' 기본값 설정 (비어있는 경우만)
@@ -296,7 +296,7 @@ const MIGRATIONS = {
         masterSheet.setConditionalFormatRules(existingRules);
         
         masterSheet.setColumnWidth(24, 90);
-        Logger.log("[Migration v9] 기존 " + (lastRow - 2) + "개 품목에 '사용' 상태 설정 완료");
+        console.log("[Migration v9] 기존 " + (lastRow - 2) + "개 품목에 '사용' 상태 설정 완료");
       }
       
       // A1 머지 범위 확장 (W → X)
@@ -324,13 +324,13 @@ const MIGRATIONS = {
         const addData = toAdd.map(function(u) { return [u]; });
         baseSheet.getRange(insertRow, 2, addData.length, 1).setValues(addData)
           .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
-        Logger.log("[Migration v9] 단위 " + toAdd.length + "종 추가: " + toAdd.join(", "));
+        console.log("[Migration v9] 단위 " + toAdd.length + "종 추가: " + toAdd.join(", "));
       } else {
-        Logger.log("[Migration v9] 추가할 단위 없음 (이미 존재)");
+        console.log("[Migration v9] 추가할 단위 없음 (이미 존재)");
       }
     }
     
-    Logger.log("[Migration v9] v9 마이그레이션 완료!");
+    console.log("[Migration v9] v9 마이그레이션 완료!");
   },
 };
 
@@ -347,7 +347,7 @@ function _migrateSheetTo9Cols(sheet, priceMap, isConsolidated) {
   // 현재 헤더 확인 — 이미 9열이면 스킵
   const currentHeaders = sheet.getRange(headerRow, 1, 1, 9).getValues()[0];
   if (currentHeaders[5] === "단가" || currentHeaders[5] === "단가(자동)" || currentHeaders[5] === "단가(스냅샷)") {
-    Logger.log(`[Migration v8] ${sheet.getName()} — 이미 9열 구조, 스킵`);
+    console.log(`[Migration v8] ${sheet.getName()} — 이미 9열 구조, 스킵`);
     return;
   }
   
@@ -386,7 +386,7 @@ function _migrateSheetTo9Cols(sheet, priceMap, isConsolidated) {
     sheet.getRange(dataStartRow, 6, newData.length, 1).setNumberFormat("#,##0");
   }
   
-  Logger.log(`[Migration v8] ${sheet.getName()} — ${newData.length}행 9열 변환 완료`);
+  console.log(`[Migration v8] ${sheet.getName()} — ${newData.length}행 9열 변환 완료`);
 }
 
 
@@ -415,9 +415,9 @@ function runMigrations() {
   // 마이그레이션 전 CSV 백업
   try {
     backupToCSV();
-    Logger.log("[Migration] 사전 CSV 백업 완료");
+    console.log("[Migration] 사전 CSV 백업 완료");
   } catch(backupErr) {
-    Logger.log("[Migration] CSV 백업 실패 (계속 진행): " + backupErr.message);
+    console.error("[Migration] CSV 백업 실패 (계속 진행): " + backupErr.message);
   }
   
   const lock = LockService.getScriptLock();
@@ -431,21 +431,21 @@ function runMigrations() {
   try {
     for (let v = currentVersion + 1; v <= CURRENT_SCHEMA_VERSION; v++) {
       if (MIGRATIONS[v]) {
-        Logger.log(`[Migration] v${v} 실행 시작...`);
+        console.log(`[Migration] v${v} 실행 시작...`);
         MIGRATIONS[v](ss);
         setSchemaVersion(v);
         SpreadsheetApp.flush();
-        Logger.log(`[Migration] v${v} 실행 완료, 스키마 버전 업데이트됨`);
+        console.log(`[Migration] v${v} 실행 완료, 스키마 버전 업데이트됨`);
       } else {
         setSchemaVersion(v);
-        Logger.log(`[Migration] v${v} — 변경사항 없음 (버전만 업데이트)`);
+        console.log(`[Migration] v${v} — 변경사항 없음 (버전만 업데이트)`);
       }
     }
     
     ui.alert(`✅ 마이그레이션 완료!\nv${currentVersion} → v${CURRENT_SCHEMA_VERSION}`);
   } catch(err) {
     const failedVersion = getSchemaVersion() + 1;
-    Logger.log(`[Migration Error] v${failedVersion}: ${err.message}\n${err.stack}`);
+    console.error(`[Migration Error] v${failedVersion}: ${err.message}\n${err.stack}`);
     ui.alert(
       `❌ 마이그레이션 v${failedVersion} 실행 중 오류:\n${err.message}\n\n` +
       `v${getSchemaVersion()}까지는 정상 적용되었습니다.`
@@ -473,3 +473,25 @@ function testMigrationOnCopy() {
     `복사본에서 마이그레이션을 테스트하세요.\n\nURL: ${copy.getUrl()}`
   );
 }
+
+
+// [v10] 시스템 에러 로그 시트 추가
+MIGRATIONS[10] = function(ss) {
+  console.log("[Migration v10] 에러 로그 시트 추가 시작...");
+  if (!ss.getSheetByName("🚨 System_Logs")) {
+    if (typeof buildSystemLogsSheet === "function") {
+      buildSystemLogsSheet(ss);
+    } else {
+      const sheet = ss.insertSheet("🚨 System_Logs");
+      sheet.getRange("A1:F1").merge().setValue("🚨 시스템 에러 로그")
+        .setBackground("#c0392b").setFontColor("#fff").setFontWeight("bold");
+      sheet.getRange("A2:F2").setValues([["시각", "함수명", "사용자", "에러 메시지", "스택 트레이스", "심각도"]])
+        .setBackground("#e0e0e0").setFontColor("#000").setFontWeight("bold");
+      sheet.setFrozenRows(2);
+      sheet.hideSheet();
+    }
+    console.log("[Migration v10] System_Logs 시트 추가 완료");
+  } else {
+    console.log("[Migration v10] 이미 System_Logs 시트가 존재합니다.");
+  }
+};

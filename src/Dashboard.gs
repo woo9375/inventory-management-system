@@ -69,12 +69,12 @@ function refreshDashboard(isSilent = false) {
     
   } catch (err) {
     const msg = `[대시보드 동기화 실패]\n${err.message}\n${err.stack}`;
-    Logger.log(msg);
+    console.log(msg);
     if (!isSilent) SpreadsheetApp.getUi().alert("❌ 동기화 중 오류 발생:\n" + err.message);
     if (SEND_EMAIL_ALERT) {
       try {
         MailApp.sendEmail({ to: ALERT_EMAIL, subject: "[호텔덕구온천] 동기화 오류", body: msg });
-      } catch(mailErr) { Logger.log("이메일 발송 실패: " + mailErr); }
+      } catch(mailErr) { _logError(mailErr, "sendAlertEmail"); }
     }
   } finally {
     lock.releaseLock();

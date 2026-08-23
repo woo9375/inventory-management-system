@@ -56,7 +56,7 @@ function recalcStockAndUsage(ss) {
       const fallbackDate = new Date(today);
       fallbackDate.setDate(fallbackDate.getDate() - 30);
       limitDateStart = fallbackDate.getTime();
-      Logger.log(`[Season] ${targetSeason.name} 시작 ${rawDays}일차 — 30일 평균으로 fallback`);
+      console.log(`[Season] ${targetSeason.name} 시작 ${rawDays}일차 — 30일 평균으로 fallback`);
     } else {
       targetDays = rawDays;
       limitDateStart = targetSeason.start;

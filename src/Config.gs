@@ -17,6 +17,7 @@ const SHEET_SEASONS   = "📅 시즌설정";
 const SHEET_USERS     = "👤 사용자관리";
 const SHEET_BASE_DATA = "📂 기초데이터";
 const SHEET_CHANGELOG = "📋 변경이력";
+const SHEET_SYSTEM_LOGS = "🚨 System_Logs"; // [v10.0] 에러 로그 시트
 
 const STATUS_RISK  = "🚨 위험";
 const STATUS_ORDER = "⚠️ 발주필요";

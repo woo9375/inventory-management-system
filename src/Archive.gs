@@ -13,7 +13,7 @@ function archiveOldRecords() {
   const consolidated = ss.getSheetByName(SHEET_INOUT);
   const consLastRow = consolidated.getLastRow();
   if (consLastRow < 3) {
-    Logger.log("[Archive] 아카이브 대상 데이터 없음");
+    console.log("[Archive] 아카이브 대상 데이터 없음");
     return;
   }
   
@@ -36,7 +36,7 @@ function archiveOldRecords() {
   });
   
   if (archiveRows.length === 0) {
-    Logger.log("[Archive] 아카이브 대상 데이터 없음");
+    console.log("[Archive] 아카이브 대상 데이터 없음");
     return;
   }
   
@@ -91,7 +91,7 @@ function archiveOldRecords() {
   }
   
   SpreadsheetApp.flush();
-  Logger.log(`[Archive] ${archiveRows.length}건 → ${archiveName} 이관 완료 (${Object.keys(monthBuckets).length}개 월별 시트)`);
+  console.log(`[Archive] ${archiveRows.length}건 → ${archiveName} 이관 완료 (${Object.keys(monthBuckets).length}개 월별 시트)`);
 }
 
 function _getOrCreateArchiveSpreadsheet(name) {
@@ -111,7 +111,7 @@ function _getOrCreateArchiveSpreadsheet(name) {
   try {
     DriveApp.getRootFolder().removeFile(newFile);
   } catch(e) {
-    Logger.log("[Archive] 루트 폴더 제거 실패 (계속 진행): " + e.message);
+    console.error("[Archive] 루트 폴더 제거 실패 (계속 진행): " + e.message);
   }
   
   return newSS;
@@ -160,7 +160,7 @@ function backupToCSV() {
     const csvInOut = generateCSV(dataInOut);
     const fileNameInOut = `입출고_백업_${timestamp}.csv`;
     backupFolder.createFile(fileNameInOut, csvInOut, MimeType.CSV);
-    Logger.log(`[Backup] CSV 백업 완료: ${fileNameInOut}`);
+    console.log(`[Backup] CSV 백업 완료: ${fileNameInOut}`);
   }
 
   // 4. Backup MASTER Sheet
@@ -171,7 +171,7 @@ function backupToCSV() {
     const csvMaster = generateCSV(dataMaster);
     const fileNameMaster = `품목마스터_백업_${timestamp}.csv`;
     backupFolder.createFile(fileNameMaster, csvMaster, MimeType.CSV);
-    Logger.log(`[Backup] CSV 백업 완료: ${fileNameMaster}`);
+    console.log(`[Backup] CSV 백업 완료: ${fileNameMaster}`);
   }
 }
 

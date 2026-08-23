@@ -164,7 +164,8 @@ function buildTemplateSheet(ss) {
   
   // [v7.0] 9열 구조: 단가(스냅샷) 열 추가
   const headers = ["날짜", "품목코드", "품목명", "구분", "수량", "단가", "담당자", "비고", "거래ID"];
-  sheet.getRange("A2:I2").setValues([headers]).setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("A2:I2").setValues([headers]);
+  _formatHeader(sheet, "A2:I2");
   sheet.setFrozenRows(2);
   
   sheet.getRange(3, 1, VALIDATION_ROWS, 1).setNumberFormat("yyyy-mm-dd");
@@ -207,7 +208,8 @@ function buildItemMaster(ss) {
     "리드타임", "안전재고일수", "목표유지일수", "안전재고", "발주점", "적정발주량", "재고 상태", "",
     "과세구분", "매입단가", "공급단가", "단위 세액", "재고 합계금액", "사용유무"
   ];
-  sheet.getRange("A2:X2").setValues([headers]).setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("A2:X2").setValues([headers]);
+  _formatHeader(sheet, "A2:X2");
   sheet.setFrozenRows(2);
 
   // 헤더 그룹화 시각적 효과 (Spacer 제외 색상)
@@ -343,4 +345,47 @@ function buildDashboard(ss) {
   sheet.setColumnWidth(1, 20); // Spacer
   sheet.setColumnWidth(2, 130); // 품목코드
   sheet.setColumnWidth(3, 220); sheet.setColumnWidth(8, 120);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  🚨 시스템 에러 로그 시트 (v10.0)
+// ═══════════════════════════════════════════════════════════════════
+
+function buildSystemLogsSheet(ss) {
+  const sheet = ss.insertSheet(SHEET_SYSTEM_LOGS);
+  sheet.getRange("A1:F1").merge().setValue("🚨 시스템 에러 로그")
+    .setBackground("#c0392b").setFontColor("#fff").setFontWeight("bold");
+  sheet.getRange("A2:F2").setValues([["시각", "함수명", "사용자", "에러 메시지", "스택 트레이스", "심각도"]])
+    .setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold");
+  
+  sheet.setColumnWidth(1, 150);
+  sheet.setColumnWidth(2, 150);
+  sheet.setColumnWidth(3, 100);
+  sheet.setColumnWidth(4, 300);
+  sheet.setColumnWidth(5, 400);
+  sheet.setColumnWidth(6, 80);
+  
+  sheet.setFrozenRows(2);
+  sheet.hideSheet(); // 관리자만 볼 수 있도록 숨김
+}
+
+
+/**
+ * 헤더 행 서식을 일괄 적용하는 헬퍼
+ */
+function _formatHeader(sheet, range, bgColor, fontColor) {
+  sheet.getRange(range)
+    .setBackground(bgColor || COLORS.headerBg)
+    .setFontColor(fontColor || COLORS.headerText)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center");
+}
+
+/**
+ * 데이터 영역 서식을 일괄 적용하는 헬퍼
+ */
+function _formatDataArea(sheet, startRow, startCol, numRows, numCols, bgColor) {
+  sheet.getRange(startRow, startCol, numRows, numCols)
+    .setBackground(bgColor || COLORS.inputBg)
+    .setHorizontalAlignment("center");
 }

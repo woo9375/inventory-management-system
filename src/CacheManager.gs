@@ -56,10 +56,16 @@ const CacheManager = {
       return dataStr ? JSON.parse(dataStr) : null;
     }
 
-    // 분할된 캐시 조립
+    // [v10.0] 분할된 캐시 조립 시 루프 밖에서 한 번에 가져오기 (성능 최적화)
+    const chunkKeys = [];
+    for (let i = 0; i < numChunks; i++) {
+      chunkKeys.push(key + '_' + i);
+    }
+    const chunks = cache.getAll(chunkKeys);
+    
     let fullJsonStr = '';
     for (let i = 0; i < numChunks; i++) {
-      const chunk = cache.get(key + '_' + i);
+      const chunk = chunks[key + '_' + i];
       if (!chunk) return null; // 청크 일부가 유실된 경우 캐시 미스 처리
       fullJsonStr += chunk;
     }
@@ -83,12 +89,13 @@ const CacheManager = {
       return;
     }
 
+    // [v10.0] 단일 호출로 일괄 삭제
+    const keysToRemove = [key, key + '_chunks'];
     const numChunks = parseInt(chunksStr, 10);
     for (let i = 0; i < numChunks; i++) {
-      cache.remove(key + '_' + i);
+      keysToRemove.push(key + '_' + i);
     }
-    cache.remove(key);
-    cache.remove(key + '_chunks');
+    cache.removeAll(keysToRemove);
   },
 
   /**
