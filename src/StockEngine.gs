@@ -28,7 +28,7 @@ function recalcStockAndUsage(ss) {
   const logData = logSheet.getRange(3, 1, logLastRow - 2, TX_COLS).getValues();
   
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
-  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 20).getValues(); // 20열까지 (T열 = 매입단가)
+  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues(); // 20열까지 (T열 = 매입단가)
 
   const today = new Date();
   const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
@@ -76,9 +76,9 @@ function recalcStockAndUsage(ss) {
 
   // [FIX] 초기재고(initStock)를 FIFO의 가장 첫 번째 로트(가장 오래된 날짜)로 편입
   masterData.forEach(row => {
-    const code = row[0];
-    const initStock = Number(row[6]) || 0;
-    const unitPrice = Number(row[19]) || 0;
+    const code = row[MASTER_COLS.CODE];
+    const initStock = Number(row[MASTER_COLS.INIT_STOCK]) || 0;
+    const unitPrice = Number(row[MASTER_COLS.UNIT_PRICE]) || 0;
     
     if (code && initStock > 0) {
       lotsMap[code] = [{ date: 0, qty: initStock, price: unitPrice, remaining: initStock }];
@@ -154,8 +154,8 @@ function recalcStockAndUsage(ss) {
   const valueUpdates = [];   // W열
 
   masterData.forEach(row => {
-    const code = row[0];
-    const initStock = Number(row[6]) || 0;
+    const code = row[MASTER_COLS.CODE];
+    const initStock = Number(row[MASTER_COLS.INIT_STOCK]) || 0;
     if (!code) {
       stockUpdates.push(["", ""]);
       valueUpdates.push([""]);

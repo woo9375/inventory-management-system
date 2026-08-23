@@ -118,14 +118,7 @@ const CacheManager = {
     const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
     if (masterLastRow < 3) return {};
     
-    // [FIX] 20열 -> 24열로 늘려서 24번째 열(인덱스 23, 사용 여부)을 정상적으로 가져오도록 수정
-    const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
-    const itemMap = {};
-    masterData.forEach(r => { 
-      if(r[0] && r[23] !== '미사용') { 
-        itemMap[r[0]] = { name: r[1], price: r[19] || 0 };
-      }
-    });
+    // [v10.0] MASTER_COL_COUNT\uc5f4\ub85c \uc77d\uc5b4\uc11c \uc0ac\uc6a9\uc720\ubb34 \ud544\ud130\ub9c1\n    const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();\n    const itemMap = {};\n    masterData.forEach(r => { \n      if(r[MASTER_COLS.CODE] && r[MASTER_COLS.USAGE_STATUS] !== '\ubbf8\uc0ac\uc6a9') { \n        itemMap[r[MASTER_COLS.CODE]] = { name: r[MASTER_COLS.NAME], price: r[MASTER_COLS.UNIT_PRICE] || 0 };\n      }\n    });
     
     this.set(CACHE_KEYS.ITEM_MAP, itemMap, TTL.ITEM_MAP);
     return itemMap;

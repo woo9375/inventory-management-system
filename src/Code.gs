@@ -125,13 +125,7 @@ function onEdit(e) {
   // [v9.0] 품목 마스터 시트 직접 편집 시 변경이력 자동 기록
   if (sheetName === SHEET_MASTER && row >= 3) {
     const col = e.range.getColumn();
-    // 변경 추적 대상 컬럼: B(품목명), C(카테고리), D(규격), E(단위), G(초기재고),
-    // K(리드타임), L(안전재고일수), M(목표유지일수), S(과세구분), T(매입단가), X(사용유무)
-    const TRACKED_COLS = { 
-      2: "품목명", 3: "카테고리", 4: "규격", 5: "단위", 7: "초기재고",
-      11: "리드타임", 12: "안전재고일수", 13: "목표유지일수", 
-      19: "과세구분", 20: "매입단가", 24: "사용유무"
-    };
+    // 변경 추적 대상 컬럼 (1-based 열 번호 → 필드명, MASTER_COLS는 0-based)\n    // B(NAME+1), C(CATEGORY+1), D(GRADE+1), E(UNIT+1), G(INIT_STOCK+1),\n    // K(LEAD_TIME+1), L(SAFETY_DAYS+1), M(TARGET_DAYS+1), S(TAX_TYPE+1), T(UNIT_PRICE+1), X(USAGE_STATUS+1)\n    const TRACKED_COLS = { \n      [MASTER_COLS.NAME + 1]: "품목명", [MASTER_COLS.CATEGORY + 1]: "카테고리",\n      [MASTER_COLS.GRADE + 1]: "규격", [MASTER_COLS.UNIT + 1]: "단위",\n      [MASTER_COLS.INIT_STOCK + 1]: "초기재고",\n      [MASTER_COLS.LEAD_TIME + 1]: "리드타임", [MASTER_COLS.SAFETY_DAYS + 1]: "안전재고일수",\n      [MASTER_COLS.TARGET_DAYS + 1]: "목표유지일수",\n      [MASTER_COLS.TAX_TYPE + 1]: "과세구분", [MASTER_COLS.UNIT_PRICE + 1]: "매입단가",\n      [MASTER_COLS.USAGE_STATUS + 1]: "사용유무"\n    };
     
     if (TRACKED_COLS[col] && e.range.getNumRows() === 1 && e.range.getNumColumns() === 1) {
       try {

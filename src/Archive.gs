@@ -208,7 +208,7 @@ function executeMonthlyClosing(token, year, month) {
   const txData = txLastRow >= 3 ? txSheet.getRange(3, 1, txLastRow - 2, TX_COLS).getValues() : [];
   
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
-  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 20).getValues(); // 7번째 열(인덱스 6)이 초기재고
+  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues(); // MASTER_COLS.INIT_STOCK(인덱스 6)이 초기재고
   
   // 마감일 기준: 해당 연/월의 마지막 날
   const cutoffDate = new Date(year, month, 0, 23, 59, 59);
@@ -281,10 +281,10 @@ function executeMonthlyClosing(token, year, month) {
   
   // 초기 재고 반영 (가장 먼저 들어온 것으로 취급)
   masterData.forEach(row => {
-    const code = row[0];
-    const name = row[1];
-    const initStock = Number(row[6]) || 0;
-    const unitPrice = Number(row[19]) || 0;
+    const code = row[MASTER_COLS.CODE];
+    const name = row[MASTER_COLS.NAME];
+    const initStock = Number(row[MASTER_COLS.INIT_STOCK]) || 0;
+    const unitPrice = Number(row[MASTER_COLS.UNIT_PRICE]) || 0;
     if (code) {
       itemNames[code] = name;
       if (initStock > 0) {

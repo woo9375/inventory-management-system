@@ -94,14 +94,14 @@ function runDashboardSync(ss) {
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
   if (masterLastRow < 3) return _renderNoOrderMessage(dashSheet);
   
-  // [v9.0] 24열 읽기 + 미사용 품목 제외
-  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
+  // [v9.0] MASTER_COL_COUNT열 읽기 + 미사용 품목 제외
+  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
   const outputList = [];
   masterData.forEach(row => {
     // [v9.0] 미사용 품목은 대시보드에서 제외
-    if (row[23] === '미사용') return;
-    if (row[16] === STATUS_RISK || row[16] === STATUS_ORDER) {
-      outputList.push([row[0], row[1], row[3], row[7], row[13], row[14], row[15], row[16]]);
+    if (row[MASTER_COLS.USAGE_STATUS] === '미사용') return;
+    if (row[MASTER_COLS.STATUS] === STATUS_RISK || row[MASTER_COLS.STATUS] === STATUS_ORDER) {
+      outputList.push([row[MASTER_COLS.CODE], row[MASTER_COLS.NAME], row[MASTER_COLS.GRADE], row[MASTER_COLS.CURRENT_STOCK], row[MASTER_COLS.SAFETY_STOCK], row[MASTER_COLS.ROP], row[MASTER_COLS.ORDER_QTY], row[MASTER_COLS.STATUS]]);
     }
   });
 

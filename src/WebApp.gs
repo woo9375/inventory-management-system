@@ -70,31 +70,31 @@ function getDashboardData(token) {
   const seasonMultiplier = seasonSheet.getRange("D2").getValue() || 1.0;
 
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
-  // [v9.0] 24열까지 읽어서 사용유무(X열=24번째) 필터링
-  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
+  // [v9.0] MASTER_COL_COUNT열까지 읽어서 사용유무 필터링
+  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
 
   let totalItems = 0, riskCount = 0, orderCount = 0, normalCount = 0;
   const alertItems = [];
 
   masterData.forEach(row => {
-    if (!row[0]) return;
+    if (!row[MASTER_COLS.CODE]) return;
     // [v9.0] 미사용 품목은 대시보드 통계에서 제외
-    if (row[23] === '미사용') return;
+    if (row[MASTER_COLS.USAGE_STATUS] === '미사용') return;
     totalItems++;
-    const status = row[16];
+    const status = row[MASTER_COLS.STATUS];
     if (status === STATUS_RISK) {
       riskCount++;
       alertItems.push({
-        code: row[0], name: row[1], grade: row[3],
-        currentStock: row[7], safetyStock: row[13],
-        rop: row[14], orderQty: row[15], status: "risk"
+        code: row[MASTER_COLS.CODE], name: row[MASTER_COLS.NAME], grade: row[MASTER_COLS.GRADE],
+        currentStock: row[MASTER_COLS.CURRENT_STOCK], safetyStock: row[MASTER_COLS.SAFETY_STOCK],
+        rop: row[MASTER_COLS.ROP], orderQty: row[MASTER_COLS.ORDER_QTY], status: "risk"
       });
     } else if (status === STATUS_ORDER) {
       orderCount++;
       alertItems.push({
-        code: row[0], name: row[1], grade: row[3],
-        currentStock: row[7], safetyStock: row[13],
-        rop: row[14], orderQty: row[15], status: "order"
+        code: row[MASTER_COLS.CODE], name: row[MASTER_COLS.NAME], grade: row[MASTER_COLS.GRADE],
+        currentStock: row[MASTER_COLS.CURRENT_STOCK], safetyStock: row[MASTER_COLS.SAFETY_STOCK],
+        rop: row[MASTER_COLS.ROP], orderQty: row[MASTER_COLS.ORDER_QTY], status: "order"
       });
     } else if (status === STATUS_OK) {
       normalCount++;
@@ -129,21 +129,26 @@ function getItemMasterData(token) {
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
   if (masterLastRow < 3) return [];
 
-  const data = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
+  const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
   items = [];
 
   data.forEach(row => {
-    if (!row[0]) return;
+    if (!row[MASTER_COLS.CODE]) return;
     // 상태(사용여부)가 '미사용'인 품목은 제외
-    if (row[23] === '미사용') return;
+    if (row[MASTER_COLS.USAGE_STATUS] === '미사용') return;
 
     items.push({
-      code: row[0], name: row[1], category: row[2], grade: row[3], unit: row[4],
-      initStock: row[6], currentStock: row[7], dailyUsage: row[8],
-      leadTime: row[10], safetyDays: row[11], targetDays: row[12],
-      safetyStock: row[13], rop: row[14], orderQty: row[15], status: row[16],
-      taxType: row[18], unitPrice: row[19], supplyPrice: row[20],
-      taxAmount: row[21], totalValue: row[22]
+      code: row[MASTER_COLS.CODE], name: row[MASTER_COLS.NAME], category: row[MASTER_COLS.CATEGORY],
+      grade: row[MASTER_COLS.GRADE], unit: row[MASTER_COLS.UNIT],
+      initStock: row[MASTER_COLS.INIT_STOCK], currentStock: row[MASTER_COLS.CURRENT_STOCK],
+      dailyUsage: row[MASTER_COLS.DAILY_USAGE],
+      leadTime: row[MASTER_COLS.LEAD_TIME], safetyDays: row[MASTER_COLS.SAFETY_DAYS],
+      targetDays: row[MASTER_COLS.TARGET_DAYS],
+      safetyStock: row[MASTER_COLS.SAFETY_STOCK], rop: row[MASTER_COLS.ROP],
+      orderQty: row[MASTER_COLS.ORDER_QTY], status: row[MASTER_COLS.STATUS],
+      taxType: row[MASTER_COLS.TAX_TYPE], unitPrice: row[MASTER_COLS.UNIT_PRICE],
+      supplyPrice: row[MASTER_COLS.SUPPLY_PRICE],
+      taxAmount: row[MASTER_COLS.TAX_AMOUNT], totalValue: row[MASTER_COLS.TOTAL_VALUE]
     });
   });
 
@@ -164,8 +169,8 @@ function getItemCodes(token) {
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
   if (masterLastRow < 3) return [];
 
-  const data = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
-  codes = data.filter(r => r[0] && r[23] !== '미사용').map(r => ({ code: r[0], name: r[1] }));
+  const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
+  codes = data.filter(r => r[MASTER_COLS.CODE] && r[MASTER_COLS.USAGE_STATUS] !== '미사용').map(r => ({ code: r[MASTER_COLS.CODE], name: r[MASTER_COLS.NAME] }));
   
   CacheManager.set(CACHE_KEY, codes);
   return codes;
@@ -189,8 +194,8 @@ function searchItemCodes(token, query) {
     const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
     if (masterLastRow < 3) return [];
     
-    const data = masterSheet.getRange(3, 1, masterLastRow - 2, 24).getValues();
-    allCodes = data.filter(r => r[0] && r[23] !== '미사용').map(r => ({ code: r[0], name: r[1] }));
+    const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
+    allCodes = data.filter(r => r[MASTER_COLS.CODE] && r[MASTER_COLS.USAGE_STATUS] !== '미사용').map(r => ({ code: r[MASTER_COLS.CODE], name: r[MASTER_COLS.NAME] }));
     CacheManager.set(CACHE_KEY, allCodes);
   }
   
@@ -207,35 +212,52 @@ function addNewItem(token, itemData) {
   if (!session) return { success: false, message: "인증이 필요합니다." };
   if (session.role === ROLES.STAFF) return { success: false, message: "품목 등록 권한이 없습니다." };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  const lastRow = masterSheet.getLastRow();
-  
-  // [FIX] 품목코드 중복 검증
-  if (lastRow >= 3) {
-    const existingCodes = masterSheet.getRange(3, 1, lastRow - 2, 1).getValues().flat();
-    if (existingCodes.includes(itemData.code)) {
-      return { success: false, message: `❌ 품목코드 '${itemData.code}'는 이미 존재합니다.` };
-    }
+  // [v10.0] LockService 도입: 품목 등록 동시 충돌 방지
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { success: false, message: "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요." };
   }
 
-  const newRow = Math.max(lastRow + 1, 3);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const masterSheet = ss.getSheetByName(SHEET_MASTER);
+    const lastRow = masterSheet.getLastRow();
+    
+    // [FIX] 품목코드 중복 검증
+    if (lastRow >= 3) {
+      const existingCodes = masterSheet.getRange(3, 1, lastRow - 2, 1).getValues().flat();
+      if (existingCodes.includes(itemData.code)) {
+        return { success: false, message: `❌ 품목코드 '${itemData.code}'는 이미 존재합니다.` };
+      }
+    }
 
-  masterSheet.getRange(newRow, 1, 1, 5).setValues([[
-    itemData.code, itemData.name, itemData.category, itemData.grade, itemData.unit
-  ]]);
-  masterSheet.getRange(newRow, 7).setValue(itemData.initStock || 0);
-  masterSheet.getRange(newRow, 8).setValue(itemData.initStock || 0);
-  masterSheet.getRange(newRow, 9).setValue(0);
-  masterSheet.getRange(newRow, 11, 1, 3).setValues([[
-    itemData.leadTime || 3, itemData.safetyDays || 5, itemData.targetDays || 30
-  ]]);
-  masterSheet.getRange(newRow, 19, 1, 2).setValues([[
-    itemData.taxType || "과세", itemData.unitPrice || 0
-  ]]);
+    const newRow = Math.max(lastRow + 1, 3);
 
-  CacheManager.invalidateAll();
-  return { success: true, message: `✅ 품목 '${itemData.name}' 등록 완료` };
+    // [v10.0] 배치 쓰기: setValue() 6회 → setValues() 1회로 통합
+    const newRowData = new Array(MASTER_COL_COUNT).fill("");
+    newRowData[MASTER_COLS.CODE] = itemData.code;
+    newRowData[MASTER_COLS.NAME] = itemData.name;
+    newRowData[MASTER_COLS.CATEGORY] = itemData.category;
+    newRowData[MASTER_COLS.GRADE] = itemData.grade;
+    newRowData[MASTER_COLS.UNIT] = itemData.unit;
+    newRowData[MASTER_COLS.INIT_STOCK] = itemData.initStock || 0;
+    newRowData[MASTER_COLS.CURRENT_STOCK] = itemData.initStock || 0;
+    newRowData[MASTER_COLS.DAILY_USAGE] = 0;
+    newRowData[MASTER_COLS.LEAD_TIME] = itemData.leadTime || 3;
+    newRowData[MASTER_COLS.SAFETY_DAYS] = itemData.safetyDays || 5;
+    newRowData[MASTER_COLS.TARGET_DAYS] = itemData.targetDays || 30;
+    newRowData[MASTER_COLS.TAX_TYPE] = itemData.taxType || "과세";
+    newRowData[MASTER_COLS.UNIT_PRICE] = itemData.unitPrice || 0;
+    newRowData[MASTER_COLS.USAGE_STATUS] = "사용";
+    masterSheet.getRange(newRow, 1, 1, MASTER_COL_COUNT).setValues([newRowData]);
+
+    CacheManager.invalidateAll();
+    return { success: true, message: `✅ 품목 '${itemData.name}' 등록 완료` };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // [v7.0] 변경이력 기록 추가
@@ -251,7 +273,7 @@ function uploadItemMasterCSV(token, dataRows) {
   // 기존 코드 가져오기 (O(1) 조회를 위해 Set 사용)
   const existingCodes = new Set();
   if (masterLastRow >= 3) {
-    const codeValues = masterSheet.getRange(3, 1, masterLastRow - 2, 1).getValues();
+    const codeValues = masterSheet.getRange(3, MASTER_COLS.CODE + 1, masterLastRow - 2, 1).getValues();
     codeValues.forEach(row => { if (row[0]) existingCodes.add(row[0].toString()); });
   }
   
@@ -278,23 +300,23 @@ function uploadItemMasterCSV(token, dataRows) {
       if (cat && !validCategories.has(cat)) {
         errors.push(`[${code}] '${cat}'`);
       } else {
-        // [v9.0 FIX] 24열 구조로 확장 (사용유무 컬럼 포함)
-        const newRow = new Array(24).fill("");
-        newRow[0] = code; // 품목코드
-        newRow[1] = row[1] || ""; // 품목명
-        newRow[2] = cat; // 카테고리
-        newRow[3] = row[3] || "C"; // 규격
-        newRow[4] = row[4] || ""; // 단위
+        // [v10.0] MASTER_COLS 상수 사용으로 매직 넘버 제거
+        const newRow = new Array(MASTER_COL_COUNT).fill("");
+        newRow[MASTER_COLS.CODE] = code;
+        newRow[MASTER_COLS.NAME] = row[1] || "";
+        newRow[MASTER_COLS.CATEGORY] = cat;
+        newRow[MASTER_COLS.GRADE] = row[3] || "C";
+        newRow[MASTER_COLS.UNIT] = row[4] || "";
         const initStock = Number(row[5]) || 0;
-        newRow[6] = initStock; // 초기재고
-        newRow[7] = initStock; // [FIX] 현재고 = 초기재고로 동기화
-        newRow[8] = 0; // 일평균 사용량
-        newRow[10] = Number(row[6]) || 3; // 리드타임 (시트 K열=11, 0-indexed=10)
-        newRow[11] = Number(row[7]) || 5; // 안전재고일수 (시트 L열=12, 0-indexed=11)
-        newRow[12] = Number(row[8]) || 30; // 목표유지일수 (시트 M열=13, 0-indexed=12)
-        newRow[18] = row[9] || "과세"; // 과세구분
-        newRow[19] = Number(row[10]) || 0; // 매입단가
-        newRow[23] = "사용"; // [v9.0] 사용유무 기본값
+        newRow[MASTER_COLS.INIT_STOCK] = initStock;
+        newRow[MASTER_COLS.CURRENT_STOCK] = initStock; // [FIX] 현재고 = 초기재고로 동기화
+        newRow[MASTER_COLS.DAILY_USAGE] = 0;
+        newRow[MASTER_COLS.LEAD_TIME] = Number(row[6]) || 3;
+        newRow[MASTER_COLS.SAFETY_DAYS] = Number(row[7]) || 5;
+        newRow[MASTER_COLS.TARGET_DAYS] = Number(row[8]) || 30;
+        newRow[MASTER_COLS.TAX_TYPE] = row[9] || "과세";
+        newRow[MASTER_COLS.UNIT_PRICE] = Number(row[10]) || 0;
+        newRow[MASTER_COLS.USAGE_STATUS] = "사용";
         
         newRows.push(newRow);
         existingCodes.add(code); // 같은 CSV 내 중복 방지
@@ -311,8 +333,8 @@ function uploadItemMasterCSV(token, dataRows) {
   }
   
   if (newRows.length > 0) {
-    // [v9.0 FIX] 24열 구조로 기록
-    masterSheet.getRange(masterLastRow + 1, 1, newRows.length, 24).setValues(newRows);
+    // [v10.0] MASTER_COL_COUNT 상수 사용
+    masterSheet.getRange(masterLastRow + 1, 1, newRows.length, MASTER_COL_COUNT).setValues(newRows);
     SpreadsheetApp.flush();
     recalcStockAndUsage(ss); // 재고 다시 계산
   }
@@ -329,68 +351,99 @@ function updateItem(token, itemCode, updates) {
   if (!session) return { success: false, message: "인증이 필요합니다." };
   if (session.role === ROLES.STAFF) return { success: false, message: "품목 수정 권한이 없습니다." };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
-  const data = masterSheet.getRange(3, 1, masterLastRow - 2, 20).getValues();
-  
-  let targetRow = -1;
-  let oldValues = null;
-  data.forEach((row, idx) => {
-    if (row[0] === itemCode) {
-      targetRow = idx + 3;
-      oldValues = row;
-    }
-  });
-
-  if (targetRow === -1) return { success: false, message: "❌ 품목코드를 찾을 수 없습니다." };
-
-  const colMap = {
-    name: 2, category: 3, grade: 4, unit: 5,
-    initStock: 7, leadTime: 11, safetyDays: 12, targetDays: 13,
-    taxType: 19, unitPrice: 20
-  };
-  
-  // [v7.0] 변경이력 기록용 매핑
-  const fieldNameMap = {
-    name: "품목명", category: "카테고리", grade: "규격", unit: "단위",
-    initStock: "초기재고", leadTime: "리드타임", safetyDays: "안전재고일수",
-    targetDays: "목표유지일수", taxType: "과세구분", unitPrice: "매입단가"
-  };
-  const oldColMap = {
-    name: 1, category: 2, grade: 3, unit: 4,
-    initStock: 6, leadTime: 10, safetyDays: 11, targetDays: 12,
-    taxType: 18, unitPrice: 19
-  };
-
-  const changeRecords = [];
-  const now = new Date();
-  const itemName = oldValues[1]; // 품목명
-
-  Object.keys(updates).forEach(key => {
-    if (colMap[key]) {
-      const oldVal = oldValues[oldColMap[key]];
-      const newVal = updates[key];
-      
-      // 실제 변경이 있는 경우만 이력 기록
-      if (String(oldVal) !== String(newVal)) {
-        changeRecords.push([now, session.name, itemCode, itemName, fieldNameMap[key] || key, oldVal, newVal]);
-      }
-      
-      masterSheet.getRange(targetRow, colMap[key]).setValue(newVal);
-    }
-  });
-
-  // [v7.0] 변경이력 시트에 기록
-  if (changeRecords.length > 0) {
-    const changelogSheet = ss.getSheetByName(SHEET_CHANGELOG);
-    const clLastRow = Math.max(changelogSheet.getLastRow() + 1, 3);
-    changelogSheet.getRange(clLastRow, 1, changeRecords.length, 7).setValues(changeRecords)
-      .setHorizontalAlignment("center").setBackground(COLORS.autoBg);
+  // [v10.0] LockService 도입: 품목 수정 동시 충돌 방지
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { success: false, message: "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요." };
   }
 
-  CacheManager.invalidateAll();
-  return { success: true, message: `✅ 품목 '${itemCode}' 수정 완료` };
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const masterSheet = ss.getSheetByName(SHEET_MASTER);
+    const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
+    const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
+    
+    let targetRowIdx = -1;
+    let oldValues = null;
+    data.forEach((row, idx) => {
+      if (row[MASTER_COLS.CODE] === itemCode) {
+        targetRowIdx = idx;
+        oldValues = row;
+      }
+    });
+
+    if (targetRowIdx === -1) return { success: false, message: "❌ 품목코드를 찾을 수 없습니다." };
+    const targetRow = targetRowIdx + 3;
+
+    // [v10.0] MASTER_COLS 기반 열 매핑 (1-based, getRange용)
+    const colMap = {
+      name: MASTER_COLS.NAME + 1, category: MASTER_COLS.CATEGORY + 1,
+      grade: MASTER_COLS.GRADE + 1, unit: MASTER_COLS.UNIT + 1,
+      initStock: MASTER_COLS.INIT_STOCK + 1, leadTime: MASTER_COLS.LEAD_TIME + 1,
+      safetyDays: MASTER_COLS.SAFETY_DAYS + 1, targetDays: MASTER_COLS.TARGET_DAYS + 1,
+      taxType: MASTER_COLS.TAX_TYPE + 1, unitPrice: MASTER_COLS.UNIT_PRICE + 1
+    };
+    
+    // [v7.0] 변경이력 기록용 매핑
+    const fieldNameMap = {
+      name: "품목명", category: "카테고리", grade: "규격", unit: "단위",
+      initStock: "초기재고", leadTime: "리드타임", safetyDays: "안전재고일수",
+      targetDays: "목표유지일수", taxType: "과세구분", unitPrice: "매입단가"
+    };
+    // [v10.0] MASTER_COLS 기반 oldValue 인덱스 매핑 (0-based, 배열 접근용)
+    const oldColMap = {
+      name: MASTER_COLS.NAME, category: MASTER_COLS.CATEGORY,
+      grade: MASTER_COLS.GRADE, unit: MASTER_COLS.UNIT,
+      initStock: MASTER_COLS.INIT_STOCK, leadTime: MASTER_COLS.LEAD_TIME,
+      safetyDays: MASTER_COLS.SAFETY_DAYS, targetDays: MASTER_COLS.TARGET_DAYS,
+      taxType: MASTER_COLS.TAX_TYPE, unitPrice: MASTER_COLS.UNIT_PRICE
+    };
+
+    const changeRecords = [];
+    const now = new Date();
+    const itemName = oldValues[MASTER_COLS.NAME];
+
+    // [v10.0] 배치 쓰기: 행 데이터를 메모리에서 업데이트 후 한 번에 쓰기
+    const updatedRow = oldValues.slice(); // 복사
+    Object.keys(updates).forEach(key => {
+      if (colMap[key]) {
+        const oldVal = oldValues[oldColMap[key]];
+        const newVal = updates[key];
+        
+        // 실제 변경이 있는 경우만 이력 기록
+        if (String(oldVal) !== String(newVal)) {
+          changeRecords.push([now, session.name, itemCode, itemName, fieldNameMap[key] || key, oldVal, newVal]);
+        }
+        
+        updatedRow[oldColMap[key]] = newVal;
+      }
+    });
+
+    // 수식 열은 빈 값으로 (ARRAYFORMULA가 자동 채움)
+    updatedRow[MASTER_COLS.SAFETY_STOCK] = "";
+    updatedRow[MASTER_COLS.ROP] = "";
+    updatedRow[MASTER_COLS.ORDER_QTY] = "";
+    updatedRow[MASTER_COLS.STATUS] = "";
+    updatedRow[MASTER_COLS.SUPPLY_PRICE] = "";
+    updatedRow[MASTER_COLS.TAX_AMOUNT] = "";
+    updatedRow[MASTER_COLS.TOTAL_VALUE] = "";
+    masterSheet.getRange(targetRow, 1, 1, MASTER_COL_COUNT).setValues([updatedRow]);
+
+    // [v7.0] 변경이력 시트에 기록
+    if (changeRecords.length > 0) {
+      const changelogSheet = ss.getSheetByName(SHEET_CHANGELOG);
+      const clLastRow = Math.max(changelogSheet.getLastRow() + 1, 3);
+      changelogSheet.getRange(clLastRow, 1, changeRecords.length, 7).setValues(changeRecords)
+        .setHorizontalAlignment("center").setBackground(COLORS.autoBg);
+    }
+
+    CacheManager.invalidateAll();
+    return { success: true, message: `✅ 품목 '${itemCode}' 수정 완료` };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // [v7.0] 변경이력 조회 API
@@ -673,45 +726,57 @@ function addShop(token, shopData) {
     return { success: false, message: "❌ 태그 ID는 영어 대문자 2~3자로만 입력해야 합니다. (예: TX, MB, AXC)" };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
-
-  // [v9.0] 중복 체크 강화: 태그 + (분류+업장명) 복합 중복
-  const lastRow = shopSheet.getLastRow();
-  if (lastRow >= 3) {
-    const existingData = shopSheet.getRange(3, 1, lastRow - 2, 3).getValues(); // [분류, 업장명, 태그]
-    for (let i = 0; i < existingData.length; i++) {
-      const row = existingData[i];
-      if (!row[1]) continue; // 빈 행 스킵
-      // 태그 중복 검사
-      if (row[2] === shopData.tag) {
-        return { success: false, message: `❌ 태그 '${shopData.tag}'는 이미 업장 '${row[1]}'에서 사용 중입니다.` };
-      }
-      // 업장명 중복 검사
-      if (row[1] === shopData.name) {
-        return { success: false, message: "❌ 이미 존재하는 업장명입니다." };
-      }
-      // (분류+업장명) 복합 중복 검사
-      if (row[0] === shopData.category && row[1] === shopData.name) {
-        return { success: false, message: `❌ '${shopData.category}' 분류에 '${shopData.name}' 업장이 이미 존재합니다.` };
-      }
-    }
+  // [v10.0] LockService 도입: 업장 추가 동시 충돌 방지
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { success: false, message: "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요." };
   }
 
-  const newRow = Math.max(lastRow + 1, 3);
-  shopSheet.getRange(newRow, 1, 1, 4).setValues([[
-    shopData.category, shopData.name, shopData.tag, "대기"
-  ]]);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const shopSheet = ss.getSheetByName(SHEET_SHOPS);
 
-  shopSheet.getRange(newRow, 1, 1, 3).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
-  shopSheet.getRange(newRow, 4, 1, 3).setBackground(COLORS.autoBg).setHorizontalAlignment("center");
-  shopSheet.getRange(newRow, 7).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+    // [v9.0] 중복 체크 강화: 태그 + (분류+업장명) 복합 중복
+    const lastRow = shopSheet.getLastRow();
+    if (lastRow >= 3) {
+      const existingData = shopSheet.getRange(3, 1, lastRow - 2, 3).getValues(); // [분류, 업장명, 태그]
+      for (let i = 0; i < existingData.length; i++) {
+        const row = existingData[i];
+        if (!row[1]) continue; // 빈 행 스킵
+        // 태그 중복 검사
+        if (row[2] === shopData.tag) {
+          return { success: false, message: `❌ 태그 '${shopData.tag}'는 이미 업장 '${row[1]}'에서 사용 중입니다.` };
+        }
+        // 업장명 중복 검사
+        if (row[1] === shopData.name) {
+          return { success: false, message: "❌ 이미 존재하는 업장명입니다." };
+        }
+        // (분류+업장명) 복합 중복 검사
+        if (row[0] === shopData.category && row[1] === shopData.name) {
+          return { success: false, message: `❌ '${shopData.category}' 분류에 '${shopData.name}' 업장이 이미 존재합니다.` };
+        }
+      }
+    }
 
-  SpreadsheetApp.flush();
-  generateNewShops();
+    const newRow = Math.max(lastRow + 1, 3);
+    shopSheet.getRange(newRow, 1, 1, 4).setValues([[
+      shopData.category, shopData.name, shopData.tag, "대기"
+    ]]);
 
-  CacheManager.invalidateAll();
-  return { success: true, message: `✅ 업장 '${shopData.name}' 추가 및 시트 생성 완료` };
+    shopSheet.getRange(newRow, 1, 1, 3).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+    shopSheet.getRange(newRow, 4, 1, 3).setBackground(COLORS.autoBg).setHorizontalAlignment("center");
+    shopSheet.getRange(newRow, 7).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+
+    SpreadsheetApp.flush();
+    generateNewShops();
+
+    CacheManager.invalidateAll();
+    return { success: true, message: `✅ 업장 '${shopData.name}' 추가 및 시트 생성 완료` };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function deleteShop(token, shopName) {
@@ -720,38 +785,50 @@ function deleteShop(token, shopName) {
     return { success: false, message: "관리자 권한이 필요합니다." };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
-  const lastRow = shopSheet.getLastRow();
-  if (lastRow < 3) return { success: false, message: "업장이 없습니다." };
-
-  const data = shopSheet.getRange(3, 1, lastRow - 2, 6).getValues();
-  let targetRowIdx = -1;
-  data.forEach((row, idx) => {
-    if (row[1] === shopName) targetRowIdx = idx;
-  });
-
-  if (targetRowIdx === -1) return { success: false, message: "업장을 찾을 수 없습니다." };
-
-  // [v9.0] 소프트 삭제: 시트를 숨김 처리하고 상태를 '삭제됨'으로 변경 (데이터 보존)
-  const targetSheet = ss.getSheetByName(shopName);
-  if (targetSheet) {
-    try {
-      targetSheet.hideSheet(); // 시트 숨김 (물리적 삭제 대신)
-    } catch(e) {
-      return { success: false, message: "시트 숨김 처리 실패: " + e.message };
-    }
+  // [v10.0] LockService 도입: 업장 삭제 동시 충돌 방지
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { success: false, message: "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요." };
   }
 
-  // 업장관리 시트에서 상태를 '삭제됨'으로 변경
-  const rowNum = targetRowIdx + 3;
-  shopSheet.getRange(rowNum, 4).setValue("삭제됨");
-  shopSheet.getRange(rowNum, 1, 1, 3).setBackground("#f0f0f0").setFontColor("#999999"); // 시각적 비활성화
-  shopSheet.getRange(rowNum, 4, 1, 3).setBackground("#f0f0f0").setFontColor("#999999");
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+    const lastRow = shopSheet.getLastRow();
+    if (lastRow < 3) return { success: false, message: "업장이 없습니다." };
 
-  _refreshPermissionDropdown(ss);
-  CacheManager.invalidateAll();
-  return { success: true, message: `✅ 업장 '${shopName}' 비활성화 완료 (데이터 보존됨)` };
+    const data = shopSheet.getRange(3, 1, lastRow - 2, 6).getValues();
+    let targetRowIdx = -1;
+    data.forEach((row, idx) => {
+      if (row[1] === shopName) targetRowIdx = idx;
+    });
+
+    if (targetRowIdx === -1) return { success: false, message: "업장을 찾을 수 없습니다." };
+
+    // [v9.0] 소프트 삭제: 시트를 숨김 처리하고 상태를 '삭제됨'으로 변경 (데이터 보존)
+    const targetSheet = ss.getSheetByName(shopName);
+    if (targetSheet) {
+      try {
+        targetSheet.hideSheet(); // 시트 숨김 (물리적 삭제 대신)
+      } catch(e) {
+        return { success: false, message: "시트 숨김 처리 실패: " + e.message };
+      }
+    }
+
+    // 업장관리 시트에서 상태를 '삭제됨'으로 변경
+    const rowNum = targetRowIdx + 3;
+    shopSheet.getRange(rowNum, 4).setValue("삭제됨");
+    shopSheet.getRange(rowNum, 1, 1, 3).setBackground("#f0f0f0").setFontColor("#999999"); // 시각적 비활성화
+    shopSheet.getRange(rowNum, 4, 1, 3).setBackground("#f0f0f0").setFontColor("#999999");
+
+    _refreshPermissionDropdown(ss);
+    CacheManager.invalidateAll();
+    return { success: true, message: `✅ 업장 '${shopName}' 비활성화 완료 (데이터 보존됨)` };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 
@@ -1026,7 +1103,7 @@ function disableItemMaster(token, code) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  const data = masterSheet.getDataRange().getValues();
+  const data = masterSheet.getRange(1, 1, masterSheet.getLastRow(), MASTER_COL_COUNT).getValues();
   
   let targetRow = -1;
   for (let i = 2; i < data.length; i++) { // Header rows
@@ -1038,15 +1115,15 @@ function disableItemMaster(token, code) {
 
   if (targetRow === -1) return { success: false, message: "품목을 찾을 수 없습니다." };
 
-  // Set X column (column 24) to '미사용'
-  masterSheet.getRange(targetRow, 24).setValue("미사용");
+  // Set X column (사용유무) to '미사용'
+  masterSheet.getRange(targetRow, MASTER_COLS.USAGE_STATUS + 1).setValue("미사용");
   
   // [NF-02 FIX] 캐시 무효화 누락 수정 — 비활성화된 품목이 캐시에서 즉시 제거되도록
   CacheManager.invalidateAll();
 
   // Log change if logChange exists
   if (typeof logChange === "function") {
-    logChange(session.username, code, data[targetRow-1][1], "상태(사용여부)", data[targetRow-1][23] || "사용", "미사용");
+    logChange(session.username, code, data[targetRow-1][MASTER_COLS.NAME], "상태(사용여부)", data[targetRow-1][MASTER_COLS.USAGE_STATUS] || "사용", "미사용");
   }
 
   // [v9.0] 미사용 품목을 시트 최하단으로 정렬 (데이터 가독성 개선)
@@ -1063,18 +1140,18 @@ function _sortMasterByUsageStatus(masterSheet) {
   const numRows = lastRow - 2;
   // 수식이 아닌 데이터 열만 읽기 (A~E: 1~5, G~M: 7~13, S~T: 19~20, X: 24)
   // ARRAYFORMULA가 N,O,P,Q,U,V,W열에 걸려있으므로 이 열들은 수식이 자동 계산
-  const data = masterSheet.getRange(3, 1, numRows, 24).getValues();
+  const data = masterSheet.getRange(3, 1, numRows, MASTER_COL_COUNT).getValues();
   
   // 빈 행 제외 후 정렬: 사용 → 미사용 순서, 같은 상태 내에서는 품목코드 순
-  const filledRows = data.filter(r => r[0]); // 품목코드가 있는 행만
-  const emptyRows = data.filter(r => !r[0]); // 빈 행
+  const filledRows = data.filter(r => r[MASTER_COLS.CODE]); // 품목코드가 있는 행만
+  const emptyRows = data.filter(r => !r[MASTER_COLS.CODE]); // 빈 행
   
   filledRows.sort(function(a, b) {
-    const aDisabled = (a[23] === '미사용') ? 1 : 0;
-    const bDisabled = (b[23] === '미사용') ? 1 : 0;
+    const aDisabled = (a[MASTER_COLS.USAGE_STATUS] === '미사용') ? 1 : 0;
+    const bDisabled = (b[MASTER_COLS.USAGE_STATUS] === '미사용') ? 1 : 0;
     if (aDisabled !== bDisabled) return aDisabled - bDisabled;
     // 같은 상태 내에서는 품목코드 순
-    return String(a[0]).localeCompare(String(b[0]));
+    return String(a[MASTER_COLS.CODE]).localeCompare(String(b[MASTER_COLS.CODE]));
   });
   
   const sorted = filledRows.concat(emptyRows);
@@ -1085,18 +1162,18 @@ function _sortMasterByUsageStatus(masterSheet) {
   const writeData = sorted.map(function(row) {
     const newRow = row.slice(); // 복사
     // 수식 열은 빈 값으로 (수식이 자동 채움)
-    newRow[13] = ""; // N: 안전재고
-    newRow[14] = ""; // O: 발주점
-    newRow[15] = ""; // P: 적정발주량
-    newRow[16] = ""; // Q: 재고 상태
-    newRow[20] = ""; // U: 공급단가
-    newRow[21] = ""; // V: 단위 세액
-    newRow[22] = ""; // W: 재고 합계금액
+    newRow[MASTER_COLS.SAFETY_STOCK] = ""; // N: 안전재고
+    newRow[MASTER_COLS.ROP] = ""; // O: 발주점
+    newRow[MASTER_COLS.ORDER_QTY] = ""; // P: 적정발주량
+    newRow[MASTER_COLS.STATUS] = ""; // Q: 재고 상태
+    newRow[MASTER_COLS.SUPPLY_PRICE] = ""; // U: 공급단가
+    newRow[MASTER_COLS.TAX_AMOUNT] = ""; // V: 단위 세액
+    newRow[MASTER_COLS.TOTAL_VALUE] = ""; // W: 재고 합계금액
     return newRow;
   });
   
   if (writeData.length > 0) {
-    masterSheet.getRange(3, 1, numRows, 24).clearContent();
-    masterSheet.getRange(3, 1, writeData.length, 24).setValues(writeData);
+    masterSheet.getRange(3, 1, numRows, MASTER_COL_COUNT).clearContent();
+    masterSheet.getRange(3, 1, writeData.length, MASTER_COL_COUNT).setValues(writeData);
   }
 }

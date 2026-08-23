@@ -72,3 +72,32 @@ const USER_COLS = {
 
 // [v7.0] 입출고 시트 열 수 (단가 스냅샷 열 추가)
 const TX_COLS = 9; // [날짜|품목코드|품목명|구분|수량|단가(스냅샷)|담당자|비고|거래ID]
+
+// [v10.0] 품목 마스터 시트 열 인덱스 매핑 (0-based, getValues() 배열용)
+const MASTER_COLS = {
+  CODE: 0,          // A열: 품목코드
+  NAME: 1,          // B열: 품목명
+  CATEGORY: 2,      // C열: 카테고리
+  GRADE: 3,         // D열: 규격
+  UNIT: 4,          // E열: 단위
+  // F열(5): 스페이서
+  INIT_STOCK: 6,    // G열: 초기재고
+  CURRENT_STOCK: 7, // H열: 현재고
+  DAILY_USAGE: 8,   // I열: 일평균 사용량
+  // J열(9): 스페이서
+  LEAD_TIME: 10,    // K열: 리드타임
+  SAFETY_DAYS: 11,  // L열: 안전재고일수
+  TARGET_DAYS: 12,  // M열: 목표유지일수
+  SAFETY_STOCK: 13, // N열: 안전재고 (수식)
+  ROP: 14,          // O열: 발주점 (수식)
+  ORDER_QTY: 15,    // P열: 적정발주량 (수식)
+  STATUS: 16,       // Q열: 재고 상태 (수식)
+  // R열(17): 스페이서
+  TAX_TYPE: 18,     // S열: 과세구분
+  UNIT_PRICE: 19,   // T열: 매입단가
+  SUPPLY_PRICE: 20, // U열: 공급단가 (수식)
+  TAX_AMOUNT: 21,   // V열: 단위 세액 (수식)
+  TOTAL_VALUE: 22,  // W열: 재고 합계금액
+  USAGE_STATUS: 23  // X열: 사용유무
+};
+const MASTER_COL_COUNT = 24; // 총 열 수 (getRange 호출 시 사용)
