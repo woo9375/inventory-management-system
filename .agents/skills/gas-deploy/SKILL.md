@@ -1,8 +1,8 @@
 ---
 name: gas-deploy
 description: >-
-  Use this skill when the user asks to deploy the code to Google Apps Script,
-  push changes using clasp, or if they want to build and release a new version.
+  Use this skill when the user asks to deploy code to Google Apps Script,
+  push changes using clasp, commit changes with conventions, or release a new version.
 ---
 
 # Google Apps Script Deployment (CI/CD via GitHub Actions)
@@ -29,6 +29,21 @@ The workflow is defined in `.github/workflows/clasp.yml`. It uses the `CLASPRC_J
     ```bash
     git commit -m "[feat] 시즌 관리 UI 개선"
     ```
+
+    ### Commit Message Convention
+    ```
+    [타입] 간결한 설명
+    ```
+
+    | Type | Usage | Example |
+    |------|-------|---------|
+    | `[feat]` | 새 기능 또는 기능 추가 | `[feat] 시즌 관리 UI 추가` |
+    | `[fix]` | 버그 수정 | `[fix] FIFO 마감 시 로트 단가 누락 수정` |
+    | `[refactor]` | 동작 변경 없는 코드 구조 개선 | `[refactor] WebApp.gs API 핸들러 모듈 분리` |
+    | `[style]` | UI/CSS 스타일 변경 | `[style] 테이블 패딩 및 폰트 크기 조정` |
+    | `[docs]` | 문서 수정 (README, 주석 등) | `[docs] README 배포 가이드 업데이트` |
+    | `[chore]` | 빌드, 설정, 패키지 관리 | `[chore] clasp 설정 및 의존성 정리` |
+
 3.  **Push to Main**: Push the commit to the `main` branch to trigger automatic deployment.
     ```bash
     git push origin main
