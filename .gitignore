@@ -10,3 +10,9 @@ Thumbs.db
 *.swo
 .vscode/
 .idea/
+
+# Node & Testing
+node_modules/
+package-lock.json
+playwright-report/
+test-results/

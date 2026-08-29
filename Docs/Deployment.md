@@ -61,7 +61,7 @@ jobs:
 
 ## ⚠️ 주의사항
 
-1. **로컬 clasp push 금지**: `.agent/hooks.json`에 post_task로 `clasp push`가 설정되어 있으나, CI/CD 파이프라인과 충돌 가능. `gas-deploy` Skill 참조.
+1. **로컬 clasp push 금지**: CI/CD 파이프라인(`GitHub Actions`)이 구축되어 있으므로, 로컬에서 수동으로 `clasp push`를 실행하지 마십시오. `gas-deploy` Skill 참조.
 2. **src/ 외 파일**: `.agents/`, `Docs/`, `AI/`, `README.md` 등은 GAS에 업로드되지 않음
 3. **Schema Migration**: 코드 배포 후 Migration 실행이 필요한 경우, Apps Script 편집기에서 수동 실행
 
