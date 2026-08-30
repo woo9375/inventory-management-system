@@ -181,7 +181,8 @@ const MIGRATIONS = {
       
       // 기존 데이터 또는 기본값
       const cats = baseData.cats.length > 0 ? baseData.cats : ["호텔","콘도","빌리지","스파월드","식음","조리","관리","구매","판촉"];
-      const units = baseData.units.length > 0 ? baseData.units : ["박스","개","묶음","병","캔","kg","L","포","롤","장","세트","EA","PACK","CASE","봉","통","말","자루","ml","g","대"];
+      // [v11] PACK→팩, set→세트, CASE 제거(사용자 결정 대기), 신규 단위 10종 추가
+      const units = baseData.units.length > 0 ? baseData.units : ["박스","개","묶음","병","캔","kg","L","포","롤","장","세트","EA","팩","봉","통","말","자루","ml","g","대","망","판","마리","족","타레","벌","켤레","매","평","본"];
       const itemCats = baseData.itemCats.length > 0 ? baseData.itemCats : ["원재료","어메니티","세제류","소모품","식재료","음료","청소용품","린넨류","위생용품","사무용품","시설자재","기타"];
       
       baseSheet.getRange(3, 1, cats.length, 1).setValues(cats.map(v => [v])).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
@@ -494,4 +495,86 @@ MIGRATIONS[10] = function(ss) {
   } else {
     console.log("[Migration v10] 이미 System_Logs 시트가 존재합니다.");
   }
+};
+
+// [TASK-002] v11: 단위 목록 정비 — 신규 10종 추가, PACK→팩/set→세트 명칭 변경
+// CASE 단위는 목록에서만 제거하고, 기존 품목 마스터 데이터의 CASE 값은 치환하지 않는다.
+// (대체 단위 결정은 별도의 사용자 승인 필요 — Docs 및 TASK-002 Human Approval 참고)
+MIGRATIONS[11] = function migrate_to_v11(ss) {
+  console.log("[Migration v11] 단위 목록 정비 시작...");
+
+  const NEW_UNITS = ["망", "판", "마리", "족", "타레", "벌", "켤레", "매", "평", "본"];
+  const RENAME_MAP = { "PACK": "팩", "SET": "세트" }; // 대소문자 무관 매칭용 키는 대문자로 통일
+
+  function normalizedRename(value) {
+    const s = String(value).trim();
+    const key = s.toUpperCase();
+    return RENAME_MAP.hasOwnProperty(key) ? RENAME_MAP[key] : null;
+  }
+
+  // ── Step 1: 📂 기초데이터 시트 B열(단위 목록) 정비 ──
+  const baseSheet = ss.getSheetByName(SHEET_BASE_DATA);
+  if (baseSheet) {
+    const baseLastRow = Math.max(baseSheet.getLastRow(), 3);
+    let unitCol = baseLastRow >= 3 ? baseSheet.getRange(3, 2, baseLastRow - 2, 1).getValues().flat() : [];
+
+    let renamedCount = 0;
+    unitCol = unitCol.map(function(v) {
+      if (!v) return v;
+      const renamed = normalizedRename(v);
+      if (renamed) { renamedCount++; return renamed; }
+      return v;
+    });
+
+    const caseCountInList = unitCol.filter(function(v) { return String(v).trim().toUpperCase() === "CASE"; }).length;
+    unitCol = unitCol.filter(function(v) { return v && String(v).trim().toUpperCase() !== "CASE"; });
+
+    const existingTrimmed = unitCol.map(function(v) { return String(v).trim(); });
+    const toAdd = NEW_UNITS.filter(function(u) { return existingTrimmed.indexOf(u) === -1; });
+    const finalUnits = unitCol.concat(toAdd);
+
+    // 기존 B열 전체를 비우고 정비된 목록으로 재작성 (재실행해도 동일 결과 — 멱등)
+    if (baseLastRow >= 3) {
+      baseSheet.getRange(3, 2, baseLastRow - 2, 1).clearContent();
+    }
+    if (finalUnits.length > 0) {
+      baseSheet.getRange(3, 2, finalUnits.length, 1).setValues(finalUnits.map(function(v) { return [v]; }))
+        .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+    }
+    console.log("[Migration v11] 기초데이터 단위 목록 — 명칭변경:" + renamedCount +
+      "건, 신규추가:" + toAdd.length + "종(" + toAdd.join(", ") + "), 목록에서 CASE 제거:" + caseCountInList + "건");
+  } else {
+    console.log("[Migration v11] 기초데이터 시트 없음 — 목록 정비 스킵");
+  }
+
+  // ── Step 2: 🗂️ 품목 마스터 E열(단위) 데이터 정비 — PACK/set만 자동 치환, CASE는 값 유지 ──
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  if (masterSheet) {
+    const masterLastRow = masterSheet.getLastRow();
+    if (masterLastRow >= 3) {
+      const unitRange = masterSheet.getRange(3, MASTER_COLS.UNIT + 1, masterLastRow - 2, 1);
+      const masterUnits = unitRange.getValues();
+      let masterRenamed = 0;
+      let masterCaseCount = 0;
+
+      const updated = masterUnits.map(function(row) {
+        const renamed = normalizedRename(row[0]);
+        if (renamed) { masterRenamed++; return [renamed]; }
+        if (String(row[0]).trim().toUpperCase() === "CASE") { masterCaseCount++; }
+        return row;
+      });
+      unitRange.setValues(updated);
+
+      console.log("[Migration v11] 품목마스터 단위 치환 — PACK/set→" + masterRenamed + "건 자동 변경, " +
+        "CASE 사용 품목 " + masterCaseCount + "건은 대체 단위 미결정으로 값 유지");
+      if (masterCaseCount > 0) {
+        console.log("[Migration v11] ⚠️ USER DECISION REQUIRED — CASE 단위 대체값이 결정되면 " +
+          "별도 스크립트로 해당 " + masterCaseCount + "건을 일괄 치환해야 합니다.");
+      }
+    }
+  } else {
+    console.log("[Migration v11] 품목마스터 시트 없음 — 데이터 정비 스킵");
+  }
+
+  console.log("[Migration v11] v11 마이그레이션 완료!");
 };

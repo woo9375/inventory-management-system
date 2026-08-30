@@ -116,7 +116,8 @@ function buildBaseDataSheet(ss) {
 
   // 단위 목록 (B열)
   sheet.getRange("B2").setValue("단위 목록").setFontWeight("bold").setHorizontalAlignment("center").setBackground(COLORS.grayBg);
-  const units = [["박스"], ["개"], ["묶음"], ["병"], ["캔"], ["kg"], ["L"], ["포"], ["롤"], ["장"], ["세트"], ["EA"], ["PACK"], ["CASE"], ["봉"], ["통"], ["말"], ["자루"], ["ml"], ["g"], ["대"], ["미터"], ["포대"], ["봉지"], ["르베"], ["권"], ["갑"], ["단"]];
+  // [v11] PACK→팩, set→세트 명칭 통일, CASE 제거(사용자 결정 대기 - MIGRATIONS[11] 참고), 신규 단위 10종 추가
+  const units = [["박스"], ["개"], ["묶음"], ["병"], ["캔"], ["kg"], ["L"], ["포"], ["롤"], ["장"], ["세트"], ["EA"], ["팩"], ["봉"], ["통"], ["말"], ["자루"], ["ml"], ["g"], ["대"], ["미터"], ["포대"], ["봉지"], ["르베"], ["권"], ["갑"], ["단"], ["망"], ["판"], ["마리"], ["족"], ["타레"], ["벌"], ["켤레"], ["매"], ["평"], ["본"]];
   sheet.getRange(3, 2, units.length, 1).setValues(units).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
 
   // 품목 카테고리 (C열)

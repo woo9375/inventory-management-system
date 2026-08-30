@@ -33,7 +33,9 @@ const ALERT_EMAIL = "[EMAIL_ADDRESS]";
 const SEND_EMAIL_ALERT = false; 
 const VALIDATION_ROWS = 500; // 성능 최적화를 위한 검증/서식 고정 적용 범위
 
-const CURRENT_SCHEMA_VERSION = 9; // [v9.0] v9 스키마: 사용유무 컬럼 + 단위 추가
+// [TASK-002] v9 → v11로 상향: 기존 v10(System_Logs) 마이그레이션이 이 상수가
+// 9에 머물러 있어 runMigrations()에서 한 번도 실행되지 않았던 것을 함께 바로잡음.
+const CURRENT_SCHEMA_VERSION = 11; // [v11] v11 스키마: 단위 목록 정비(추가/명칭변경/CASE 제거)
 
 // [v8.0] 성능 최적화용 캐시 키 & TTL 상수
 const CACHE_KEYS = {
