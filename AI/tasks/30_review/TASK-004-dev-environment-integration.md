@@ -115,7 +115,20 @@ Drive 구조와 Apps Script 바인딩을 실측으로 확인했고, 발견된 �
 | 환경변수 없을 때 skip 동작 | **PASS** (5 skipped, exit 0) |
 | Production URL 차단 가드 | **PASS** (실행 거부 확인) |
 | Git source → DEV push | **PASS** (16개 `.gs` 전부 일치, `DevTools.gs` 반영 확인) |
-| Production 무변경 검증 | **PASS** (25파일, `DevTools` 없음, 리졸버 없음) |
+| 이번 세션의 Production 무변경 검증 | **PASS** (25파일, `DevTools` 없음, 리졸버 없음) |
+
+### ⚠️ Production 현황 정정 (실측)
+이번 세션 시작 시점에 `origin/main`은 이미 `353d720`까지 올라가 있었다.
+즉 **TASK-001B / TASK-002 / TASK-003의 코드는 사용자의 push로 GitHub Actions를 거쳐
+이미 Production Apps Script에 배포되어 있다.** (Production pull로 확인:
+`CURRENT_SCHEMA_VERSION = 11`, `MIGRATIONS[11]` 존재, TASK-003 변경이력 블록 존재,
+TASK-001B `createObjectURL` 존재)
+
+- 이번 세션에서 Claude Code가 Production에 가한 변경은 **없다**(push 안 함, 배포 안 함).
+- 다만 **`MIGRATIONS[11]`이 Production 코드에 이미 존재하지만 아직 실행되지는 않았다.**
+  `runMigrations()`를 실행하는 순간 Production의 단위 목록이 정비되고
+  PACK/set이 치환된다. **TASK-002의 CASE 대체단위 결정이 아직 미완이므로
+  결정 전에는 Production에서 `runMigrations()`를 실행하지 말 것.**
 | DEV Web App E2E | **BLOCKED** (아래 참고) |
 
 ### BLOCKED: DEV Web App E2E
