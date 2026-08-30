@@ -129,34 +129,54 @@ function downloadPhysicalCheckListExcel() {
         showToast('다운로드할 품목 데이터가 없습니다.', 'warning');
         return;
       }
-      
-      // SheetJS용 데이터 배열 준비
-      var excelData = [];
-      // Header
-      excelData.push(["품목코드", "품목명", "카테고리", "단위", "전산재고", "실사재고", "비고"]);
-      
-      items.forEach(function(item) {
-        excelData.push([
-          item.code,
-          item.name || '',
-          item.category || '',
-          item.unit || '',
-          item.currentStock || 0,
-          '', // 실사재고 (빈칸)
-          ''  // 비고 (빈칸)
-        ]);
-      });
-      
-      // 워크북 및 워크시트 생성
-      var wb = XLSX.utils.book_new();
-      var ws = XLSX.utils.aoa_to_sheet(excelData);
-      XLSX.utils.book_append_sheet(wb, ws, "재고실사조사표");
-      
-      // 파일명 생성 및 다운로드
-      var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      var fileName = "재고실사조사표_" + dateStr + ".xlsx";
-      
-      XLSX.writeFile(wb, fileName);
+
+      try {
+        // SheetJS용 데이터 배열 준비
+        var excelData = [];
+        // Header
+        excelData.push(["품목코드", "품목명", "카테고리", "단위", "전산재고", "실사재고", "비고"]);
+
+        items.forEach(function(item) {
+          excelData.push([
+            item.code,
+            item.name || '',
+            item.category || '',
+            item.unit || '',
+            item.currentStock || 0,
+            '', // 실사재고 (빈칸)
+            ''  // 비고 (빈칸)
+          ]);
+        });
+
+        // 워크북 및 워크시트 생성
+        var wb = XLSX.utils.book_new();
+        var ws = XLSX.utils.aoa_to_sheet(excelData);
+        XLSX.utils.book_append_sheet(wb, ws, "재고실사조사표");
+
+        // 파일명 생성
+        var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        var fileName = "재고실사조사표_" + dateStr + ".xlsx";
+
+        // [FIX] GAS 웹앱은 샌드박스 iframe 안에서 렌더링되므로 XLSX.writeFile()의
+        // 내장 저장 로직이 일부 브라우저/인앱 브라우저에서 조용히 실패할 수 있다.
+        // Blob을 직접 생성하고 <a download> 요소를 DOM에 실제로 삽입한 뒤 클릭하는
+        // 방식이 더 넓은 환경에서 안정적으로 동작하는 표준적인 대안이다.
+        var wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        var blob = new Blob([wbArray], { type: 'application/octet-stream' });
+        var url = URL.createObjectURL(blob);
+
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+      } catch (e) {
+        // [FIX] 기존 코드는 클라이언트 측 예외를 아무 곳에서도 잡지 않아
+        // 다운로드 실패 시 사용자에게 아무런 피드백이 없었다(무반응처럼 보임).
+        showToast('엑셀 파일 생성에 실패했습니다: ' + e.message, 'error');
+      }
     })
     .withFailureHandler(function(err) {
       hideLoading();
