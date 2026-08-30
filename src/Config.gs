@@ -4,7 +4,60 @@
  */
 
 const MIN_ANALYSIS_DAYS = 7; // 시즌 초기 일평균 산출 시 최소 분석 일수
-const ARCHIVE_FOLDER_ID = "1wCOsDjxZcPEQjKVh3z0gsN9fXilfPLDr"; // [v9.0] 월별 마감 데이터가 저장될 드라이브 폴더 ID ("마감 데이터")
+
+// [v9.0] 월마감 아카이브가 생성될 드라이브 폴더 ID (기본값 / Production fallback)
+// ⚠️ [TASK-004 확인됨] 이 ID는 "마감 데이터" 폴더가 아니라 프로젝트 루트 폴더
+//    "1. (주)호텔덕구온천_재고관리 시스템" 이다. 실제 "마감 데이터" 폴더 ID는
+//    1gGzUY3dnc-5plYoI2J-zMdeIYTuIu1gJ 이며 서로 다르다.
+//    현재 동작(루트 폴더 밑에 연도 폴더 생성)을 바꾸는 것은 운영 정책 변경이므로
+//    값은 그대로 두고 사실만 기록한다. 변경이 필요하면 아래 ScriptProperties로 재정의할 것.
+const ARCHIVE_FOLDER_ID = "1wCOsDjxZcPEQjKVh3z0gsN9fXilfPLDr";
+
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-004] DEV / Production 환경 분리
+//  동일한 소스가 DEV·Production 두 Apps Script 프로젝트에 함께 배포되므로,
+//  환경 구분은 소스가 아니라 각 프로젝트가 개별 보유하는 ScriptProperties로 한다.
+//  ScriptProperties가 비어 있으면 항상 Production으로 간주한다(안전 기본값).
+// ═══════════════════════════════════════════════════════════════════
+
+const APP_ENV_DEV  = "DEV";
+const APP_ENV_PROD = "PROD";
+
+const ENV_PROPERTY_KEYS = {
+  APP_ENV: "APP_ENV",                     // "DEV" 인 경우에만 DEV로 판정
+  ARCHIVE_FOLDER_ID: "ARCHIVE_FOLDER_ID"  // 설정 시 위 상수 대신 이 폴더에 아카이브 생성
+};
+
+/**
+ * 현재 실행 중인 Apps Script 프로젝트의 환경을 반환한다.
+ * @returns {string} APP_ENV_DEV | APP_ENV_PROD
+ */
+function getAppEnv() {
+  try {
+    const v = PropertiesService.getScriptProperties().getProperty(ENV_PROPERTY_KEYS.APP_ENV);
+    return (v && String(v).trim().toUpperCase() === APP_ENV_DEV) ? APP_ENV_DEV : APP_ENV_PROD;
+  } catch (e) {
+    return APP_ENV_PROD; // 조회 실패 시 보수적으로 Production 취급
+  }
+}
+
+/** @returns {boolean} 현재 환경이 DEV인지 여부 */
+function isDevEnv() {
+  return getAppEnv() === APP_ENV_DEV;
+}
+
+/**
+ * 월마감 아카이브 폴더 ID를 환경에 맞게 반환한다.
+ * ScriptProperties에 값이 없으면 기존 상수를 그대로 사용하므로 Production 동작은 변하지 않는다.
+ * @returns {string}
+ */
+function getArchiveFolderId() {
+  try {
+    const v = PropertiesService.getScriptProperties().getProperty(ENV_PROPERTY_KEYS.ARCHIVE_FOLDER_ID);
+    if (v && String(v).trim()) return String(v).trim();
+  } catch (e) { /* fallthrough */ }
+  return ARCHIVE_FOLDER_ID;
+}
 
 const SHEET_DASHBOARD = "📊 대시보드";
 const SHEET_INOUT     = "📝 통합 입출고 기록장"; 

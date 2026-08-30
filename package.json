@@ -4,9 +4,14 @@
   "description": "Google Apps Script based Hotel Inventory Management System",
   "scripts": {
     "pull": "clasp pull",
-    "test": "echo \"TODO: Implement tests\" && exit 0",
-    "test:unit": "echo \"TODO: Install jest and implement unit tests\" && exit 0",
+    "dev:pull": "clasp pull -P .clasp-dev.json",
+    "dev:push": "clasp push -P .clasp-dev.json -f",
+    "dev:status": "clasp deployments -P .clasp-dev.json",
+    "prod:status": "clasp deployments",
+    "test": "npm run test:unit",
+    "test:unit": "node tests/unit/run-all.js",
     "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "lint": "echo \"TODO: Install eslint and configure rules\" && exit 0"
   },
   "devDependencies": {

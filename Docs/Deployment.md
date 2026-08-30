@@ -2,7 +2,19 @@
 
 ---
 
-## 현재 배포 파이프라인
+## 환경별 배포 경로 (TASK-004)
+
+| 환경 | clasp 설정 | 배포 방법 | 승인 |
+|---|---|---|---|
+| **DEV** | `.clasp-dev.json` | 로컬 `npm run dev:push` | 불필요 |
+| **Production** | `.clasp.json` | `git push origin main` → GitHub Actions | **Human 승인 필수** |
+
+> 로컬에서 Production으로 push하는 npm 스크립트는 **의도적으로 제공하지 않는다.**
+> DEV/Production 리소스 ID와 상세 절차는 `Docs/DevEnvironment.md` 참고.
+
+---
+
+## 현재 배포 파이프라인 (Production)
 
 ```
 Local edit → git commit → git push origin main → GitHub Actions → clasp push --force → GAS 업데이트

@@ -78,18 +78,35 @@
 
 ## 현재 상태
 
-| 테스트 유형 | 상태 |
-|-------------|------|
-| Unit Test | ❌ 미구현 |
-| Business Logic Test | ❌ 미구현 |
-| Integration Test | ❌ 미구현 |
-| E2E Test | ❌ 미구현 (Playwright 미설치) |
-| Human QA | ✅ 수동 수행 중 |
+> 최종 갱신: TASK-004 (DEV 환경 연결 및 E2E 인프라 구축)
+
+| 테스트 유형 | 상태 | 실행 방법 |
+|-------------|------|-----------|
+| Unit Test (로직 시뮬레이션) | ⚠️ 부분 구현 | `npm run test:unit` |
+| Business Logic Test | ❌ 미구현 | — |
+| Integration Test | ❌ 미구현 | — |
+| E2E Test (Playwright) | ⚠️ 인프라 완료 / 실행 차단 | `npm run test:e2e` |
+| DEV 환경 검증 | ✅ 구현 | DEV Apps Script에서 `verifyDevEnvironment()` |
+| Human QA | ✅ 수동 수행 중 | — |
+
+### Unit Test 범위 (현재)
+`tests/unit/*.test.js` — GAS 코드는 Node에서 직접 실행할 수 없으므로,
+`src/*.gs`의 핵심 로직 블록을 Node로 옮기고 Sheets API를 모킹한 **로직 시뮬레이션**이다.
+실제 GAS 런타임 동작 보장은 아니며, 그 역할은 DEV E2E가 담당한다.
+
+- `migration-v11.test.js` — 단위 마이그레이션 치환/멱등성 (TASK-002)
+- `onedit-changelog.test.js` — 변경이력 다중 셀 처리 12개 시나리오 (TASK-003)
+
+### E2E Test 현재 제약
+DEV Web App 배포가 **Google 계정 로그인을 요구**하여 자동 실행이 차단되어 있다.
+해소 방법은 `Docs/DevEnvironment.md` 7절 참고 (`save-auth-state.js`로 세션 1회 저장).
+환경변수가 없으면 테스트는 **skip** 되며, 미실행 테스트가 통과로 집계되지 않는다.
 
 ---
 
 ## 향후 구축 방향
 
-1. **1단계**: GAS 환경에서 실행 가능한 Unit Test 함수 작성 (src/ 내)
-2. **2단계**: Playwright E2E 환경 구축 (package.json + tests/e2e/)
-3. **3단계**: CI/CD에 테스트 통합 (GitHub Actions)
+1. ~~**1단계**: Unit Test 작성~~ → 부분 완료 (로직 시뮬레이션)
+2. ~~**2단계**: Playwright E2E 환경 구축~~ → 인프라 완료, 인증 해소 필요
+3. **3단계**: DEV 인증 세션 확보 후 E2E 실제 실행
+4. **4단계**: CI/CD에 테스트 통합 (GitHub Actions)

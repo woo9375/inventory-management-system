@@ -16,3 +16,12 @@ node_modules/
 package-lock.json
 playwright-report/
 test-results/
+.playwright/
+
+# [TASK-004] 인증정보 / 세션 (절대 커밋 금지)
+.env
+.env.*
+!.env.example
+storageState.json
+*.storage-state.json
+auth.json

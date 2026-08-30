@@ -200,7 +200,9 @@ function executeMonthlyClosing(token, year, month) {
     return { success: false, message: "권한이 없습니다." };
   }
   
-  if (ARCHIVE_FOLDER_ID === "여기에_폴더ID_입력" || !ARCHIVE_FOLDER_ID) {
+  // [TASK-004] 환경별 아카이브 폴더 사용 (ScriptProperties 미설정 시 기존 상수와 동일)
+  const archiveFolderId = getArchiveFolderId();
+  if (archiveFolderId === "여기에_폴더ID_입력" || !archiveFolderId) {
     return { success: false, message: "시스템 설정 오류: ARCHIVE_FOLDER_ID 가 설정되지 않았습니다." };
   }
 
@@ -247,12 +249,12 @@ function executeMonthlyClosing(token, year, month) {
   // 1. 드라이브 폴더/파일 생성 및 데이터 이관
   let baseFolder;
   try {
-    baseFolder = DriveApp.getFolderById(ARCHIVE_FOLDER_ID);
+    baseFolder = DriveApp.getFolderById(archiveFolderId);
   } catch (e) {
     if (e.message.includes('permission') || e.message.includes('권한')) {
       return { success: false, message: "⚠️ Google Drive 접근 권한이 필요합니다.\\n[확장프로그램] > [Apps Script]로 이동하여 스크립트를 1회 직접 실행하고 권한(Drive API)을 허용해주세요." };
     }
-    return { success: false, message: `아카이브 폴더 오류: ${e.message} (ID: ${ARCHIVE_FOLDER_ID})` };
+    return { success: false, message: `아카이브 폴더 오류: ${e.message} (ID: ${archiveFolderId})` };
   }
   
   const yearStr = year.toString();
