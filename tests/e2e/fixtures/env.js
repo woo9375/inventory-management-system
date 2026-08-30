@@ -5,10 +5,28 @@
  *   PLAYWRIGHT_BASE_URL   DEV Web App URL (.../exec)
  *   DEV_TEST_USERNAME     DEV 테스트 계정 아이디
  *   DEV_TEST_PASSWORD     DEV 테스트 계정 비밀번호
- *
- * 값이 없으면 테스트는 실패가 아니라 skip 되어야 한다 —
  * "실행하지 않은 테스트를 통과로 보고하지 않는다"는 원칙을 코드로 강제한다.
  */
+const path = require('path');
+const fs = require('fs');
+
+// .env 파일 자동 로드
+const envPath = path.join(__dirname, '..', '..', '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  for (const line of envContent.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx !== -1) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim();
+      if (!process.env[key] && val) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || '';
 const USERNAME = process.env.DEV_TEST_USERNAME || '';
@@ -44,17 +62,24 @@ function missingEnvReason() {
  * 이 단계 이전에 Google 로그인이 먼저 요구되며, 그 경우 이 헬퍼는 실패한다.
  * (해결: 배포 접근 권한을 "모든 사용자"로 변경하거나 storageState 사용)
  */
+function getAppFrame(page) {
+  return page.frameLocator('iframe#sandboxFrame').frameLocator('iframe#userHtmlFrame');
+}
+
 /**
  * 앱 진입. baseURL이 `/macros/s/<id>/exec` 형태의 경로를 포함하므로
  * page.goto('/')를 쓰면 경로가 잘려 script.google.com 루트로 가버린다.
- * 반드시 절대 URL로 이동한다.
+ * 반드시 절대 URL로 이동한 후 앱의 iframe FrameLocator를 반환한다.
  */
 async function gotoApp(page) {
   await page.goto(BASE_URL, { waitUntil: 'load' });
+  const app = getAppFrame(page);
+  await app.locator('body').waitFor({ state: 'attached', timeout: 30000 }).catch(() => {});
+  return app;
 }
 
 async function login(page) {
-  await gotoApp(page);
+  const app = await gotoApp(page);
 
   // Google 로그인 화면으로 리다이렉트된 경우를 명확한 메시지로 구분한다
   if (page.url().includes('accounts.google.com')) {
@@ -65,17 +90,19 @@ async function login(page) {
     );
   }
 
-  await page.locator('#loginUsername').fill(USERNAME);
-  await page.locator('#loginPassword').fill(PASSWORD);
-  await page.locator('#loginBtn').click();
+  await app.locator('#loginUsername').fill(USERNAME);
+  await app.locator('#loginPassword').fill(PASSWORD);
+  await app.locator('#loginBtn').click();
 
   // 로그인 성공 시 앱 컨테이너가 표시된다
-  await page.locator('#appContainer').waitFor({ state: 'visible', timeout: 60000 });
+  await app.locator('#appContainer').waitFor({ state: 'visible', timeout: 60000 });
+  return app;
 }
 
 /** 로딩 오버레이가 사라질 때까지 대기 (google.script.run 완료 신호) */
-async function waitForIdle(page) {
-  await page.locator('#loadingOverlay').waitFor({ state: 'hidden', timeout: 60000 }).catch(() => {});
+async function waitForIdle(page, app) {
+  const target = app || getAppFrame(page);
+  await target.locator('#loadingOverlay').waitFor({ state: 'hidden', timeout: 60000 }).catch(() => {});
 }
 
 module.exports = {
@@ -86,6 +113,7 @@ module.exports = {
   hasBaseUrl,
   hasCredentials,
   missingEnvReason,
+  getAppFrame,
   gotoApp,
   login,
   waitForIdle,

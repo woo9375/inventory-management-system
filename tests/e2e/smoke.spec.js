@@ -9,7 +9,7 @@ test.describe('DEV Web App smoke', () => {
   test.skip(!hasBaseUrl(), missingEnvReason());
 
   test('DEV Web App에 접속되고 로그인 화면이 렌더링된다', async ({ page }) => {
-    await gotoApp(page);
+    const app = await gotoApp(page);
 
     // Google 로그인으로 튕기면 인증 세션이 없는 것이므로 명확히 실패시킨다
     expect(
@@ -19,17 +19,18 @@ test.describe('DEV Web App smoke', () => {
       'PLAYWRIGHT_STORAGE_STATE를 설정하십시오.'
     ).not.toContain('accounts.google.com');
 
-    await expect(page.locator('#loginContainer')).toBeVisible();
-    await expect(page.locator('#loginUsername')).toBeVisible();
-    await expect(page.locator('#loginPassword')).toBeVisible();
-    await expect(page.locator('#loginBtn')).toBeVisible();
+    await expect(app.locator('#loginContainer')).toBeVisible();
+    await expect(app.locator('#loginUsername')).toBeVisible();
+    await expect(app.locator('#loginPassword')).toBeVisible();
+    await expect(app.locator('#loginBtn')).toBeVisible();
   });
 
   test('SheetJS(XLSX) 라이브러리가 로드된다', async ({ page }) => {
     // 실사 Excel 다운로드(TASK-001B)의 전제 조건
     await gotoApp(page);
     expect(page.url(), 'Google 로그인 필요 — 위 테스트 참고').not.toContain('accounts.google.com');
-    const hasXlsx = await page.evaluate(() => typeof window.XLSX !== 'undefined');
+    const userFrame = page.frame({ name: 'userHtmlFrame' }) || page.frames().find(f => f.name() === 'userHtmlFrame');
+    const hasXlsx = await userFrame.evaluate(() => typeof window.XLSX !== 'undefined');
     expect(hasXlsx, 'CDN에서 XLSX 라이브러리가 로드되지 않았습니다').toBe(true);
   });
 });

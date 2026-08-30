@@ -26,6 +26,24 @@ const fs = require('fs');
 const readline = require('readline');
 const { chromium } = require('@playwright/test');
 
+// .env 파일이 있으면 자동 로드
+const envPath = path.join(__dirname, '..', '..', '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  for (const line of envContent.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx !== -1) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim();
+      if (!process.env[key] && val) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
+
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL;
 const OUT_DIR = path.join(__dirname, '..', '..', '.playwright');
 const OUT_FILE = path.join(OUT_DIR, 'dev-auth.json');
@@ -45,8 +63,41 @@ const PRODUCTION_DEPLOYMENT_ID =
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
+  // Google 자동화 브라우저 탐지 우회 옵션 적용 (실제 Chrome 또는 Edge 브라우저 우선 사용)
+  let browser;
+  const launchOptions = {
+    headless: false,
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--start-maximized'
+    ]
+  };
+
+  try {
+    browser = await chromium.launch({ ...launchOptions, channel: 'chrome' });
+  } catch (e) {
+    try {
+      browser = await chromium.launch({ ...launchOptions, channel: 'msedge' });
+    } catch (e2) {
+      browser = await chromium.launch(launchOptions);
+    }
+  }
+
+  const context = await browser.newContext({
+    viewport: null, // 최대화 창 크기 유지
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+  });
+
+  // navigator.webdriver 탐지 제거
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => undefined
+    });
+  });
+
   const page = await context.newPage();
 
   console.log('\n브라우저를 열었습니다. 다음을 진행하십시오:');

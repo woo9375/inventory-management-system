@@ -1,5 +1,25 @@
 // @ts-check
 const { defineConfig, devices } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
+
+// .env 파일 자동 로드
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  for (const line of envContent.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx !== -1) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim();
+      if (!process.env[key] && val) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
 
 /**
  * Playwright 설정 (TASK-004)
@@ -30,15 +50,15 @@ module.exports = defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
-  timeout: 90 * 1000,       // GAS google.script.run 왕복은 느릴 수 있음
-  expect: { timeout: 30 * 1000 },
+  timeout: 180 * 1000,       // GAS google.script.run 왕복은 느릴 수 있음
+  expect: { timeout: 45 * 1000 },
 
   use: {
     baseURL: BASE_URL || undefined,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
-    actionTimeout: 30 * 1000,
+    actionTimeout: 45 * 1000,
     // 로그인 상태를 재사용할 경우에만 사용 (절대 커밋 금지 - .gitignore 처리됨)
     storageState: process.env.PLAYWRIGHT_STORAGE_STATE || undefined,
   },

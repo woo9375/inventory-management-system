@@ -10,12 +10,12 @@ test.describe('DEV 기초데이터 · 실사 Excel', () => {
   test.skip(!hasCredentials(), missingEnvReason());
 
   test('기초데이터 단위 목록에 신규 10종이 노출되고 PACK이 없다', async ({ page }) => {
-    await login(page);
+    const app = await login(page);
 
-    await page.getByRole('button', { name: /기초데이터/ }).click();
-    await waitForIdle(page);
+    await app.getByRole('button', { name: /기초데이터/ }).click();
+    await waitForIdle(page, app);
 
-    const unitList = page.locator('#unitList');
+    const unitList = app.locator('#unitList');
     await expect(unitList).toBeVisible();
     const unitsText = await unitList.innerText();
 
@@ -32,13 +32,13 @@ test.describe('DEV 기초데이터 · 실사 Excel', () => {
   });
 
   test('실사 양식 Excel이 실제로 다운로드되고 유효한 xlsx이다', async ({ page }) => {
-    await login(page);
+    const app = await login(page);
 
     // 대시보드의 인쇄/다운로드 드롭다운
-    await page.getByRole('button', { name: /인쇄\/다운로드/ }).click();
+    await app.getByRole('button', { name: /인쇄\/다운로드/ }).click();
 
     const downloadPromise = page.waitForEvent('download', { timeout: 90000 });
-    await page.getByRole('button', { name: /실사 양식 다운로드/ }).click();
+    await app.getByRole('button', { name: /실사 양식 다운로드/ }).click();
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toMatch(/^재고실사조사표_\d{8}\.xlsx$/);
