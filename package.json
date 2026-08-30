@@ -6,11 +6,13 @@
     "pull": "clasp pull",
     "test": "echo \"TODO: Implement tests\" && exit 0",
     "test:unit": "echo \"TODO: Install jest and implement unit tests\" && exit 0",
-    "test:e2e": "echo \"TODO: Install playwright and implement E2E tests\" && exit 0",
+    "test:e2e": "playwright test",
     "lint": "echo \"TODO: Install eslint and configure rules\" && exit 0"
   },
   "devDependencies": {
-    "@google/clasp": "^2.4.2"
+    "@google/clasp": "^2.4.2",
+    "@playwright/mcp": "^0.0.79",
+    "@playwright/test": "^1.62.1"
   },
   "keywords": [
     "google-apps-script",
