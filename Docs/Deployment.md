@@ -10,7 +10,7 @@
 | **Production** | `.clasp.json` | `git push origin main` → GitHub Actions | **Human 승인 필수** |
 
 > 로컬에서 Production으로 push하는 npm 스크립트는 **의도적으로 제공하지 않는다.**
-> DEV/Production 리소스 ID와 상세 절차는 `Docs/DevEnvironment.md` 참고.
+> DEV/Production 리소스 ID는 `.clasp.json` / `.clasp-dev.json`, 환경변수는 `.env.example` 참고.
 
 ---
 
