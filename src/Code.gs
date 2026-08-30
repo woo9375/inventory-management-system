@@ -112,26 +112,85 @@ function onEdit(e) {
     }
   }
 
-  // [v9.0] 품목 마스터 시트 직접 편집 시 변경이력 자동 기록
+  // [TASK-003] 품목 마스터 시트 직접 편집 시 변경이력 자동 기록 (다중 셀/붙여넣기/Clear 지원)
   if (sheetName === SHEET_MASTER && row >= 3) {
-    const col = e.range.getColumn();
-    // 변경 추적 대상 컬럼 (1-based 열 번호 → 필드명, MASTER_COLS는 0-based)\n    // B(NAME+1), C(CATEGORY+1), D(GRADE+1), E(UNIT+1), G(INIT_STOCK+1),\n    // K(LEAD_TIME+1), L(SAFETY_DAYS+1), M(TARGET_DAYS+1), S(TAX_TYPE+1), T(UNIT_PRICE+1), X(USAGE_STATUS+1)\n    const TRACKED_COLS = { \n      [MASTER_COLS.NAME + 1]: "품목명", [MASTER_COLS.CATEGORY + 1]: "카테고리",\n      [MASTER_COLS.GRADE + 1]: "규격", [MASTER_COLS.UNIT + 1]: "단위",\n      [MASTER_COLS.INIT_STOCK + 1]: "초기재고",\n      [MASTER_COLS.LEAD_TIME + 1]: "리드타임", [MASTER_COLS.SAFETY_DAYS + 1]: "안전재고일수",\n      [MASTER_COLS.TARGET_DAYS + 1]: "목표유지일수",\n      [MASTER_COLS.TAX_TYPE + 1]: "과세구분", [MASTER_COLS.UNIT_PRICE + 1]: "매입단가",\n      [MASTER_COLS.USAGE_STATUS + 1]: "사용유무"\n    };
-    
-    if (TRACKED_COLS[col] && e.range.getNumRows() === 1 && e.range.getNumColumns() === 1) {
+    const startCol = e.range.getColumn();
+    const numRows = e.range.getNumRows();
+    const numCols = e.range.getNumColumns();
+    // 변경 추적 대상 컬럼 (1-based 열 번호 → 필드명, MASTER_COLS는 0-based)
+    // B(NAME+1), C(CATEGORY+1), D(GRADE+1), E(UNIT+1), G(INIT_STOCK+1),
+    // K(LEAD_TIME+1), L(SAFETY_DAYS+1), M(TARGET_DAYS+1), S(TAX_TYPE+1), T(UNIT_PRICE+1), X(USAGE_STATUS+1)
+    const TRACKED_COLS = {
+      [MASTER_COLS.NAME + 1]: "품목명", [MASTER_COLS.CATEGORY + 1]: "카테고리",
+      [MASTER_COLS.GRADE + 1]: "규격", [MASTER_COLS.UNIT + 1]: "단위",
+      [MASTER_COLS.INIT_STOCK + 1]: "초기재고",
+      [MASTER_COLS.LEAD_TIME + 1]: "리드타임", [MASTER_COLS.SAFETY_DAYS + 1]: "안전재고일수",
+      [MASTER_COLS.TARGET_DAYS + 1]: "목표유지일수",
+      [MASTER_COLS.TAX_TYPE + 1]: "과세구분", [MASTER_COLS.UNIT_PRICE + 1]: "매입단가",
+      [MASTER_COLS.USAGE_STATUS + 1]: "사용유무"
+    };
+
+    // 편집 범위가 추적 대상 컬럼을 하나라도 포함하는지 확인
+    let touchesTrackedCol = false;
+    for (let c = startCol; c < startCol + numCols; c++) {
+      if (TRACKED_COLS[c]) { touchesTrackedCol = true; break; }
+    }
+
+    if (touchesTrackedCol) {
       try {
-        const itemCode = sheet.getRange(row, 1).getValue(); // A열: 품목코드
-        const itemName = sheet.getRange(row, 2).getValue(); // B열: 품목명
-        const oldValue = (e.oldValue !== undefined && e.oldValue !== null) ? e.oldValue : "(이전값 없음)";
-        const newValue = e.range.getValue();
-        const fieldName = TRACKED_COLS[col];
-        
-        // 값이 실제로 변경되었을 때만 기록
-        if (String(oldValue) !== String(newValue) && itemCode) {
+        // [GAS 제약] e.oldValue는 단일 셀 편집(입력/삭제)일 때만 제공되며,
+        // 다중 셀 붙여넣기/드래그채우기/범위 Clear에서는 제공되지 않는다.
+        // 이 경우 "(이전값 없음)"으로 표기하고 새 값만 정확히 기록한다(Task Human Approval 항목 참고).
+        const isSingleCell = (numRows === 1 && numCols === 1);
+        const singleOldValue = isSingleCell
+          ? ((e.oldValue !== undefined && e.oldValue !== null) ? e.oldValue : "(이전값 없음)")
+          : null;
+
+        // 배치 조회: 편집 범위의 새 값 + 각 행의 품목코드/품목명 (개별 getValue() 반복 금지)
+        const newValues = e.range.getValues();
+        const codeNamePairs = sheet.getRange(row, 1, numRows, 2).getValues();
+
+        const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+        const editor = Session.getActiveUser().getEmail() || "시트편집";
+        const changeRecords = [];
+
+        for (let r = 0; r < numRows; r++) {
+          const itemCode = codeNamePairs[r][0];
+          const itemName = codeNamePairs[r][1];
+          if (!itemCode) continue; // 품목코드 없는 행(빈 템플릿 행 등)은 기록 대상 아님
+
+          for (let c = 0; c < numCols; c++) {
+            const absCol = startCol + c;
+            const fieldName = TRACKED_COLS[absCol];
+            if (!fieldName) continue;
+
+            const newValue = newValues[r][c];
+            const oldValue = isSingleCell ? singleOldValue : "(이전값 없음)";
+
+            // 단일 셀 편집은 실제 값 변경 여부를 정확히 판별 가능 — 변경 없으면 스킵
+            // 다중 셀 편집은 이전 값을 알 수 없으므로 대상 컬럼에 값이 있으면 기록(과다 기록 가능성은 Task에서 인지된 한계)
+            if (isSingleCell && String(oldValue) === String(newValue)) continue;
+
+            changeRecords.push([timestamp, editor, itemCode, itemName, fieldName, oldValue, newValue]);
+          }
+        }
+
+        if (changeRecords.length > 0) {
           const changelogSheet = ss.getSheetByName(SHEET_CHANGELOG);
           if (changelogSheet) {
-            const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
-            const editor = Session.getActiveUser().getEmail() || "시트편집";
-            changelogSheet.appendRow([timestamp, editor, itemCode, itemName, fieldName, oldValue, newValue]);
+            // [TASK-003] 동시 편집 충돌 방지 — 여러 사용자가 동시에 붙여넣기해도 로그 행이 서로 덮어써지지 않도록 락 사용
+            const clLock = LockService.getScriptLock();
+            try {
+              clLock.waitLock(5000);
+              const startRow = changelogSheet.getLastRow() + 1;
+              changelogSheet.getRange(startRow, 1, changeRecords.length, 7).setValues(changeRecords)
+                .setHorizontalAlignment("center");
+              changelogSheet.getRange(startRow, 1, changeRecords.length, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+            } catch (lockErr) {
+              console.error("[onEdit ChangeLog] 락 획득 실패로 이력 기록 건너뜀: " + lockErr.message);
+            } finally {
+              clLock.releaseLock();
+            }
           }
         }
       } catch(clErr) {
