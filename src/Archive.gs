@@ -366,34 +366,142 @@ function executeMonthlyClosing(token, year, month) {
     });
   });
   
-  // 3. 메인 시트 갱신 (리셋 및 이월기록/남은기록 추가)
+  // 3. 메인 시트 갱신 (INIT_STOCK 리셋 → 이월기록/남은기록 추가)
   // [FIX] 데이터 유실 방지(Write-then-Clear): 삭제하기 전 구성된 데이터가 있을 경우에만 덮어씀
   const finalRowsToInsert = [...newCarryoverRows, ...keepRows];
-  
-  // 기존 데이터 클리어 후 삽입 (원자성 확보)
-  txSheet.getRange(3, 1, Math.max(txLastRow - 2, 1), TX_COLS).clearContent();
-  
-  if (finalRowsToInsert.length > 0) {
-    txSheet.getRange(3, 1, finalRowsToInsert.length, TX_COLS)
-      .setValues(finalRowsToInsert)
-      .setHorizontalAlignment("center")
-      .setBackground(COLORS.autoBg);
+
+  // [TASK-006] 리셋 전 초기재고를 메모리에 백업 (중간 실패 시 원복용)
+  const initStockBackup = masterData.map(r => [Number(r[MASTER_COLS.INIT_STOCK]) || 0]);
+  let txSheetMutated = false;
+
+  try {
+    // [TASK-006] 초기재고 리셋을 이월 행 삽입보다 **먼저** 수행한다.
+    //   이월 행을 먼저 쓰면 그 직후 실패 시 `INIT_STOCK + 이월입고`가 이중 계상되지만,
+    //   이 순서에서는 최악의 경우에도 재고가 일시적으로 작게 보일 뿐 이중 계상은 없다.
+    if (initStockBackup.length > 0) {
+      masterSheet.getRange(3, MASTER_COLS.INIT_STOCK + 1, initStockBackup.length, 1)
+        .setValues(initStockBackup.map(() => [0]));
+    }
+    SpreadsheetApp.flush();
+
+    // 기존 데이터 클리어 후 삽입 (원자성 확보)
+    txSheetMutated = true;
+    txSheet.getRange(3, 1, Math.max(txLastRow - 2, 1), TX_COLS).clearContent();
+
+    if (finalRowsToInsert.length > 0) {
+      txSheet.getRange(3, 1, finalRowsToInsert.length, TX_COLS)
+        .setValues(finalRowsToInsert)
+        .setHorizontalAlignment("center")
+        .setBackground(COLORS.autoBg);
+    }
+
+    SpreadsheetApp.flush();
+  } catch (e) {
+    // [TASK-006] 원복을 시도한 뒤 에러를 그대로 다시 던진다 (실패를 성공으로 둔갑시키지 않는다)
+    restoreInitStockAfterFailure(masterSheet, initStockBackup, txSheetMutated, e);
+    throw e;
   }
-  
-  // 4. 품목 마스터의 '초기재고' 열(7번째 열)을 모두 0으로 리셋 (이중 카운팅 방지)
-  const newInitStocks = masterData.map(r => [0]);
-  if (newInitStocks.length > 0) {
-    masterSheet.getRange(3, 7, newInitStocks.length, 1).setValues(newInitStocks);
+
+  // [TASK-006] recalc 이전 사전 검증: 리셋 결과를 시트에서 다시 읽어 이중 계상 위험을 감지
+  const postResetMaster = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
+  const doubleCountRisks = detectCarryoverDoubleCount(postResetMaster, finalRowsToInsert);
+
+  // [TASK-006] 마감 직후가 G열 수동 입력으로 인한 이중 계상 위험이 가장 큰 시점이므로 보호를 갱신한다.
+  // 보호 적용 실패가 마감 자체를 되돌리게 해서는 안 되므로 로그만 남긴다.
+  try {
+    applyInitStockProtection(ss);
+  } catch (e) {
+    console.warn(`[TASK-006] 초기재고 보호 적용 실패(마감은 정상 완료): ${e.message}`);
   }
-  
-  SpreadsheetApp.flush();
+
   recalcStockAndUsage(ss);
-  
-  return { 
-    success: true, 
-    message: `${year}년 ${month}월 마감 완료. ${archiveRows.length}건 보관, ${newCarryoverRows.length}건 이월됨.` 
-  };
+
+  let closingMessage = `${year}년 ${month}월 마감 완료. ${archiveRows.length}건 보관, ${newCarryoverRows.length}건 이월됨.`;
+  if (doubleCountRisks.length > 0) {
+    closingMessage += ` ⚠️ 초기재고 이중 계상 위험 ${doubleCountRisks.length}건 감지 (실행 로그 확인).`;
+  }
+
+  return { success: true, message: closingMessage };
   } finally {
     lock.releaseLock();
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-006] 월마감 초기재고 정합성 보조 함수
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 월마감 중간 실패 시 품목 마스터의 초기재고(G열)를 마감 전 값으로 되돌린다.
+ *
+ * 단, 입출고 시트에 이월 행을 이미 쓴 뒤라면 원복이 곧 `INIT_STOCK + 이월입고`
+ * 이중 계상이 되므로 복원하지 않고 수동 복구 안내만 로그에 남긴다.
+ *
+ * @param {Sheet} masterSheet 품목 마스터 시트
+ * @param {Array<Array<number>>} initStockBackup 리셋 전 초기재고 (행당 1열)
+ * @param {boolean} txSheetMutated 입출고 시트를 이미 변경했는지 여부
+ * @param {Error} cause 원인 예외
+ * @return {boolean} 실제로 복원했으면 true
+ */
+function restoreInitStockAfterFailure(masterSheet, initStockBackup, txSheetMutated, cause) {
+  const reason = (cause && cause.message) ? cause.message : String(cause);
+
+  if (txSheetMutated) {
+    console.error(
+      `[TASK-006][월마감 실패] 입출고 시트 변경 이후 실패하여 초기재고를 원복하지 않습니다. ` +
+      `(원복 시 이월 입고와 이중 계상됨) 아카이브 시트에서 수동 복구가 필요합니다. 원인: ${reason}`
+    );
+    return false;
+  }
+
+  try {
+    if (initStockBackup && initStockBackup.length > 0) {
+      masterSheet.getRange(3, MASTER_COLS.INIT_STOCK + 1, initStockBackup.length, 1)
+        .setValues(initStockBackup);
+      SpreadsheetApp.flush();
+    }
+    console.warn(`[TASK-006][월마감 실패] 초기재고를 마감 전 값으로 원복했습니다. 원인: ${reason}`);
+    return true;
+  } catch (restoreErr) {
+    console.error(`[TASK-006][월마감 실패] 초기재고 원복 자체가 실패했습니다: ${restoreErr.message} (원인: ${reason})`);
+    return false;
+  }
+}
+
+/**
+ * 초기재고 이중 계상 위험 사전 감지.
+ *
+ * `recalcStockAndUsage()`는 현재고를 `INIT_STOCK + Σ입고 - Σ출고 - Σ폐기`로 구하므로,
+ * INIT_STOCK > 0 인 품목에 "마감 이월" 입고 행이 함께 존재하면 그 수량이 두 번 계상된다.
+ * 자동 교정은 하지 않고(원인 규명이 우선) 경고 로그만 남긴다.
+ *
+ * @param {Array<Array<*>>} masterRows 품목 마스터 데이터 (MASTER_COLS 기준)
+ * @param {Array<Array<*>>} txRows 입출고 행 (TX_COLS 9열 기준)
+ * @return {Array<{code: string, initStock: number, carryoverQty: number}>} 위험 목록
+ */
+function detectCarryoverDoubleCount(masterRows, txRows) {
+  const carryoverQty = {};
+  (txRows || []).forEach(row => {
+    const code = row[1];
+    if (!code || row[3] !== "입고") return;
+    if (String(row[7] || "").indexOf("마감 이월") < 0) return;
+    carryoverQty[code] = (carryoverQty[code] || 0) + (Number(row[4]) || 0);
+  });
+
+  const risks = [];
+  (masterRows || []).forEach(row => {
+    const code = row[MASTER_COLS.CODE];
+    const initStock = Number(row[MASTER_COLS.INIT_STOCK]) || 0;
+    if (!code || initStock <= 0) return;
+    if (!carryoverQty[code]) return;
+
+    risks.push({ code: code, initStock: initStock, carryoverQty: carryoverQty[code] });
+    console.warn(
+      `[TASK-006][WARN] 초기재고 이중 계상 위험: ${code} — INIT_STOCK=${initStock}, ` +
+      `마감 이월 입고 수량=${carryoverQty[code]}`
+    );
+  });
+
+  return risks;
 }

@@ -491,6 +491,9 @@ function _protectSystemSheets(ss) {
       }
     }
   });
+
+  // [TASK-006] 초기재고(G열) 이중 계상 방지 보호도 함께 동기화한다
+  applyInitStockProtection(ss);
 }
 
 function validateSeasonSettings() {

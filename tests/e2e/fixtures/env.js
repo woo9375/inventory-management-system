@@ -11,7 +11,10 @@ const path = require('path');
 const fs = require('fs');
 
 // .env 파일 자동 로드
-const envPath = path.join(__dirname, '..', '..', '.env');
+// (이 파일은 tests/e2e/fixtures/ 에 있으므로 저장소 루트는 세 단계 위다.
+//  두 단계만 올라가면 tests/.env 를 보게 되어 로드가 조용히 실패한다.
+//  Playwright 실행 시에는 playwright.config.js가 따로 .env를 읽어 가려져 있던 버그)
+const envPath = path.join(__dirname, '..', '..', '..', '.env');
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf8');
   for (const line of envContent.split(/\r?\n/)) {
@@ -85,8 +88,8 @@ async function login(page) {
   if (page.url().includes('accounts.google.com')) {
     throw new Error(
       'DEV Web App이 Google 계정 로그인을 요구합니다.\n' +
-      '배포 설정의 접근 권한을 "모든 사용자(Anyone)"로 변경하거나, ' +
-      'PLAYWRIGHT_STORAGE_STATE로 인증된 세션을 주입하십시오.'
+      '`node tests/e2e/save-auth-state.js`를 1회 실행해 인증 프로필(.playwright/user-data)을 만드십시오.\n' +
+      '영속 프로필이므로 이후 실행에서는 세션이 스스로 갱신되어 재로그인이 필요 없습니다.'
     );
   }
 
@@ -99,10 +102,21 @@ async function login(page) {
   return app;
 }
 
-/** 로딩 오버레이가 사라질 때까지 대기 (google.script.run 완료 신호) */
-async function waitForIdle(page, app) {
+/**
+ * 로딩 오버레이가 사라질 때까지 대기 (google.script.run 완료 신호)
+ *
+ * 주의: `#loadingOverlay`는 항상 DOM에 있고 뷰포트를 덮은 채 `opacity`로만 숨겨진다
+ * (`.loading-overlay { opacity: 0 }` → `.active`일 때 `opacity: 1`).
+ * Playwright의 visible 판정은 opacity를 보지 않으므로 `state:'hidden'`은 절대 만족되지
+ * 않아 매 호출이 타임아웃(60초)을 통째로 소모했다. `.active` 클래스 유무로 판정한다.
+ */
+async function waitForIdle(page, app, timeout = 60000) {
   const target = app || getAppFrame(page);
-  await target.locator('#loadingOverlay').waitFor({ state: 'hidden', timeout: 60000 }).catch(() => {});
+  const busy = target.locator('#loadingOverlay.active');
+  // 요청이 시작돼 오버레이가 뜨는 것을 짧게 기다린 뒤(이미 끝났으면 즉시 통과),
+  // 오버레이가 걷힐 때까지 대기한다.
+  await busy.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
+  await busy.waitFor({ state: 'detached', timeout }).catch(() => {});
 }
 
 module.exports = {

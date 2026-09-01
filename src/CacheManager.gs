@@ -125,7 +125,19 @@ const CacheManager = {
     const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
     if (masterLastRow < 3) return {};
     
-    // [v10.0] MASTER_COL_COUNT\uc5f4\ub85c \uc77d\uc5b4\uc11c \uc0ac\uc6a9\uc720\ubb34 \ud544\ud130\ub9c1\n    const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();\n    const itemMap = {};\n    masterData.forEach(r => { \n      if(r[MASTER_COLS.CODE] && r[MASTER_COLS.USAGE_STATUS] !== '\ubbf8\uc0ac\uc6a9') { \n        itemMap[r[MASTER_COLS.CODE]] = { name: r[MASTER_COLS.NAME], price: r[MASTER_COLS.UNIT_PRICE] || 0 };\n      }\n    });
+    // [v10.0] MASTER_COL_COUNT열로 읽어서 사용유무 필터링
+    const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
+    const itemMap = {};
+    masterData.forEach(r => {
+      if (r[MASTER_COLS.CODE] && r[MASTER_COLS.USAGE_STATUS] !== '미사용') {
+        itemMap[r[MASTER_COLS.CODE]] = {
+          name: r[MASTER_COLS.NAME],
+          price: Number(r[MASTER_COLS.UNIT_PRICE]) || 0,
+          // [TASK-005] FIFO 최초 로트(초기재고) 산출용
+          initStock: Number(r[MASTER_COLS.INIT_STOCK]) || 0
+        };
+      }
+    });
     
     this.set(CACHE_KEYS.ITEM_MAP, itemMap, TTL.ITEM_MAP);
     return itemMap;

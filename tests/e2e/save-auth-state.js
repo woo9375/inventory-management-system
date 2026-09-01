@@ -1,30 +1,34 @@
 /**
- * [사용자가 직접 실행] Google 인증 세션 저장 스크립트 (TASK-004)
+ * [사용자가 직접 실행] Google 인증 프로필 생성 스크립트 (TASK-004 / TASK-006 개편)
  *
  * 왜 필요한가:
  *   DEV Web App 배포의 접근 권한이 "Google 계정이 있는 모든 사용자"이므로
  *   Playwright가 앱에 도달하려면 먼저 Google 로그인이 되어 있어야 한다.
  *   Production과 manifest(appsscript.json)를 공유하기 때문에 접근 권한을
  *   "모든 사용자(익명 허용)"로 바꾸면 Production까지 공개되어 버린다.
- *   따라서 manifest는 그대로 두고, 인증된 브라우저 세션을 1회 저장해 재사용한다.
+ *
+ * [TASK-006 변경] storageState 스냅샷 → 영속 브라우저 프로필
+ *   기존 방식(`.playwright/dev-auth.json`)은 저장 시점의 정지된 스냅샷이라,
+ *   Google의 회전 쿠키(`__Secure-1PSIDTS`/`__Secure-1PSIDRTS`, 저장 +10분 만료)가
+ *   갱신되지 못해 하루 이내에 세션이 무효화됐다.
+ *   이제 `.playwright/user-data` 프로필을 그대로 재사용하므로 회전 쿠키가 매 실행
+ *   디스크에 되쓰기되고, **최초 1회 로그인 후에는 재로그인이 필요 없다.**
  *
  * 보안:
- *   - 비밀번호는 이 스크립트가 다루지 않는다. 열리는 실제 브라우저 창에
- *     사용자가 직접 입력한다.
- *   - 저장되는 파일에는 세션 쿠키가 들어 있다. .gitignore에 등록되어 있으며
- *     절대 커밋하거나 공유하지 말 것.
+ *   - 비밀번호는 이 스크립트가 다루지 않는다. 열리는 실제 브라우저 창에 사용자가 직접 입력한다.
+ *   - 프로필 디렉터리에는 로그인 세션이 들어 있다. `.gitignore`의 `.playwright/`로
+ *     제외되어 있으며 절대 커밋하거나 공유하지 말 것.
  *
  * 사용법:
  *   1) node tests/e2e/save-auth-state.js
  *   2) 열린 브라우저에서 Google 계정으로 로그인하고 DEV 앱 화면이 보일 때까지 진행
- *   3) 터미널에서 Enter를 누르면 세션이 저장된다
- *   4) .env 에 PLAYWRIGHT_STORAGE_STATE=./.playwright/dev-auth.json 추가
+ *   3) 터미널에서 Enter를 누르면 프로필이 저장된다
  */
 
 const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
-const { chromium } = require('@playwright/test');
+const { launchProfileContext, PROFILE_DIR } = require('./fixtures/browser');
 
 // .env 파일이 있으면 자동 로드
 const envPath = path.join(__dirname, '..', '..', '.env');
@@ -45,8 +49,6 @@ if (fs.existsSync(envPath)) {
 }
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL;
-const OUT_DIR = path.join(__dirname, '..', '..', '.playwright');
-const OUT_FILE = path.join(OUT_DIR, 'dev-auth.json');
 
 const PRODUCTION_DEPLOYMENT_ID =
   'AKfycbyi8O68axsIkBF-6yipKnV_6uSF-Q4zvbEhJKYVuObRX7c5V_Qzv3LnjOXZpbSosNTAbw';
@@ -61,46 +63,12 @@ const PRODUCTION_DEPLOYMENT_ID =
     process.exit(1);
   }
 
-  fs.mkdirSync(OUT_DIR, { recursive: true });
+  // 테스트가 사용하는 것과 **동일한** 프로필/실행 옵션으로 연다 (headed).
+  const context = await launchProfileContext({ headless: false, viewport: null });
+  const page = context.pages()[0] || (await context.newPage());
 
-  // Google 자동화 브라우저 탐지 우회 옵션 적용 (실제 Chrome 또는 Edge 브라우저 우선 사용)
-  let browser;
-  const launchOptions = {
-    headless: false,
-    ignoreDefaultArgs: ['--enable-automation'],
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--start-maximized'
-    ]
-  };
-
-  try {
-    browser = await chromium.launch({ ...launchOptions, channel: 'chrome' });
-  } catch (e) {
-    try {
-      browser = await chromium.launch({ ...launchOptions, channel: 'msedge' });
-    } catch (e2) {
-      browser = await chromium.launch(launchOptions);
-    }
-  }
-
-  const context = await browser.newContext({
-    viewport: null, // 최대화 창 크기 유지
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-  });
-
-  // navigator.webdriver 탐지 제거
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', {
-      get: () => undefined
-    });
-  });
-
-  const page = await context.newPage();
-
-  console.log('\n브라우저를 열었습니다. 다음을 진행하십시오:');
+  console.log(`\n프로필 위치: ${PROFILE_DIR}`);
+  console.log('브라우저를 열었습니다. 다음을 진행하십시오:');
   console.log('  1) Google 계정으로 로그인');
   console.log('  2) DEV 재고관리 시스템 로그인 화면이 보일 때까지 대기');
   console.log('  3) 이 터미널로 돌아와 Enter\n');
@@ -113,16 +81,16 @@ const PRODUCTION_DEPLOYMENT_ID =
 
   const finalUrl = page.url();
   if (finalUrl.includes('accounts.google.com')) {
-    console.error('\n✗ 아직 Google 로그인 화면입니다. 세션을 저장하지 않았습니다.');
-    await browser.close();
+    console.error('\n✗ 아직 Google 로그인 화면입니다. 프로필을 신뢰할 수 없습니다. 다시 실행하십시오.');
+    await context.close();
     process.exit(1);
   }
 
-  await context.storageState({ path: OUT_FILE });
-  await browser.close();
+  // 프로필은 컨텍스트를 닫을 때 디스크에 확정 저장된다.
+  await context.close();
 
-  console.log(`\n✓ 인증 세션 저장 완료: ${OUT_FILE}`);
-  console.log('  .env 에 아래 줄을 추가하십시오:');
-  console.log('  PLAYWRIGHT_STORAGE_STATE=./.playwright/dev-auth.json');
-  console.log('  ⚠️ 이 파일은 세션 쿠키를 포함합니다. 절대 커밋하지 마십시오.');
+  console.log(`\n✓ 인증 프로필 저장 완료: ${PROFILE_DIR}`);
+  console.log('  이제 `npx playwright test` 가 이 프로필을 그대로 재사용하며,');
+  console.log('  세션 쿠키가 실행할 때마다 갱신되므로 재로그인이 필요 없습니다.');
+  console.log('  ⚠️ 이 디렉터리는 로그인 세션을 포함합니다. 절대 커밋하지 마십시오.');
 })();

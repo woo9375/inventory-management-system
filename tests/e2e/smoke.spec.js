@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures/browser');
 const { hasBaseUrl, missingEnvReason, gotoApp } = require('./fixtures/env');
 
 /**
@@ -15,8 +15,8 @@ test.describe('DEV Web App smoke', () => {
     expect(
       page.url(),
       'DEV Web App이 Google 계정 로그인을 요구합니다. ' +
-      '`node tests/e2e/save-auth-state.js`로 인증 세션을 1회 저장한 뒤 ' +
-      'PLAYWRIGHT_STORAGE_STATE를 설정하십시오.'
+      '`node tests/e2e/save-auth-state.js`를 1회 실행해 인증 프로필을 만드십시오 ' +
+      '(.playwright/user-data). 이후에는 프로필이 세션을 스스로 갱신합니다.'
     ).not.toContain('accounts.google.com');
 
     await expect(app.locator('#loginContainer')).toBeVisible();

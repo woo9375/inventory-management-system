@@ -70,20 +70,29 @@ description: >-
 
 ## Task 문서 표준
 
+아래 순서를 그대로 따른다. 해당 없는 섹션은 삭제하지 말고 **"없음"**으로 남긴다.
+(`AI/tasks/done/TASK-001A` ~ `TASK-003`이 이 규격의 실제 적용 예시다.)
+
 ```markdown
 # TASK-XXX: 제목
 
 ## Objective
 [구현 목표]
 
-## Current System
-[현재 어떻게 동작하는가 — 코드에서 확인한 사실]
-
 ## Confirmed Facts
-[실제 코드를 읽어서 확인된 사실]
+[실제 코드를 읽어서 확인된 사실. 파일명:줄번호로 근거 표기]
 
 ## Hypotheses
 [아직 확인되지 않은 추정 — Claude Code가 구현 전 반드시 검증할 것]
+
+## Business Context
+[왜 필요한가. 적용되는 핵심 업무 규칙 요약 — 상세는 Docs/BusinessRules.md 참조]
+
+## Current System
+[현재 어떻게 동작하는가]
+
+## Root Cause / Diagnostic Logic
+[버그 수정인 경우 원인 분석. 신규 기능이면 "해당 없음"]
 
 ## Requirements
 ### Functional
@@ -91,8 +100,8 @@ description: >-
 ### Non-Functional
 - [ ] ...
 
-## Business Rules
-[적용되는 핵심 업무 규칙 요약. 상세는 Docs/BusinessRules.md 참조]
+## Constraints
+[GAS 런타임·업무 규칙·기존 API 시그니처 등 지켜야 할 제약]
 
 ## Files to Inspect
 [구현 전 반드시 읽어야 할 파일]
@@ -100,32 +109,43 @@ description: >-
 ## Files to Modify
 [수정할 파일과 변경 내용]
 
+## Files to Create
+[새로 만들 파일. 없으면 "없음"]
+
 ## Implementation Plan
 [구현 방향과 핵심 로직]
 
+## Migration Plan
+[Sheet 구조 변경·데이터 이관 절차. 없으면 "없음"]
+
 ## Test Plan
 ### Unit Test
-[단위 테스트 시나리오]
+[tests/unit/ 시나리오 — Sheets API 모킹 기반 로직 시뮬레이션]
 ### E2E Test (Playwright)
-[E2E 검증 시나리오 — DEV Web App 대상]
+[DEV Web App 대상 시나리오: 접속 → 로그인 → 기능 실행 → 결과 확인.
+ 가능한 경우 DEV Spreadsheet 데이터까지 검증]
 
-## Playwright E2E
-[구체적인 Playwright 테스트 시나리오]
-- DEV Web App 접속 → 로그인 → 기능 실행 → 결과 확인
-- 가능한 경우 DEV Spreadsheet까지 데이터 검증
+## Regression Risk
+[이 변경이 깨뜨릴 수 있는 기존 동작]
 
 ## Acceptance Criteria
 [완료 판단 기준]
 
-## Migration / Data Risk
-[Sheet 구조 변경, 데이터 이관 위험. 없으면 "없음"]
+## Human Approval Required
+[Human 확인/승인이 필요한 항목. 없으면 "없음"]
 
 ## Deployment Notes
 [배포 시 주의사항. 없으면 "없음"]
 
-## Human Approval Required
-[Human 확인/승인이 필요한 항목. 없으면 "없음"]
+## Rollback Plan
+[문제 발생 시 되돌리는 방법]
+
+## Final Report
+[Claude Code가 구현 완료 후 채운다. 생성 시점에는 비워 둔다]
 ```
+
+> **인프라/환경 정비 성격의 Task**는 `Root Cause`, `Regression Risk`, `Rollback Plan`을 생략하고
+> `Security Considerations`를 추가할 수 있다. (예시: `AI/tasks/done/TASK-004`)
 
 ---
 

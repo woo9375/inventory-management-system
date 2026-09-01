@@ -38,9 +38,20 @@
 - All CSS is centralized in `Stylesheet.html`.
 - These files are included into `Index.html` via `HtmlService.createHtmlOutputFromFile()`.
 
+### ⚠️ 현재 include되지 않는 파일
+- **`JS_Master.html`**: `Index.html`에 include되어 있지 않다(커밋 `e4a6d6e`에서 제거).
+  사이드바에 품목 관리 탭이 없고 `tab-master` 영역도 없으므로 **웹 UI로 제공되지 않는다.**
+  품목 마스터는 현재 **스프레드시트에서 직접 관리**한다.
+  파일은 향후 웹 UI 복원 가능성을 위해 보존 중이며, 관련 기능 Task를 설계할 때
+  "이미 동작하는 화면"으로 전제하지 말 것. (`JS_UI.html`의 `showTab('master')` 분기도 도달 불가 잔재)
+- `UploadCsv.html`은 `Index.html`이 아니라 `Code.gs`가 스프레드시트 메뉴에서 직접 띄운다.
+
 ## 5. Logging & Error Handling
-- Use `Logger.log()` or `console.error()` for all server-side logging. Do NOT use `console.log()` in `.gs` files for production code.
-- In `try-catch` blocks, always log the error and return a user-friendly message to the frontend.
+- **진행 로그**: `console.log()` 또는 `Logger.log()` 사용. 마이그레이션·아카이브·배치 작업의
+  단계별 진행 상황을 남기는 용도로 `.gs`에서 허용된다.
+- **에러 로그**: 반드시 `console.error()` 사용. `console.log()`로 에러를 남기지 않는다.
+- `try-catch` 블록에서는 항상 에러를 로깅하고, 프론트엔드에는 내부 정보가 없는
+  사용자 친화적 메시지만 반환한다 (스택 트레이스·시트 구조 노출 금지).
 - 심각한 에러는 `_logError()` 함수로 `SHEET_SYSTEM_LOGS`에 기록.
 
 ## 6. 네이밍 규약

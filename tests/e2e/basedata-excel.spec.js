@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures/browser');
 const { hasCredentials, missingEnvReason, login, waitForIdle } = require('./fixtures/env');
 const fs = require('fs');
 const path = require('path');
@@ -41,6 +41,15 @@ test.describe('DEV 기초데이터 · 실사 Excel', () => {
     await app.getByRole('button', { name: /실사 양식 다운로드/ }).click();
     const download = await downloadPromise;
 
+    // [TASK-006 미해결] 이 테스트는 Playwright 러너 + headless 조합에서
+    // `download.saveAs: Target page, context or browser has been closed`로 실패한다.
+    // 확인된 사실: 실패 시점에 page/context는 살아 있고 다운로드 산출물만 폐기된다.
+    //   - 러너 밖 순수 스크립트(동일 프로필·동일 headless)에서는 항상 성공
+    //   - `--headed`로 실행하면 성공
+    //   - tracing(`--trace=off`), 신형 headless(`--headless=new`), Safe Browsing 플래그,
+    //     새 페이지 사용 — 모두 무관함을 실측으로 배제
+    // 앱 측 blob 해제 지연(1초 → 60초, JS_BaseData.html)은 별개의 실제 버그로 확인·수정했으나
+    // 이 실패의 원인은 아니었다. 원인 규명 전까지 headless에서는 실패할 수 있다.
     expect(download.suggestedFilename()).toMatch(/^재고실사조사표_\d{8}\.xlsx$/);
 
     const outDir = path.join(__dirname, '..', '..', 'test-results');

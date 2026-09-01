@@ -4,6 +4,11 @@
 
 ## 현재 Architecture (코드에서 확인)
 
+> **SPA에 포함되지 않는 `src/` 파일**
+> - `JS_Master.html` — `Index.html`에 include되지 않음(커밋 `e4a6d6e`). 품목 마스터 웹 UI는
+>   현재 제공되지 않으며, 스프레드시트에서 직접 관리한다. 파일은 향후 복원 가능성을 위해 보존 중.
+> - `UploadCsv.html` — SPA가 아니라 `Code.gs`가 스프레드시트 메뉴에서 직접 띄우는 모달.
+
 ```
 ┌─────────────────────────────────────────────────┐
 │                   Frontend                       │
@@ -11,11 +16,9 @@
 │  ├── Stylesheet.html (CSS)                       │
 │  ├── JS_Auth.html (인증 UI)                      │
 │  ├── JS_Config.html (설정 UI)                    │
-│  ├── JS_Master.html (품목 관리 UI)               │
 │  ├── JS_Tx.html (입출고 UI)                      │
 │  ├── JS_UI.html (공통 UI)                        │
-│  ├── JS_BaseData.html (기초데이터 UI)            │
-│  └── UploadCsv.html (CSV 업로드 모달)            │
+│  └── JS_BaseData.html (기초데이터 UI)            │
 │         │                                        │
 │         │ google.script.run.함수명()              │
 │         ▼                                        │
@@ -109,22 +112,34 @@ executeMonthlyClosing(token, year, month)
 
 ---
 
+## 환경 분리 및 검증 파이프라인 (TASK-004 구축 완료)
+
+DEV / Production은 **별도의 Apps Script 프로젝트**로 분리되어 있다.
+동일 소스가 양쪽에 배포되므로 환경 판별은 소스가 아니라, 각 프로젝트가 개별 보유하는
+ScriptProperties(`APP_ENV`)로 수행한다 — `Config.gs: getAppEnv()`.
+값이 없으면 항상 Production으로 간주한다(안전 기본값).
+
+```
+DEV  : .clasp-dev.json → npm run dev:push     (로컬, 승인 불필요)
+PROD : .clasp.json     → git push origin main (GitHub Actions, Human 승인 필수)
+```
+
+검증 파이프라인:
+
+```
+구현 → npm run test:unit (Node 로직 시뮬레이션)
+     → npm run dev:push  (DEV 배포)
+     → npm run test:e2e  (Playwright → DEV Web App)
+     → Task review/ → Human QA → Production 배포
+```
+
+상세는 `Docs/Deployment.md` 참조.
+
+---
+
 ## 향후 개선 Architecture (권장)
 
-### 1. DEV/PROD 환경 분리
-```
-[검토 필요]
-- DEV 용 별도 Apps Script 프로젝트 생성
-- .clasp.json을 환경별로 관리 (또는 clasp 다중 프로젝트)
-- GitHub Actions에서 branch별 배포 대상 분리
-```
-
-### 2. E2E 테스트 레이어 추가
-```
-Playwright → DEV Web App → 자동 검증 → Human QA
-```
-
-### 3. API 레이어 정규화
+### API 레이어 정규화
 ```
 [검토 필요]
 - WebApp.gs의 래퍼 함수들을 REST-like 라우터로 통합

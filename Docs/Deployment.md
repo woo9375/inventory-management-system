@@ -79,26 +79,6 @@ jobs:
 
 ---
 
-## DEV/PROD 환경 분리
-
-### 현재 상태
-- 단일 Apps Script 프로젝트 (Production)
-- DEV 환경 없음
-
-### 권장 구조 (향후)
-```
-[검토 필요]
-
-.clasp-dev.json → DEV Apps Script Project
-.clasp-prod.json → PROD Apps Script Project
-
-GitHub Actions:
-  - feature/* → DEV 배포
-  - main → PROD 배포
-```
-
----
-
 ## 롤백
 
 ```bash

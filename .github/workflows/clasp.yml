@@ -18,7 +18,10 @@ jobs:
           node-version: '20'
 
       - name: Install Clasp
-        run: npm install -g @google/clasp
+        # 버전 고정 필수: clasp 3.x는 .clasprc.json 인증 파일 처리와 CLI 동작이
+        # 달라져 CLASPRC_JSON 시크릿(v2 형식)과 호환되지 않는다.
+        # 로컬 devDependency(^2.4.2)와 동일 계열로 유지할 것.
+        run: npm install -g @google/clasp@2.5.0
 
       - name: Create ~/.clasprc.json
         run: |

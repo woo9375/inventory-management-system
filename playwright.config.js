@@ -59,8 +59,10 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     video: 'off',
     actionTimeout: 45 * 1000,
-    // 로그인 상태를 재사용할 경우에만 사용 (절대 커밋 금지 - .gitignore 처리됨)
-    storageState: process.env.PLAYWRIGHT_STORAGE_STATE || undefined,
+    // [TASK-006] 인증은 tests/e2e/fixtures/browser.js의 영속 프로필(.playwright/user-data)이 담당한다.
+    // storageState는 정지된 스냅샷이라 Google의 회전 쿠키를 갱신하지 못해 하루 만에 만료됐다.
+    // PLAYWRIGHT_STORAGE_STATE는 신규 프로필 생성 시 기존 쿠키를 1회 이식하는 용도로만 남아 있다.
+    storageState: undefined,
   },
 
   projects: [

@@ -1,12 +1,33 @@
 # End-to-End (E2E) Tests (`tests/e2e/`)
 
-Playwright를 활용한 GAS Web App의 사용자 인터페이스 및 통합 워크플로우 테스트 디렉터리입니다.
+Playwright로 **DEV Web App만** 검증한다. Production URL은 `playwright.config.js`가 실행 시점에 차단한다.
 
-## 테스트 대상
-1. **입출고 등록 및 검증 흐름**: 폼 입력, 필수값 검증, 제출 후 UI 업데이트 확인
-2. **권한 및 업장별 격리**: 역할(Admin vs User) 및 업장 선택에 따른 화면 접근 권한 확인
-3. **월마감 및 이월 데이터 조회**: 월마감 상태에서의 입력 차단 및 마감 보고서 UI 확인
+## 실행
 
-## 실행 사전 조건
-- DEV 환경에 배포된 GAS Web App URL 필요 (`DEV_WEB_APP_URL`)
-- Playwright 설치 (`npm install -D @playwright/test && npx playwright install`)
+```bash
+npm run test:e2e          # headless
+npm run test:e2e:headed   # 브라우저 표시
+```
+
+## 사전 조건
+
+1. `.env.example`을 `.env`로 복사 후 값 입력 (`PLAYWRIGHT_BASE_URL`, `DEV_TEST_USERNAME`, `DEV_TEST_PASSWORD`)
+2. DEV에 최신 코드 배포: `npm run dev:push`
+3. DEV Apps Script 편집기에서 1회 실행: `setupDevScriptProperties()` → `seedDevData()`
+
+환경변수가 없으면 테스트는 **실패가 아니라 skip** 되며, 누락된 변수명을 사유로 출력한다.
+DEV 배포가 Google 계정 로그인을 요구하면 `node tests/e2e/save-auth-state.js`로 세션을 1회
+저장하고 `PLAYWRIGHT_STORAGE_STATE`를 지정한다. (세션 파일은 `.gitignore` 처리됨 — 절대 커밋 금지)
+
+## 현재 스펙
+
+| 파일 | 검증 대상 |
+|------|-----------|
+| `smoke.spec.js` | DEV Web App 접속, 로그인 화면 렌더링, SheetJS(XLSX) CDN 로드 |
+| `transaction.spec.js` | 입고 등록 성공 및 거래ID 생성 (TASK-001A 회귀 방지) |
+| `basedata-excel.spec.js` | 단위 목록 신규 10종 노출 (TASK-002), 실사 양식 xlsx 다운로드 (TASK-001B) |
+
+`fixtures/env.js`가 `.env` 로드, 로그인, iframe 진입, 로딩 대기 헬퍼를 제공한다.
+
+> GAS Web App은 중첩 iframe(`sandboxFrame` → `userHtmlFrame`) 구조이므로,
+> 요소 접근은 반드시 `fixtures/env.js`의 `getAppFrame()` / `login()`을 경유한다.

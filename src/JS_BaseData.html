@@ -171,7 +171,11 @@ function downloadPhysicalCheckListExcel() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+        // [TASK-006] 1초는 너무 짧다. 브라우저가 blob을 다 읽어 파일로 쓰기 전에 URL이
+        // 무효화되면 다운로드가 조용히 취소된다(E2E에서 재현: 1초 뒤 산출물이 폐기됨).
+        // 품목 수가 많거나 느린 기기에서 실사용자도 겪을 수 있어 넉넉히 늘린다.
+        // blob URL은 페이지를 벗어나면 어차피 해제되므로 지연을 늘리는 비용은 사실상 없다.
+        setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
       } catch (e) {
         // [FIX] 기존 코드는 클라이언트 측 예외를 아무 곳에서도 잡지 않아
         // 다운로드 실패 시 사용자에게 아무런 피드백이 없었다(무반응처럼 보임).

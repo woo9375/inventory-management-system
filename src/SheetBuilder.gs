@@ -292,6 +292,9 @@ function buildItemMaster(ss) {
   sheet.setColumnWidth(19, 100); sheet.setColumnWidth(20, 120); sheet.setColumnWidth(21, 120); 
   sheet.setColumnWidth(22, 120); sheet.setColumnWidth(23, 140);
   sheet.setColumnWidth(24, 90); // [v9.0] 사용유무
+
+  // [TASK-006] 초기재고 열 경고 전용 보호 (마감 후 수동 입력으로 인한 이중 계상 방지)
+  applyInitStockProtection(ss);
 }
 
 
@@ -390,4 +393,48 @@ function _formatDataArea(sheet, startRow, startCol, numRows, numCols, bgColor) {
   sheet.getRange(startRow, startCol, numRows, numCols)
     .setBackground(bgColor || COLORS.inputBg)
     .setHorizontalAlignment("center");
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-006] 초기재고(G열) 보호
+// ═══════════════════════════════════════════════════════════════════
+
+const INIT_STOCK_PROTECTION_DESC = "초기재고(G열) 이중 계상 방지 보호";
+
+/**
+ * 품목 마스터의 초기재고 열에 '경고 전용' 보호를 건다.
+ *
+ * 왜 필요한가:
+ *   현재고 = 초기재고(G열) + Σ입고 − Σ출고 − Σ폐기 이다.
+ *   월마감은 남은 재고를 "마감 이월" 입고 행으로 옮겨 적고 G열을 0으로 리셋하는데,
+ *   마감 후 누군가 G열에 값을 다시 적어 넣으면 같은 재고가 두 번 계산된다.
+ *   (`Archive.gs`의 `detectCarryoverDoubleCount()`가 감지하는 바로 그 상황)
+ *
+ * 왜 '경고 전용'인가:
+ *   G열은 신규 품목 등록 시 "지금 창고에 이미 있는 수량"을 적는 정상 입력 칸이기도 하다.
+ *   완전히 잠그면 그 운영 경로가 막히므로, 편집 시 확인 대화상자만 띄워 실수를 거른다.
+ *   (`RBAC.gs`의 `_protectSystemSheets()`와 동일한 관례)
+ *
+ * 멱등(idempotent): 같은 설명의 기존 보호가 있으면 제거 후 현재 행 수에 맞춰 다시 건다.
+ *
+ * @param {Spreadsheet} [ss] 대상 스프레드시트 (생략 시 활성 스프레드시트)
+ * @return {boolean} 보호를 적용했으면 true
+ */
+function applyInitStockProtection(ss) {
+  const spreadsheet = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const masterSheet = spreadsheet.getSheetByName(SHEET_MASTER);
+  if (!masterSheet) return false;
+
+  masterSheet.getProtections(SpreadsheetApp.ProtectionType.RANGE)
+    .filter(p => p.getDescription() === INIT_STOCK_PROTECTION_DESC)
+    .forEach(p => p.remove());
+
+  const numRows = Math.max(masterSheet.getMaxRows() - 2, 1);
+  masterSheet.getRange(3, MASTER_COLS.INIT_STOCK + 1, numRows, 1)
+    .protect()
+    .setDescription(INIT_STOCK_PROTECTION_DESC)
+    .setWarningOnly(true);
+
+  return true;
 }
