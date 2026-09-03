@@ -113,7 +113,8 @@ function verifyDevEnvironment() {
     push("'팩' 존재         : " + (units.indexOf("팩") > -1 ? "✅" : "❌"));
     push("'세트' 존재       : " + (units.indexOf("세트") > -1 ? "✅" : "❌"));
     push("'PACK' 잔존       : " + (units.indexOf("PACK") > -1 ? "⚠️ 있음" : "없음 ✅"));
-    push("'CASE' 잔존       : " + (units.indexOf("CASE") > -1 ? "⚠️ 있음 (v11 미실행)" : "없음 ✅"));
+    push("'CASE' 잔존       : " + (units.indexOf("CASE") > -1 ? "⚠️ 있음 (v13 미실행)" : "없음 ✅"));
+    push("'조', '줄' 존재     : " + ((units.indexOf("조") > -1 && units.indexOf("줄") > -1) ? "✅" : "❌"));
   } else {
     push("❌ 기초데이터 시트 없음");
   }
@@ -139,7 +140,7 @@ function verifyDevEnvironment() {
       else if (uu === "SET") { setCount++; }
     });
     push("전체 품목 수      : " + total);
-    push("단위 'CASE' 사용  : " + caseCount + "건   ← TASK-002 대체단위 결정 대상");
+    push("단위 'CASE' 사용  : " + caseCount + "건   ← 목록에서는 삭제됨(v13). 품목 값은 수동 정정 대상");
     push("단위 'PACK' 사용  : " + packCount + "건");
     push("단위 'set' 사용   : " + setCount + "건");
     push("단위 비어있음     : " + emptyUnit + "건");

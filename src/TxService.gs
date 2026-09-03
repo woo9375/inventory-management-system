@@ -101,6 +101,14 @@ function addTransaction(token, shopName, txData) {
   }
   const transactionDate = new Date(dateText + "T00:00:00");
   if (isNaN(transactionDate.getTime())) return { success: false, message: "❌ 유효한 거래일을 입력하세요." };
+
+  // [TASK-010] 마감된 과거 기간의 거래 등록 차단 — 역할(Admin/Manager/Staff) 예외 없음.
+  // 마감월 원장은 이미 별도 스프레드시트로 분리되었고 잔여 로트는 익월 1일 이월 행으로
+  // 스냅샷되어 있어, 그보다 앞선 거래가 삽입되면 FIFO 체인이 이월분과 이중 계상된다.
+  const closedCheck = validateNotClosedMonth(dateText);
+  if (closedCheck.blocked) {
+    return { success: false, message: closedCheck.message };
+  }
   if (!VALID_TRANSACTION_TYPES.includes(type)) {
     return { success: false, message: "❌ 유효하지 않은 거래 구분입니다." };
   }

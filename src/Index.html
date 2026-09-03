@@ -29,9 +29,9 @@
           <input type="password" id="loginPassword" placeholder="비밀번호 입력" autocomplete="current-password"
             onkeypress="if(event.key==='Enter') submitLogin()">
         </div>
-        <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px;">
-          <input type="checkbox" id="rememberMe" style="width: auto; margin: 0;">
-          <label for="rememberMe" style="margin: 0; font-weight: 500; cursor: pointer;">✅ 로그인 상태 유지</label>
+        <div class="form-group login-remember">
+          <input type="checkbox" id="rememberMe">
+          <label for="rememberMe">✅ 로그인 상태 유지</label>
         </div>
         <button class="login-btn" id="loginBtn" onclick="submitLogin()">로그인</button>
         <div id="loginError" class="login-error"></div>
@@ -104,8 +104,8 @@
       </nav>
 
       <!-- 로그아웃 버튼 (사이드바 하단 고정) -->
-      <div style="padding: 20px; border-top: 1px solid var(--border);">
-        <button class="logout-btn" onclick="doLogout()" title="로그아웃" style="width: 100%;">🚪 로그아웃</button>
+      <div class="sidebar-actions">
+        <button class="logout-btn" onclick="doLogout()" title="로그아웃">🚪 로그아웃</button>
       </div>
 
       <div class="sidebar-footer" style="padding-top: 0; padding-bottom: 20px;">
@@ -119,24 +119,23 @@
       <!-- ━━━━━━━━━ 대시보드 탭 ━━━━━━━━━ -->
       <div id="tab-dashboard" class="tab-content active">
         <div class="page-header">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <h2 style="margin: 0;">📊 대시보드</h2>
-            <div
-              style="font-size: 0.85rem; color: var(--text-muted); font-weight: normal; background: #f1f5f9; padding: 4px 12px; border-radius: 12px; border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 0.9rem;">🕒</span>
-              <span id="dashDate" style="font-weight: 600; color: var(--navy-700);">-</span>
-            </div>
+          <div class="page-title-group">
+            <h2>📊 대시보드</h2>
+            <span class="meta-badge">
+              <span class="meta-icon">🕒</span>
+              <span id="dashDate">-</span>
+            </span>
           </div>
           <div class="header-meta">
-            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)" style="margin-right:4px;"
+            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)"
               title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
             <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('refreshDashboard')"
-              title="통합 갱신" style="margin-right:4px;">🔄 통합갱신</button>
-            <div class="dropdown" style="display:inline-block; margin-right: 8px;">
+              title="통합 갱신">🔄 통합갱신</button>
+            <div class="dropdown">
               <button class="btn btn-primary btn-sm dropbtn">🖨️ 인쇄/다운로드 ▼</button>
               <div class="dropdown-content">
-                <button onclick="printPhysicalCheckList()">🖨️ 실사 양식 인쇄 (PDF)</button>
-                <button onclick="downloadPhysicalCheckListExcel()">📥 실사 양식 다운로드 (Excel)</button>
+                <button onclick="openPhysicalCheckModal('pdf')">🖨️ 실사 양식 인쇄 (PDF)</button>
+                <button onclick="openPhysicalCheckModal('excel')">📥 실사 양식 다운로드 (Excel)</button>
               </div>
             </div>
             <span id="dashSeason" class="season-badge">-</span>

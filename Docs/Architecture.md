@@ -4,10 +4,26 @@
 
 ## 현재 Architecture (코드에서 확인)
 
-> **SPA에 포함되지 않는 `src/` 파일**
-> - `JS_Master.html` — `Index.html`에 include되지 않음(커밋 `e4a6d6e`). 품목 마스터 웹 UI는
->   현재 제공되지 않으며, 스프레드시트에서 직접 관리한다. 파일은 향후 복원 가능성을 위해 보존 중.
-> - `UploadCsv.html` — SPA가 아니라 `Code.gs`가 스프레드시트 메뉴에서 직접 띄우는 모달.
+### ⚠️ SPA에 포함되지 않는 `src/` 파일 (에이전트 필독)
+
+> **`src/`에 파일이 있다는 것은 그 코드가 실행된다는 뜻이 아니다.**
+> 웹앱 화면 여부를 판단할 때는 파일 목록이나 파일 내부 코드가 아니라 **`Index.html`의 두 지점**만 근거로 삼는다.
+
+| 파일 | 상태 | 근거 |
+|------|------|------|
+| **`JS_Master.html`** | 🔴 **사장(Dead Code) — 수정 금지** | `Index.html`에 include되지 않음(커밋 `e4a6d6e`에서 제거). 사이드바에 `tab-master`도 없어 이 파일이 참조하는 DOM(`masterTableBody` 등)이 런타임에 존재하지 않는다 |
+| `UploadCsv.html` | 🟢 활성 (SPA 아님) | `Code.gs:36`이 스프레드시트 메뉴에서 모달로 직접 띄운다 |
+
+**품목 마스터는 웹앱 화면이 존재하지 않는다.** 구글 스프레드시트 `🗂️ 품목 마스터` 시트에서 100% 직접 관리하며,
+웹앱에서 품목 현재고가 노출되는 유일한 곳은 **대시보드의 '위험·발주필요 품목' 테이블**(`JS_UI.html`)이다.
+`JS_Master.html`은 향후 웹 UI 복원 가능성을 위해 파일만 보존 중이다.
+
+**웹앱 진입점 사실 (근거 라인)**
+- 사이드바 탭 7개 — `Index.html:81-101`: `dashboard` / `transactions` / `shop` / `season` / `user` / `basedata` / `mysettings`
+- include되는 스크립트 5개 — `Index.html:522-527`: `JS_Auth` / `JS_UI` / `JS_Tx` / `JS_Config` / `JS_BaseData`
+
+> 검증 절차는 `.agents/skills/gas-tasks/SKILL.md`의 **Step 2.5 아키텍처 진입점 역추적 게이트**,
+> 도메인별 관리 주체는 `.agents/rules/00_roles-and-workflow.md`의 **3. 시스템 물리적 경계**를 따른다.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -42,7 +58,7 @@
 ├─────────────────────────────────────────────────┤
 │            Business Logic Layer                  │
 │  StockEngine.gs  (재고 계산, FIFO)               │
-│  Archive.gs      (월마감, 아카이빙)              │
+│  Archive.gs      (수동 월마감, 백업)             │
 │  Dashboard.gs    (대시보드 집계)                 │
 │  RBAC.gs         (인증/권한)                     │
 │  Migration.gs    (스키마 마이그레이션)            │
@@ -120,9 +136,14 @@ ScriptProperties(`APP_ENV`)로 수행한다 — `Config.gs: getAppEnv()`.
 값이 없으면 항상 Production으로 간주한다(안전 기본값).
 
 ```
-DEV  : .clasp-dev.json → npm run dev:push     (로컬, 승인 불필요)
-PROD : .clasp.json     → git push origin main (GitHub Actions, Human 승인 필수)
+DEV  : .clasp-dev.json → npm run dev:push                      (로컬, 승인 불필요)
+                         → @HEAD 배포에 즉시 반영
+PROD : .clasp.json     → git push origin main                  (GitHub Actions, Human 승인 필수)
+                         → clasp push (코드) + clasp deploy (릴리스)
 ```
+
+> 환경당 웹앱 배포는 **1개**로 고정한다. `clasp push`는 HEAD 코드만 갱신하므로,
+> 버전 배포는 `clasp deploy` 없이는 동결된 채로 남는다 — 상세는 `Docs/Deployment.md`.
 
 검증 파이프라인:
 

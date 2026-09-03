@@ -9,7 +9,7 @@ Google Apps Script(V8) + Google Sheets 기반 호텔 재고 관리 시스템.
 - **런타임**: Google Apps Script (V8 엔진)
 - **데이터베이스**: Google Sheets (Batch I/O 필수)
 - **프론트엔드**: HtmlService (SPA)
-- **CI/CD**: `git push origin main` → GitHub Actions → `clasp push --force`
+- **CI/CD**: `git push origin main` → GitHub Actions → `clasp push` + `clasp deploy` (코드 갱신과 릴리스는 별개 단계 — `Docs/Deployment.md`)
 
 ## 절대 금지
 1. `import`, `export`, `require()` 사용 금지 (GAS 미지원)
@@ -24,6 +24,8 @@ AI/tasks/ready/    ← Antigravity가 생성. Claude Code 구현 대기
 AI/tasks/review/   ← 구현 완료. Human QA 대기
 AI/tasks/done/     ← Human QA + Production 배포 완료
 ```
+
+**구현 착수 전 교차 검증**: `git status`로 작업 트리를 확인한다. Task가 `Files to Modify`로 명시한 파일이 이미 수정되어 있으면 Antigravity의 역할 이탈이므로, 구현을 중단하고 사용자에게 보고한다.
 
 ## DEV / Production 분리
 | 환경 | clasp 설정 | 배포 방법 |
@@ -40,6 +42,7 @@ AI/tasks/done/     ← Human QA + Production 배포 완료
 - 대상: DEV Web App만 (`.env`의 `PLAYWRIGHT_BASE_URL`)
 
 ## 참조
+- **`AGENTS.md`** / **`.agents/rules/00_roles-and-workflow.md`**: 에이전트 역할 경계 (Antigravity ↔ Claude Code)
 - **`.agents/rules/`**: 환경, 보안, 데이터 모델 제약 사항
 - **`Docs/`**: 업무 규칙, 스키마, 아키텍처 상세
 - **`AI/tasks/`**: 작업 명세서 (`TASK-NNN-*.md`)

@@ -14,6 +14,9 @@ description: >-
 | **DEV** | `.clasp-dev.json` | `1oPmA-pzD_m1c4nXgjfF7RHzKHYm-KOQIwwrppUIR55XPk4byxFW_SdAY` | `npm run dev:push` (로컬) |
 | **Production** | `.clasp.json` | `1TKJb8HXschFgu257XGoHOhohogyAvleagnuHbdLRathBu1ueiMWAAbvO` | `git push origin main` → GitHub Actions |
 
+> 위는 **스크립트 ID**(프로젝트 식별자)다. 사용자가 접속하는 **웹앱 URL·배포 ID**는 별개이며
+> `Docs/Deployment.md`의 "웹앱 URL" 표가 SSOT다.
+
 ---
 
 ## DEV 배포 (개발/테스트)
@@ -48,7 +51,9 @@ Production 배포는 **완전 자동화 CI/CD 파이프라인**을 사용한다.
 ```
 Claude Code → 구현 → DEV test → Playwright E2E
 → Task review → Human approval
-→ git commit → git push origin main → GitHub Actions → clasp push --force → Production
+→ git commit → git push origin main → GitHub Actions
+     → clasp push --force   (HEAD 코드 갱신)
+     → clasp deploy -i …    (새 버전 + 상시 URL 연결)  ← 이 단계에서 사용자에게 반영
 ```
 
 ### 배포 단계
@@ -103,4 +108,7 @@ GitHub Actions 실패 시:
 - `.clasp.json`의 `rootDir`는 `src/` — `src/` 내 파일만 Apps Script에 업로드됨
 - `.claspignore`가 `*.md`, `backup/**`, `node_modules/**` 등을 제외
 - `src/` 외 파일 변경은 Apps Script에 영향 없음
-- Web App 변경이 사용자에게 보이려면 Apps Script UI에서 **새 배포 버전** 생성 필요 (사용자 안내)
+- **웹앱 URL·버전·배포 개념의 SSOT는 `Docs/Deployment.md`다.** 배포가 반영되지 않는 것 같으면
+  그 문서의 "문제 해결" 절을 따른다 (대부분 코드가 아니라 보고 있는 URL의 문제다)
+- 확인용이라도 `clasp deploy`를 `-i` 없이 실행하지 말 것 — 새 URL이 생겨 배포가 증식한다.
+  환경당 배포는 **1개**로 유지한다 (DEV `@HEAD`, Production 버전 배포 1개)

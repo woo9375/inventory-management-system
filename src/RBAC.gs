@@ -361,19 +361,17 @@ function generateNewShops() {
         targetSheet = template.copyTo(ss).setName(shopName);
         targetSheet.getRange("A1").setValue(`✏️ [${shopName} 입력창]  품목코드: 직접 입력  |  거래ID: 날짜+코드 입력 시 자동 생성 (형식: ${tag}-YYYYMMDD-UUID8)`);
         
-        targetSheet.getRange(3, 2, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(codeListRange).setAllowInvalid(false).build());
-        
-        targetSheet.getRange(3, 4, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["입고", "출고", "폐기"]).setAllowInvalid(false).build());
-        targetSheet.getRange(3, 5, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireNumberGreaterThan(0).setAllowInvalid(false).build());
+        // [TASK-016] 고정 상수 대신 시트의 현재 행 수를 따라간다 (템플릿 복사본이 몇 행이든 전 범위 적용)
+        const txRows = _formatRowCount(targetSheet);
+        targetSheet.getRange(3, 2, txRows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(codeListRange).setAllowInvalid(false).build());
 
-        const protection = targetSheet.protect().setDescription(`${shopName} 권한`);
+        targetSheet.getRange(3, 4, txRows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["입고", "출고", "폐기"]).setAllowInvalid(false).build());
+        targetSheet.getRange(3, 5, txRows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireNumberGreaterThan(0).setAllowInvalid(false).build());
 
-        // [v7.0] 9열 구조: 보호 범위 업데이트
-        protection.setUnprotectedRanges([
-          targetSheet.getRange(3, 1, VALIDATION_ROWS, 2),  // A~B (날짜, 품목코드)
-          targetSheet.getRange(3, 4, VALIDATION_ROWS, 2),  // D~E (구분, 수량)
-          targetSheet.getRange(3, 7, VALIDATION_ROWS, 2)   // G~H (담당자, 비고)
-        ]);
+        targetSheet.protect().setDescription(`${shopName} 권한`);
+
+        // [v7.0] 9열 구조: 보호 범위 업데이트 — [TASK-016] 공용 헬퍼로 일원화
+        _applyShopUnprotectedRanges(targetSheet);
       }
 
       shopSheet.getRange(currentRowNum, 4).setValue("생성완료");
@@ -404,8 +402,10 @@ function removeItemCodeValidation() {
     if (row[3] === "생성완료" && row[1]) {
       const sh = ss.getSheetByName(row[1]);
       if (sh) {
-        sh.getRange(3, 2, VALIDATION_ROWS, 1).clearDataValidations();
-        sh.getRange(3, 4, VALIDATION_ROWS, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["입고", "출고", "폐기"]).setAllowInvalid(false).build());
+        // [TASK-016] 시트 전 범위를 대상으로 한다 — 2003행 이후에 남아 있던 옛 B열 검증도 함께 해제된다
+        const txRows = _formatRowCount(sh);
+        sh.getRange(3, 2, txRows, 1).clearDataValidations();
+        sh.getRange(3, 4, txRows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["입고", "출고", "폐기"]).setAllowInvalid(false).build());
         sh.getRange("A1").setValue(`✏️ [${row[1]} 입력창]  품목코드: 직접 입력  |  거래ID: 날짜+코드 입력 시 자동 생성`);
         count++;
       }
@@ -425,16 +425,8 @@ function fixSheetProtection() {
     if (row[3] === "생성완료" && row[1]) {
       const sh = ss.getSheetByName(row[1]);
       if (sh) {
-        const protection = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET)[0];
-        if (protection) {
-          // [v7.0] 9열 구조
-          protection.setUnprotectedRanges([
-            sh.getRange(3, 1, VALIDATION_ROWS, 2),  // A~B
-            sh.getRange(3, 4, VALIDATION_ROWS, 2),  // D~E
-            sh.getRange(3, 7, VALIDATION_ROWS, 2)   // G~H
-          ]);
-          count++;
-        }
+        // [v7.0] 9열 구조 — [TASK-016] 공용 헬퍼로 일원화 (현재 행 수 전체를 편집 허용)
+        if (_applyShopUnprotectedRanges(sh)) count++;
       }
     }
   });

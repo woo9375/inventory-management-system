@@ -244,8 +244,17 @@ function uploadItemMasterCSV(token, dataRows) {
   }
   
   if (newRows.length > 0) {
+    // [TASK-016] 쓰기 전에 행을 확충한다.
+    //   남은 행보다 CSV가 크면 setValues가 시트 밖을 가리켜 업로드 자체가 실패했다.
+    _ensureMinRows(masterSheet, masterLastRow + newRows.length);
+
     // [v10.0] MASTER_COL_COUNT 상수 사용
     masterSheet.getRange(masterLastRow + 1, 1, newRows.length, MASTER_COL_COUNT).setValues(newRows);
+
+    // [TASK-016] CSV 업로드는 서식 적용 범위를 넘겨 행이 늘어나는 대표 경로다.
+    //   신규 행에도 배경색·정렬·드롭다운·숫자서식이 즉시 적용되도록 재적용한다.
+    applyItemMasterFormatting(ss, masterSheet);
+
     SpreadsheetApp.flush();
     recalcStockAndUsage(ss); // 재고 다시 계산
   }

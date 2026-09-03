@@ -45,11 +45,14 @@ const MIGRATIONS = {
         if (sh) {
           const protection = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET)[0];
           if (protection) {
+            // [TASK-016] 상수를 그대로 행 수로 쓰면 행이 부족한 레거시 시트에서 getRange가 터진다.
+            //   _formatRowCount가 선제 확충 후 현재 행 수를 돌려준다.
+            const rows = _formatRowCount(sh);
             protection.setUnprotectedRanges([
-              sh.getRange(3, 1, VALIDATION_ROWS, 2),
-              sh.getRange(3, 4, VALIDATION_ROWS, 1),
-              sh.getRange(3, 5, VALIDATION_ROWS, 1),
-              sh.getRange(3, 6, VALIDATION_ROWS, 2)
+              sh.getRange(3, 1, rows, 2),
+              sh.getRange(3, 4, rows, 1),
+              sh.getRange(3, 5, rows, 1),
+              sh.getRange(3, 6, rows, 2)
             ]);
           }
         }
@@ -181,8 +184,8 @@ const MIGRATIONS = {
       
       // 기존 데이터 또는 기본값
       const cats = baseData.cats.length > 0 ? baseData.cats : ["호텔","콘도","빌리지","스파월드","식음","조리","관리","구매","판촉"];
-      // [v11] PACK→팩, set→세트, CASE 제거(사용자 결정 대기), 신규 단위 10종 추가
-      const units = baseData.units.length > 0 ? baseData.units : ["박스","개","묶음","병","캔","kg","L","포","롤","장","세트","EA","팩","봉","통","말","자루","ml","g","대","망","판","마리","족","타레","벌","켤레","매","평","본"];
+      // [v11] PACK→팩, set→세트, 신규 단위 10종 추가 / [v13] CASE 제외 / [v15] 조, 줄 추가
+      const units = baseData.units.length > 0 ? baseData.units : ["박스","개","묶음","병","캔","kg","L","포","롤","장","세트","EA","팩","봉","통","말","자루","ml","g","대","망","판","마리","족","타레","벌","켤레","매","평","본","조","줄"];
       const itemCats = baseData.itemCats.length > 0 ? baseData.itemCats : ["원재료","어메니티","세제류","소모품","식재료","음료","청소용품","린넨류","위생용품","사무용품","시설자재","기타"];
       
       baseSheet.getRange(3, 1, cats.length, 1).setValues(cats.map(v => [v])).setBackground(COLORS.inputBg).setHorizontalAlignment("center");
@@ -280,7 +283,9 @@ const MIGRATIONS = {
           .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
         
         // 사용유무 드롭다운 검증 추가
-        masterSheet.getRange(3, 24, VALIDATION_ROWS, 1).setDataValidation(
+        // [TASK-016] 행 부족 시 getRange 실패를 막기 위해 선제 확충 후 현재 행 수를 쓴다
+        const vRows = _formatRowCount(masterSheet);
+        masterSheet.getRange(3, 24, vRows, 1).setDataValidation(
           SpreadsheetApp.newDataValidation()
             .requireValueInList(["사용", "미사용"])
             .setAllowInvalid(false).build()
@@ -291,7 +296,7 @@ const MIGRATIONS = {
         const disabledRule = SpreadsheetApp.newConditionalFormatRule()
           .whenFormulaSatisfied('=$X3="미사용"')
           .setBackground("#f0f0f0").setFontColor("#999999")
-          .setRanges([masterSheet.getRange(3, 1, VALIDATION_ROWS, 24)])
+          .setRanges([masterSheet.getRange(3, 1, vRows, 24)])
           .build();
         existingRules.push(disabledRule);
         masterSheet.setConditionalFormatRules(existingRules);
@@ -497,9 +502,7 @@ MIGRATIONS[10] = function(ss) {
   }
 };
 
-// [TASK-002] v11: 단위 목록 정비 — 신규 10종 추가, PACK→팩/set→세트 명칭 변경
-// CASE 단위는 목록에서만 제거하고, 기존 품목 마스터 데이터의 CASE 값은 치환하지 않는다.
-// (대체 단위 결정은 별도의 사용자 승인 필요 — Docs 및 TASK-002 Human Approval 참고)
+// [TASK-002] v11: 단위 목록 정비 — 신규 10종 추가, PACK→팩/set→세트 명칭 변경, CASE 단위 유지
 MIGRATIONS[11] = function migrate_to_v11(ss) {
   console.log("[Migration v11] 단위 목록 정비 시작...");
 
@@ -526,8 +529,7 @@ MIGRATIONS[11] = function migrate_to_v11(ss) {
       return v;
     });
 
-    const caseCountInList = unitCol.filter(function(v) { return String(v).trim().toUpperCase() === "CASE"; }).length;
-    unitCol = unitCol.filter(function(v) { return v && String(v).trim().toUpperCase() !== "CASE"; });
+    unitCol = unitCol.filter(function(v) { return Boolean(v); });
 
     const existingTrimmed = unitCol.map(function(v) { return String(v).trim(); });
     const toAdd = NEW_UNITS.filter(function(u) { return existingTrimmed.indexOf(u) === -1; });
@@ -542,7 +544,7 @@ MIGRATIONS[11] = function migrate_to_v11(ss) {
         .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
     }
     console.log("[Migration v11] 기초데이터 단위 목록 — 명칭변경:" + renamedCount +
-      "건, 신규추가:" + toAdd.length + "종(" + toAdd.join(", ") + "), 목록에서 CASE 제거:" + caseCountInList + "건");
+      "건, 신규추가:" + toAdd.length + "종(" + toAdd.join(", ") + "), CASE 단위 유지");
   } else {
     console.log("[Migration v11] 기초데이터 시트 없음 — 목록 정비 스킵");
   }
@@ -577,4 +579,234 @@ MIGRATIONS[11] = function migrate_to_v11(ss) {
   }
 
   console.log("[Migration v11] v11 마이그레이션 완료!");
+};
+
+// [TASK-009] v12: 서식·유효성 검사 적용 행 범위 확장 (503행 이후 서식 누락 결함 복구)
+//
+// VALIDATION_ROWS가 500이던 시절에 만들어진 시트는 3~502행까지만 서식이 구워져 있다.
+// 상수를 2000으로 올려도 신규 생성 시트에만 반영되므로, 이미 운영 중인 시트에는
+// 이 마이그레이션이 SheetBuilder.gs의 공용 서식 함수를 다시 호출해 범위를 확장한다.
+//
+// 값(setValues/setFormula)은 일절 건드리지 않고 배경색·정렬·드롭다운·숫자서식·
+// 조건부서식만 다시 칠하므로 기존 입력 데이터는 보존된다. 재실행해도 결과가 같다(멱등).
+MIGRATIONS[12] = function migrate_to_v12(ss) {
+  console.log("[Migration v12] 서식/유효성 검사 범위 확장 시작 (VALIDATION_ROWS=" + VALIDATION_ROWS + ")...");
+
+  const REQUIRED_ROWS = VALIDATION_ROWS + 2; // 헤더 2행 + 데이터 VALIDATION_ROWS행
+  let addedRowsTotal = 0;
+  let formattedSheets = 0;
+
+  // ── Step 1: 🗂️ 품목 마스터 ──
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  if (masterSheet) {
+    addedRowsTotal += _ensureMinRows(masterSheet, REQUIRED_ROWS);
+    applyItemMasterFormatting(ss, masterSheet);
+    formattedSheets++;
+    console.log("[Migration v12] 품목 마스터 서식 확장 완료 (최대 행: " + masterSheet.getMaxRows() + ")");
+  } else {
+    console.log("[Migration v12] 품목 마스터 시트 없음 — 스킵");
+  }
+
+  // ── Step 2: 📝 통합 입출고 기록장 ──
+  const consolidatedSheet = ss.getSheetByName(SHEET_INOUT);
+  if (consolidatedSheet) {
+    addedRowsTotal += _ensureMinRows(consolidatedSheet, REQUIRED_ROWS);
+    applyConsolidatedLogFormatting(consolidatedSheet);
+    formattedSheets++;
+    console.log("[Migration v12] 통합 입출고 기록장 서식 확장 완료 (최대 행: " + consolidatedSheet.getMaxRows() + ")");
+  } else {
+    console.log("[Migration v12] 통합 입출고 기록장 없음 — 스킵");
+  }
+
+  // ── Step 3: 📋 입출고_템플릿 + 활성 업장 시트 ──
+  // ⚠️ 업장 시트의 품목코드(B열) 드롭다운은 의도적으로 재적용하지 않는다.
+  //    removeItemCodeValidation()(RBAC.gs)이 "품목코드 직접 입력" 구조로 전환한 운영 결정이므로,
+  //    여기서 다시 목록 검증을 걸면 그 결정을 되돌리게 된다.
+  const txSheetNames = [SHEET_TEMPLATE].concat(_getActiveShopNames());
+  txSheetNames.forEach(function(name) {
+    const sh = ss.getSheetByName(name);
+    if (!sh) {
+      console.log("[Migration v12] 시트 없음 — 스킵: " + name);
+      return;
+    }
+    addedRowsTotal += _ensureMinRows(sh, REQUIRED_ROWS);
+    applyTxInputSheetFormatting(sh);
+    formattedSheets++;
+
+    // 업장 시트는 시트 보호의 편집 허용 범위도 확장해야 503행 이후 입력이 가능하다
+    // [TASK-016] 범위 계산을 공용 헬퍼로 위임 — 시트의 현재 행 수 전체가 대상이 된다
+    if (name !== SHEET_TEMPLATE) _applyShopUnprotectedRanges(sh);
+    console.log("[Migration v12] 서식 확장 완료: " + name + " (최대 행: " + sh.getMaxRows() + ")");
+  });
+
+  SpreadsheetApp.flush();
+  console.log("[Migration v12] 완료 — 시트 " + formattedSheets + "개 서식 재적용, 총 " +
+    addedRowsTotal + "행 확충 (적용 범위: 3행 ~ 각 시트 마지막 행)");
+};
+
+// [사용자 결정] v13: 📂 기초데이터 단위 목록에서 "CASE" 삭제
+//
+// TASK-002 당시 대체 단위가 정해지지 않아 v11에서는 목록 유지로 남겨 두었으나,
+// 사용자 결정으로 기초데이터 단위 목록에서 삭제한다.
+//
+// ⚠️ 품목 마스터 E열에 이미 "CASE"로 입력된 품목의 **값은 바꾸지 않는다**.
+//    대체 단위가 정해지지 않은 상태에서 임의 치환은 재고 단위를 왜곡하기 때문이다.
+//    해당 품목 수는 아래 로그와 DevTools 진단에서 확인할 수 있으며, 수동 정정 대상이다.
+//    (목록에서 빠지면 E열 드롭다운 검증에는 걸리지만 값과 수량은 그대로 유지된다.)
+MIGRATIONS[13] = function migrate_to_v13(ss) {
+  console.log("[Migration v13] 기초데이터 단위 목록에서 CASE 삭제 시작...");
+
+  const baseSheet = ss.getSheetByName(SHEET_BASE_DATA);
+  if (!baseSheet) {
+    console.log("[Migration v13] 기초데이터 시트 없음 — 스킵");
+    return;
+  }
+
+  const baseLastRow = Math.max(baseSheet.getLastRow(), 3);
+  if (baseLastRow < 3) {
+    console.log("[Migration v13] 단위 목록이 비어 있음 — 스킵");
+    return;
+  }
+
+  const unitCol = baseSheet.getRange(3, 2, baseLastRow - 2, 1).getValues().flat();
+  const kept = unitCol.filter(function(v) {
+    return v && String(v).trim().toUpperCase() !== "CASE";
+  });
+  const removed = unitCol.filter(function(v) { return Boolean(v); }).length - kept.length;
+
+  if (removed === 0) {
+    console.log("[Migration v13] 단위 목록에 CASE 없음 — 변경 없음(멱등)");
+  } else {
+    // 목록 전체를 지우고 CASE만 뺀 결과로 재작성한다 (재실행해도 동일 — 멱등)
+    baseSheet.getRange(3, 2, baseLastRow - 2, 1).clearContent();
+    if (kept.length > 0) {
+      baseSheet.getRange(3, 2, kept.length, 1).setValues(kept.map(function(v) { return [v]; }))
+        .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+    }
+    console.log("[Migration v13] 기초데이터 단위 목록에서 CASE " + removed + "건 삭제 완료");
+  }
+
+  // 품목 마스터에 남아 있는 CASE 사용 품목 수를 알린다 (값은 변경하지 않음)
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  if (masterSheet && masterSheet.getLastRow() >= 3) {
+    const masterLastRow = masterSheet.getLastRow();
+    const units = masterSheet.getRange(3, MASTER_COLS.UNIT + 1, masterLastRow - 2, 1).getValues();
+    const stillUsing = units.filter(function(r) {
+      return String(r[0] || "").trim().toUpperCase() === "CASE";
+    }).length;
+    if (stillUsing > 0) {
+      console.log("[Migration v13] ⚠️ 품목 마스터에 단위가 CASE인 품목 " + stillUsing +
+        "건이 남아 있습니다. 값은 그대로 두었으므로 대체 단위 확정 후 수동 정정이 필요합니다.");
+    } else {
+      console.log("[Migration v13] 품목 마스터에 CASE 단위 사용 품목 없음");
+    }
+  }
+
+  console.log("[Migration v13] 완료");
+};
+
+// [TASK-011] v14: 음수 재고 표시 지원 — 기존 시트에 신규 수식/서식 재적용
+//
+// 음수 재고 허용은 StockEngine.gs(계산)와 SheetBuilder.gs(수식·서식)를 함께 바꾸는데,
+// 수식과 조건부 서식은 시트 생성 시점에 한 번 구워지므로 이미 운영 중인 마스터 시트에는
+// 반영되지 않는다. 이 마이그레이션이 다음 3가지를 다시 적용한다.
+//   1) P3 적정발주량 — 일평균(I열) 0 이하이면 발주량 0 (음수 재고발 허수 발주 차단)
+//   2) W3 재고 합계금액 — 행 단위 0원 하한 (마이너스 자산 기록 차단)
+//   3) H열 서식 — 음수 강조 조건부 서식 + 숫자 서식
+// 마지막으로 재계산을 돌려 그동안 0으로 눌려 있던 결손 수량을 즉시 노출한다.
+// 값 자체는 파생 컬럼(H·I·W)만 갱신되므로 재실행해도 결과가 같다(멱등).
+MIGRATIONS[14] = function migrate_to_v14(ss) {
+  console.log("[Migration v14] 음수 재고 표시 지원 — 수식/서식 재적용 시작...");
+
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  if (!masterSheet) {
+    console.log("[Migration v14] 품목 마스터 시트 없음 — 스킵");
+    return;
+  }
+
+  // ── Step 1: 적정발주량(P3) / 재고 합계금액(W3) 수식 갱신 ──
+  masterSheet.getRange("P3").setFormula(`=ARRAYFORMULA(IF(A3:A="", "", IF(I3:I<=0, 0, IF((I3:I * M3:M) - H3:H < 0, 0, ROUNDUP((I3:I * M3:M) - H3:H, 0)))))`);
+  masterSheet.getRange("W3").setFormula(`=ARRAYFORMULA(IF(A3:A="", "", IF(T3:T * H3:H < 0, 0, T3:T * H3:H)))`);
+  console.log("[Migration v14] P3(적정발주량) / W3(재고 합계금액) 수식 갱신 완료");
+
+  // ── Step 2: H열 음수 조건부 서식 + 숫자 서식 ──
+  applyItemMasterFormatting(ss, masterSheet);
+  console.log("[Migration v14] 품목 마스터 서식 재적용 완료 (H열 음수 강조 포함)");
+
+  SpreadsheetApp.flush();
+
+  // ── Step 3: 재계산으로 결손 수량 즉시 반영 ──
+  // 재계산 실패가 수식/서식 적용까지 되돌리게 해서는 안 되므로 로그만 남긴다.
+  try {
+    recalcStockAndUsage(ss);
+    console.log("[Migration v14] 재고 재계산 완료 — 음수 재고가 있으면 H열에 노출됩니다");
+  } catch (e) {
+    console.log("[Migration v14] ⚠️ 재고 재계산 실패(수식/서식은 정상 적용됨): " + e.message);
+  }
+
+  console.log("[Migration v14] 완료");
+};
+
+// [v15] 📂 기초데이터 단위 목록에 "조", "줄" 추가
+MIGRATIONS[15] = function migrate_to_v15(ss) {
+  console.log("[Migration v15] 기초데이터 단위 목록에 '조', '줄' 추가 시작...");
+
+  const baseSheet = ss.getSheetByName(SHEET_BASE_DATA);
+  if (!baseSheet) {
+    console.log("[Migration v15] 기초데이터 시트 없음 — 스킵");
+    return;
+  }
+
+  const baseLastRow = Math.max(baseSheet.getLastRow(), 3);
+  let unitCol = baseLastRow >= 3 ? baseSheet.getRange(3, 2, baseLastRow - 2, 1).getValues().flat() : [];
+  unitCol = unitCol.filter(function(v) { return Boolean(v); });
+
+  const existingTrimmed = unitCol.map(function(v) { return String(v).trim(); });
+  const NEW_UNITS = ["조", "줄"];
+  const toAdd = NEW_UNITS.filter(function(u) { return existingTrimmed.indexOf(u) === -1; });
+
+  if (toAdd.length === 0) {
+    console.log("[Migration v15] 단위 목록에 '조', '줄' 이미 존재 — 변경 없음(멱등)");
+  } else {
+    const finalUnits = unitCol.concat(toAdd);
+    if (baseLastRow >= 3) {
+      baseSheet.getRange(3, 2, baseLastRow - 2, 1).clearContent();
+    }
+    baseSheet.getRange(3, 2, finalUnits.length, 1).setValues(finalUnits.map(function(v) { return [v]; }))
+      .setBackground(COLORS.inputBg).setHorizontalAlignment("center");
+    console.log("[Migration v15] 기초데이터 단위 목록에 신규 추가 완료: " + toAdd.join(", "));
+  }
+
+  try {
+    if (typeof CacheManager !== "undefined" && CacheManager.invalidateAll) {
+      CacheManager.invalidateAll();
+    }
+  } catch (e) {
+    console.log("[Migration v15] 캐시 무효화 스킵/실패: " + e.message);
+  }
+
+  SpreadsheetApp.flush();
+  console.log("[Migration v15] 완료");
+};
+
+// [TASK-016] v16: 서식·유효성 검사 범위를 시트의 실제 행 수까지 동적 확장
+//
+// v12(TASK-009)는 VALIDATION_ROWS=2000을 고정 상한으로 써서 3~2002행까지만 서식을 구웠다.
+// 품목이 2000건을 넘자 2003행부터 같은 결함(흰 배경·좌측정렬·드롭다운 없음)이 재발했다.
+// v16은 상수를 5000으로 올리는 동시에, 서식 적용 범위를 고정값이 아니라
+// 시트의 현재 행 수(getMaxRows)를 따라가도록 바꾼 코드로 전 시트를 다시 굽는다.
+//
+// 실제 작업은 SheetBuilder.gs의 reapplyAllSheetFormatting() 한 곳에 있다.
+// 관리자 메뉴(repairAllSheetFormatting)와 통합 갱신의 자가 복구도 같은 함수를 호출하므로
+// 서식 규칙이 마이그레이션·메뉴·빌더로 갈라질 여지가 없다.
+//
+// 값(setValues/setFormula)은 일절 호출하지 않으므로 기존 입력 데이터는 보존된다. 멱등.
+MIGRATIONS[16] = function migrate_to_v16(ss) {
+  console.log("[Migration v16] 서식/검증 범위 동적 확장 시작 (VALIDATION_ROWS=" + VALIDATION_ROWS + " 하한)...");
+
+  const r = reapplyAllSheetFormatting(ss);
+
+  SpreadsheetApp.flush();
+  console.log("[Migration v16] 완료 — 시트 " + r.sheets + "개 서식 재적용, 총 " + r.addedRows + "행 확충" +
+    (r.missing.length ? " (없는 시트: " + r.missing.join(", ") + ")" : ""));
 };

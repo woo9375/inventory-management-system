@@ -1,6 +1,24 @@
+<!--
+  ⚠️ [DEPRECATED & UNUSED FILE] — 이 파일은 동작하지 않는 사장된 코드입니다.
+
+  · `src/Index.html`이 이 파일을 include하지 않습니다.
+    (include 목록: Index.html:522-527 — JS_Auth / JS_UI / JS_Tx / JS_Config / JS_BaseData 5개뿐)
+  · 사이드바 네비게이션에도 품목 마스터 탭이 없습니다.
+    (nav 목록: Index.html:81-101 — dashboard / transactions / shop / season / user / basedata / mysettings 7개뿐)
+  · 따라서 `tab-master`, `masterTableBody`, `masterSearchInput` 등 이 파일이 참조하는
+    DOM 엘리먼트는 런타임에 존재하지 않으며, 이 파일의 함수는 단 한 번도 실행되지 않습니다.
+
+  품목 마스터는 **웹앱 화면이 없으며**, 구글 스프레드시트 `🗂️ 품목 마스터` 시트에서 100% 직접 관리합니다.
+  웹앱에서 품목 현재고가 보이는 유일한 곳은 대시보드의 '위험·발주필요 품목' 테이블(`JS_UI.html`)입니다.
+
+  이 파일은 향후 웹 UI 복원 가능성을 위해 보존 중입니다.
+  **절대 수정하거나 기능 요구사항의 대상으로 삼지 마십시오.** 여기를 고쳐도 사용자에게는 아무 변화가 없습니다.
+  (제거 배경: 커밋 e4a6d6e / 참조: Docs/Architecture.md — "SPA에 포함되지 않는 src/ 파일",
+   .agents/rules/00_roles-and-workflow.md — "3. 시스템 물리적 경계")
+-->
 <script>
 // ═══════════════════════════════════════════════════════════════
-//  품목 마스터
+//  품목 마스터 [DEPRECATED — 위 주석 참조. Index.html에 include되지 않음]
 // ═══════════════════════════════════════════════════════════════
 function loadItemMaster() {
   showLoading();

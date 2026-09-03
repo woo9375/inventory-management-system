@@ -84,11 +84,15 @@ const COLORS = {
 
 const ALERT_EMAIL = "[EMAIL_ADDRESS]";
 const SEND_EMAIL_ALERT = false; 
-const VALIDATION_ROWS = 500; // 성능 최적화를 위한 검증/서식 고정 적용 범위
+// [TASK-016] 2000 → 5000. 이 값은 이제 **상한이 아니라 하한**이다.
+// SheetBuilder의 _formatRowCount()가 시트의 실제 행 수(getMaxRows)까지 서식을 넓히므로,
+// 이 상수는 "새 시트를 최소 몇 행까지 미리 구워 둘 것인가"만 결정한다.
+// (TASK-009에서 500→2000으로 올렸지만 품목이 2000건을 넘자 2003행부터 같은 결함이 재발했다.)
+const VALIDATION_ROWS = 5000; // 서식/검증을 미리 구워 두는 최소 행 수
 
 // [TASK-002] v9 → v11로 상향: 기존 v10(System_Logs) 마이그레이션이 이 상수가
 // 9에 머물러 있어 runMigrations()에서 한 번도 실행되지 않았던 것을 함께 바로잡음.
-const CURRENT_SCHEMA_VERSION = 11; // [v11] v11 스키마: 단위 목록 정비(추가/명칭변경/CASE 제거)
+const CURRENT_SCHEMA_VERSION = 16; // [v12] 서식/검증 행 범위 확장(TASK-009) + [v13] 단위 목록 CASE 삭제 + [v14] 음수 재고 수식/서식(TASK-011) + [v15] 단위 '조', '줄' 추가 + [v16] 서식 범위 동적 확장(TASK-016)
 
 // [v8.0] 성능 최적화용 캐시 키 & TTL 상수
 const CACHE_KEYS = {

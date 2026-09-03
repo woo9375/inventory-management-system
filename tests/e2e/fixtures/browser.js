@@ -57,6 +57,38 @@ function preferredChannels() {
 }
 
 /**
+ * [TASK-007] 다운로드 시 Chrome이 즉사하던 원인 — `Default/shared_proto_db` 제거
+ *
+ * ## 증상
+ * 영속 프로필로 실행하면 `<a download>` 다운로드가 시작되는 순간 Chrome 프로세스가
+ * exitCode 3221225501(0xC000001D, STATUS_ILLEGAL_INSTRUCTION = Chrome의 CHECK 실패)로 죽는다.
+ * 브라우저가 죽으면 Playwright는 다운로드 산출물을 `deleteOnContextClose()`로 폐기하므로
+ * `download.saveAs()`가 `Target page, context or browser has been closed`를 던진다.
+ * (page/context는 멀쩡한데 산출물만 폐기된다는 기존 진단은 오진이었다 — 실제로는 브라우저가 죽는다.)
+ *
+ * ## 실측으로 좁힌 근거
+ * - 임시 프로필(신규 디렉터리)이면 headless + Chrome 채널에서도 항상 성공한다 → 프로필 내용이 원인
+ * - 프로필을 복사해 구성요소를 이분 탐색한 결과 `Default/shared_proto_db` 단독으로 재현된다
+ * - 이 디렉터리만 지우면 성공하지만 Chrome이 실행 중 다시 만들어 놓기 때문에 **다음 실행이 또 죽는다**
+ *   → 간헐적 성공/실패(flaky)와 headed/headless 차이로 보였던 현상의 실체
+ * - downloadsPath 지정, --disable-gpu, DownloadBubble/IPH 비활성화, Safe Browsing 비활성화,
+ *   --headless=old, 로그인 관련 pref 제거는 모두 무효 (실측 배제)
+ *
+ * ## 대응
+ * 매 실행 직전에 이 LevelDB를 지운다. optimization guide·commerce 등 캐시성 proto 저장소이며
+ * 인증 쿠키(`Default/Network/Cookies`)나 `Local State`와 무관하므로 로그인 세션에 영향이 없다.
+ */
+function purgeCrashingSharedProtoDb() {
+  const target = path.join(PROFILE_DIR, 'Default', 'shared_proto_db');
+  if (!fs.existsSync(target)) return;
+  try {
+    fs.rmSync(target, { recursive: true, force: true });
+  } catch (e) {
+    console.warn(`[profile] shared_proto_db 정리 실패(무시하고 계속): ${e.message}`);
+  }
+}
+
+/**
  * 영속 프로필로 브라우저 컨텍스트를 연다.
  * @param {{headless?: boolean, viewport?: object|null}} [opts]
  */
@@ -65,6 +97,7 @@ async function launchProfileContext(opts) {
   const headless = options.headless !== false;
 
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
+  purgeCrashingSharedProtoDb();
 
   const launchOptions = {
     headless: headless,

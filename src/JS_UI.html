@@ -145,6 +145,12 @@ function renderDashboard(data) {
       var td = document.createElement('td');
       var node = (index === 0 || index === 6) ? document.createElement('strong') : document.createElement('span');
       node.textContent = value == null ? '' : String(value);
+      // [TASK-011] 현재고(index 3)가 음수면 초과출고/실사 결손이므로 붉은 배지로 강조
+      if (index === 3 && Number(value) < 0) {
+        node.textContent = '🚨 ' + node.textContent;
+        node.style.cssText = 'color:#c53929; font-weight:700; background:#fce8e6; padding:2px 6px; border-radius:4px;';
+        node.title = '초과출고 — 재고 실사 조정 필요';
+      }
       td.appendChild(node);
       tr.appendChild(td);
     });

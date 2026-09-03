@@ -47,6 +47,7 @@ function makeSheet(name, rowsFromRow3, opLog, hooks) {
     setName(n) { sheet.name = n; return sheet; },
     setFrozenRows(n) { sheet.frozenRows = n; return sheet; },
     getMaxRows() { return Math.max(sheet.getLastRow(), 3) + 100; },
+    getSheetId() { return sheet.sheetId; },
     getProtections(type) { return sheet.protections.filter((p) => p.type === type); },
     getLastRow() {
       const rows = Object.keys(grid).map(Number).filter((r) => (grid[r] || []).some((v) => v !== '' && v !== undefined));
@@ -156,6 +157,11 @@ function loadContext(txRows, masterRows, opts) {
     }
   });
   const masterSheet = makeSheet('MASTER', masterRows, opLog);
+  // [TASK-006] 업장 시트: 통합 시트와 동일한 원본 행을 보관한다(월마감은 이 시트를 건드리지 않는다)
+  const shopTxSheet = makeSheet('SHOP_TX', (options.shopRows || txRows).map((r) => r.slice()), opLog);
+  shopTxSheet.sheetId = 111;
+  // 업장관리 시트: [분류|업장명|태그|상태|바로가기|GID]
+  const shopsSheet = makeSheet('SHOPS', [['식음', '테스트업장', 'TX', '생성완료', '', 111]], opLog);
   const seasonSheet = makeSeasonSheet();
   const archiveSheet = makeSheet('ARCHIVE_NEW', [], opLog);
 
@@ -173,6 +179,8 @@ function loadContext(txRows, masterRows, opts) {
   };
 
   let flushCount = 0;
+
+  const scriptProps = { ARCHIVE_FOLDER_ID: ARCHIVE_FOLDER_ID };
 
   const sandbox = {
     console: {
@@ -192,8 +200,12 @@ function loadContext(txRows, masterRows, opts) {
     },
     Session: { getScriptTimeZone: () => 'Asia/Seoul' },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() { opLog.push('UNLOCK'); } }) },
+    // [TASK-010] 마감 성공 시 LAST_CLOSED_CUTOFF를 기록하므로 setProperty도 필요하다
     PropertiesService: {
-      getScriptProperties: () => ({ getProperty: () => ARCHIVE_FOLDER_ID })
+      getScriptProperties: () => ({
+        getProperty: (k) => (k in scriptProps ? scriptProps[k] : null),
+        setProperty: (k, v) => { scriptProps[k] = v; }
+      })
     },
     DriveApp: {
       getFolderById(id) {
@@ -209,8 +221,10 @@ function loadContext(txRows, masterRows, opts) {
           if (n === '📝 통합 입출고 기록장') return txSheet;
           if (n === '🗂️ 품목 마스터') return masterSheet;
           if (n === '📅 시즌설정') return seasonSheet;
+          if (n === '🏢 업장관리') return shopsSheet;
           return null;
-        }
+        },
+        getSheets: () => [txSheet, masterSheet, shopTxSheet, shopsSheet]
       }),
       create(name) {
         createdSpreadsheets.push(name);
@@ -223,17 +237,21 @@ function loadContext(txRows, masterRows, opts) {
         if (options.failOn === 'flush' && flushCount === 1) throw new Error('의도적 실패: 첫 flush');
       }
     },
+    CacheManager: { invalidateAll: () => { sandbox.__cacheInvalidated = true; } },
+    __cacheInvalidated: false,
     validateSession: () => ({ name: '관리자', role: options.role || 'admin' })
   };
 
   const ctx = vm.createContext(sandbox);
-  ['Config.gs', 'StockEngine.gs', 'SheetBuilder.gs', 'Archive.gs'].forEach((f) => {
+  ['Config.gs', 'StockEngine.gs', 'SheetBuilder.gs', 'Dashboard.gs', 'Archive.gs'].forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
   });
 
   ctx.__txSheet = txSheet;
   ctx.__masterSheet = masterSheet;
+  ctx.__shopTxSheet = shopTxSheet;
   ctx.__archiveSheet = archiveSheet;
+  ctx.__scriptProps = scriptProps;
   ctx.__opLog = opLog;
   ctx.__warnings = warnings;
   ctx.__errors = errors;
@@ -317,6 +335,13 @@ test('기본 마감: FIFO 잔여 로트가 이월 입고로 생성되고 INIT_ST
     assert.strictEqual(r[7], '2026년 7월 마감 이월');
     assert.ok(/^SYS-20260701-[0-9A-F]{8}$/.test(r[8]), '이월 거래ID 형식: ' + r[8]);
   });
+
+  // [TASK-010] 마감 성공 시 마감 기준일(마감월 말일)이 ScriptProperties에 기록된다
+  assert.strictEqual(ctx.__scriptProps.LAST_CLOSED_CUTOFF, '2026-07-31',
+    '마감 기준일 기록값: ' + ctx.__scriptProps.LAST_CLOSED_CUTOFF);
+  assert.strictEqual(ctx.getLatestClosingCutoff(), '2026-07-31');
+  assert.strictEqual(ctx.validateNotClosedMonth('2026-07-20').blocked, true, '마감월 거래는 차단되어야 함');
+  assert.strictEqual(ctx.validateNotClosedMonth('2026-08-01').blocked, false, '익월 1일은 허용되어야 함');
 
   // INIT_STOCK 리셋
   assert.strictEqual(masterRowsOf(ctx)[0][INIT_STOCK_COL], 0);
@@ -562,6 +587,67 @@ test('초기재고 보호: 마감 후 G열에 경고 전용 보호가 걸리고,
   ctx.applyInitStockProtection(ctx.SpreadsheetApp.getActiveSpreadsheet());
   ctx.applyInitStockProtection(ctx.SpreadsheetApp.getActiveSpreadsheet());
   assert.strictEqual(ctx.__masterSheet.protections.length, 1, '재적용 시 기존 보호를 교체해야 함');
+});
+
+// ─────────────────────────────────────────────────────────────
+//  케이스 13: [회귀] 마감 후 재취합이 마감을 통째로 무효화한다
+//
+//  DEV Human QA(2026-09-01)에서 실제로 발생한 데이터 손실을 재현한다.
+//  `executeMonthlyClosing`은 통합 시트(SHEET_INOUT)만 정리하고 **업장 시트는 건드리지 않는다.**
+//  그런데 `consolidateAllSheets()`는 통합 시트를 비우고 업장 시트로부터 통째로 재구성한다.
+//  따라서 재취합이 한 번이라도 돌면:
+//    - 아카이브했던 과거 행이 업장 시트에서 되살아나고
+//    - 업장 시트에 없는 "마감 이월" 행은 삭제되며
+//    - INIT_STOCK은 이미 0이라 복구되지 않는다
+//  → 초기재고분이 통째로 증발한다.
+//
+//  재취합 진입점: 매일 자정 트리거(Triggers.gs), 웹앱 '신규 내역 취합'/'시트 동기화',
+//                 시스템 명령 refreshDashboard (모두 refreshDashboard → consolidateAllSheets)
+//
+//  [수정] 두 가지를 함께 적용해야 정합성이 유지된다:
+//    1) 월마감이 업장 시트에서도 마감 대상 행을 제거 (_trimShopSheetsForClosing)
+//    2) 재취합이 통합 시트의 "마감 이월" 행을 보존 (consolidateAllSheets)
+//  하나만 적용하면 각각 재고 증발 / 이중 계상이 되므로 둘 다를 검증한다.
+// ─────────────────────────────────────────────────────────────
+test('[회귀] 마감 후 재취합을 반복해도 이월 행과 현재고가 유지된다', () => {
+  const txRows = [
+    tx('2026-08-05', 'A001', '토마토', '입고', 10, 1000),
+    tx('2026-08-20', 'A001', '토마토', '출고', 4, 1000)
+  ];
+  const ctx = loadContext(txRows, [master('A001', '토마토', 3, 900)], {});
+
+  // 마감 전 현재고: 초기재고 3 + 입고 10 - 출고 4 = 9
+  const before = loadContext(txRows.map((r) => r.slice()), [master('A001', '토마토', 3, 900)], {});
+  before.recalcStockAndUsage(before.SpreadsheetApp.getActiveSpreadsheet());
+  assert.strictEqual(masterRowsOf(before)[0][CURRENT_STOCK_COL], 9);
+
+  // 마감 실행 → 이월 9개 생성, INIT_STOCK 0
+  const res = ctx.executeMonthlyClosing('t', 2026, 8);
+  assert.ok(res.success, res.message);
+  assert.strictEqual(carryoverRows(txRowsOf(ctx)).reduce((s, r) => s + r[4], 0), 9, '이월 9개');
+  assert.strictEqual(masterRowsOf(ctx)[0][CURRENT_STOCK_COL], 9, '마감 직후 현재고는 보존된다');
+  assert.strictEqual(masterRowsOf(ctx)[0][INIT_STOCK_COL], 0);
+
+  // 업장 시트에서도 마감 대상 행이 제거되어야 한다
+  assert.strictEqual(sheetRows(ctx.__shopTxSheet, 9).length, 0, '업장 시트의 마감 대상 행이 제거된다');
+  assert.ok(res.message.indexOf('업장 시트') >= 0, '정리 결과를 메시지로 알린다: ' + res.message);
+  assert.strictEqual(ctx.__cacheInvalidated, true, '마감 후 캐시를 무효화해야 웹앱이 최신 재고를 읽는다');
+
+  // 재취합 발생 (자정 트리거 / '신규 내역 취합' / '시트 동기화') — 2회 반복해도 안정적이어야 한다
+  const ss = ctx.SpreadsheetApp.getActiveSpreadsheet();
+  for (let i = 1; i <= 2; i++) {
+    ctx.consolidateAllSheets(ss);
+    ctx.recalcStockAndUsage(ss);
+
+    const after = txRowsOf(ctx);
+    assert.strictEqual(carryoverRows(after).length, 1, `재취합 ${i}회 후에도 이월 행이 보존된다`);
+    assert.strictEqual(after.length, 1, `재취합 ${i}회 후 아카이브 행이 되살아나지 않는다`);
+    assert.strictEqual(
+      masterRowsOf(ctx)[0][CURRENT_STOCK_COL], 9,
+      `재취합 ${i}회 후에도 현재고 9가 유지된다 (증발도 이중 계상도 없음)`
+    );
+    assert.strictEqual(masterRowsOf(ctx)[0][INIT_STOCK_COL], 0);
+  }
 });
 
 console.log(`\n✓ 월마감 정합성 테스트 ${passed}건 통과`);

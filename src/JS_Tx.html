@@ -60,6 +60,22 @@ function loadShopList() {
     .getShopList(getToken());
 }
 
+// [TASK-010] 마감된 기간의 날짜를 아예 고를 수 없게 한다 (서버 검증과 이중 방어).
+// 서버(addTransaction)의 validateNotClosedMonth가 1차 방어이고, 이것은 UX 보조다.
+var closedCutoffDate = null; // "yyyy-MM-dd" 또는 null(마감 이력 없음)
+
+function loadClosingCutoff() {
+  google.script.run
+    .withSuccessHandler(function(info) {
+      if (!info || !info.success || !info.minDate) return;
+      closedCutoffDate = info.cutoff;
+      var txDate = document.getElementById('txDate');
+      if (txDate) txDate.min = info.minDate;
+    })
+    .withFailureHandler(function() {})
+    .getClosingCutoffInfo(getToken());
+}
+
 function loadItemCodes() {
   google.script.run
     .withSuccessHandler(function(items) { itemCodeList = items || []; })
@@ -207,6 +223,10 @@ function saveTransaction() {
 
   if (!txData.date || !txData.code || !txData.type || !txData.qty) return showToast('날짜, 품목코드, 구분, 수량은 필수입니다', 'warning');
   if (Number(txData.qty) <= 0) return showToast('수량은 1 이상이어야 합니다', 'warning');
+  // [TASK-010] 마감된 기간은 서버에서도 거부되지만, 왕복 전에 즉시 안내한다
+  if (closedCutoffDate && txData.date <= closedCutoffDate) {
+    return showToast('❌ ' + closedCutoffDate + ' 이전은 이미 월마감된 기간입니다. 당월 재고조정으로 등록하세요', 'error');
+  }
 
   showLoading();
   google.script.run

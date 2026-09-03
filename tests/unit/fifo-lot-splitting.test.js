@@ -99,13 +99,19 @@ function loadContext(txRows, itemMap) {
         getSheetByName: (name) => (name === '🏢 업장관리' ? shopSheet : txSheet)
       })
     },
+    // [TASK-010] addTransaction이 Archive.gs의 마감일 가드를 호출한다.
+    // 마감 이력이 없는 상태(프로퍼티 없음 + 이월 행 없음)이므로 어떤 날짜도 차단되지 않아야 한다.
+    PropertiesService: {
+      getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {} })
+    },
+    DriveApp: {},
     validateSession: () => ({ name: '테스터', role: 'admin', assignedShops: ['테스트업장'] }),
     _canAccessShop: () => true,
     __invalidated: false
   };
 
   const ctx = vm.createContext(sandbox);
-  ['Config.gs', 'StockEngine.gs', 'TxService.gs'].forEach((f) => {
+  ['Config.gs', 'StockEngine.gs', 'Archive.gs', 'TxService.gs'].forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
   });
 

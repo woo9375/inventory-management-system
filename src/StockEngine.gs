@@ -162,7 +162,10 @@ function recalcStockAndUsage(ss) {
       return;
     }
     
-    const currentStock = Math.max(0, initStock + (stockMap[code] || 0));
+    // [TASK-011] 현재고는 음수를 그대로 노출한다.
+    //   과거에는 Math.max(0, ...)로 0에 고정했으나, 그러면 선출고/실사 결손 수량을
+    //   현업이 확인할 수 없었다. 음수는 "미입고 또는 결손"을 뜻하는 실제 신호다.
+    const currentStock = initStock + (stockMap[code] || 0);
     const usage = usageMap[code] || 0;
     const safeDays = Math.max(targetDays, 1);
     const dailyUsage = usage > 0 ? Number((usage / safeDays).toFixed(2)) : 0.0;
@@ -170,13 +173,20 @@ function recalcStockAndUsage(ss) {
     stockUpdates.push([currentStock, dailyUsage]);
     
     // [v7.0] FIFO 기반 합계금액 (로트가 없으면 현재 매입단가 × 현재고)
+    // [TASK-011] 수량은 음수를 허용하되 회계상 재고자산(W열)은 0원을 하한으로 둔다.
+    //   마이너스 자산이 장부에 기록되면 회계 기준 위반이므로 평가액만 0으로 절사한다.
+    if (currentStock <= 0) {
+      valueUpdates.push([0]);
+      return;
+    }
+
     const fifoValue = fifoValueMap[code];
     if (fifoValue !== undefined) {
-      valueUpdates.push([fifoValue]);
+      valueUpdates.push([Math.max(0, fifoValue)]);
     } else {
       // 입고 기록이 없는 경우 (초기재고만 있는 경우) — 현재 매입단가 × 현재고
       const unitPrice = Number(row[19]) || 0;
-      valueUpdates.push([unitPrice * currentStock]);
+      valueUpdates.push([Math.max(0, unitPrice * currentStock)]);
     }
   });
 

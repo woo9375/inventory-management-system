@@ -107,6 +107,7 @@ function onLoginSuccess() {
   loadDashboard();
   loadShopList();
   loadItemCodes();
+  loadClosingCutoff(); // [TASK-010] 거래일 선택 하한(마감일 익일) 설정
   
   // 마지막 취합 시간 조회 (폴링 간격 1분 유지 또는 1회성으로 사용 가능. 여기선 1분 유지)
   updateLastSyncTime();

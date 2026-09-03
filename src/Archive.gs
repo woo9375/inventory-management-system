@@ -1,135 +1,7 @@
 /**
- * 호텔덕구온천 구매 재고 관리 시스템 v7.0 — 아카이빙 & 백업 모듈
+ * 호텔덕구온천 구매 재고 관리 시스템 v7.0 — 월마감 & 백업 모듈
  * [v7.0] 시트 참조 변경 + 9열 입출고 구조
  */
-
-
-// ═══════════════════════════════════════════════════════════════════
-//  자동 아카이빙 파이프라인
-// ═══════════════════════════════════════════════════════════════════
-
-function archiveOldRecords() {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (e) {
-    Logger.log("[Archive] 다른 작업이 실행 중이어서 자동 보관을 건너뜁니다.");
-    return;
-  }
-
-  try {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const consolidated = ss.getSheetByName(SHEET_INOUT);
-  const consLastRow = consolidated.getLastRow();
-  if (consLastRow < 3) {
-    console.log("[Archive] 아카이브 대상 데이터 없음");
-    return;
-  }
-  
-  // [v7.0] 9열 구조
-  const allData = consolidated.getRange(3, 1, consLastRow - 2, TX_COLS).getValues();
-  const today = new Date();
-  const archiveCutoff = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  
-  const archiveRows = [];
-  const keepRows = [];
-  
-  allData.forEach(row => {
-    if (!row[0] && !row[1]) return;
-    const dateVal = toLocalDate(row[0]);
-    if (!isNaN(dateVal.getTime()) && dateVal < archiveCutoff) {
-      archiveRows.push(row);
-    } else {
-      keepRows.push(row);
-    }
-  });
-  
-  if (archiveRows.length === 0) {
-    console.log("[Archive] 아카이브 대상 데이터 없음");
-    return;
-  }
-  
-  const oldestDate = toLocalDate(archiveRows[0][0]);
-  const archiveYear = oldestDate.getFullYear();
-  const archiveName = `[아카이브] 호텔덕구온천 입출고 기록 ${archiveYear}년`;
-  
-  let archiveSS = _getOrCreateArchiveSpreadsheet(archiveName);
-  
-  // 월별 시트로 분류
-  const monthBuckets = {};
-  archiveRows.forEach(row => {
-    const d = toLocalDate(row[0]);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (!monthBuckets[key]) monthBuckets[key] = [];
-    monthBuckets[key].push(row);
-  });
-  
-  Object.keys(monthBuckets).sort().forEach(monthKey => {
-    let archiveSheet = archiveSS.getSheetByName(monthKey);
-    if (!archiveSheet) {
-      archiveSheet = archiveSS.insertSheet(monthKey);
-      // [v7.0] 9열 헤더
-      const headers = ["날짜", "품목코드", "품목명", "구분", "수량", "단가", "담당자", "비고", "거래ID"];
-      archiveSheet.getRange("A1:I1").setValues([headers])
-        .setBackground(COLORS.headerBg).setFontColor(COLORS.headerText)
-        .setFontWeight("bold").setHorizontalAlignment("center");
-      archiveSheet.setFrozenRows(1);
-    }
-    
-    const rows = monthBuckets[monthKey];
-    const existingIds = new Set();
-    if (archiveSheet.getLastRow() >= 2) {
-      archiveSheet.getRange(2, 9, archiveSheet.getLastRow() - 1, 1).getValues()
-        .forEach(row => { if (row[0]) existingIds.add(String(row[0])); });
-    }
-    const newRows = rows.filter(row => row[8] && !existingIds.has(String(row[8])));
-    if (newRows.length > 0) {
-      const startRow = Math.max(archiveSheet.getLastRow() + 1, 2);
-      archiveSheet.getRange(startRow, 1, newRows.length, TX_COLS).setValues(newRows)
-        .setHorizontalAlignment("center");
-    }
-  });
-  
-  // 기본 Sheet1 제거
-  try {
-    const defaultSheet = archiveSS.getSheetByName("Sheet1");
-    if (defaultSheet && archiveSS.getSheets().length > 1) {
-      archiveSS.deleteSheet(defaultSheet);
-    }
-  } catch(e) {}
-  
-  SpreadsheetApp.flush();
-  Logger.log(`[Archive] ${archiveRows.length}건 안전 보관 완료 (${Object.keys(monthBuckets).length}개 월별 시트, 원본 유지)`);
-  } catch (e) {
-    _logError(e, "archiveOldRecords");
-    throw e;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function _getOrCreateArchiveSpreadsheet(name) {
-  const files = DriveApp.getFilesByName(name);
-  if (files.hasNext()) {
-    return SpreadsheetApp.open(files.next());
-  }
-  
-  const mainFile = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId());
-  const parentFolders = mainFile.getParents();
-  const parentFolder = parentFolders.hasNext() ? parentFolders.next() : DriveApp.getRootFolder();
-  
-  const newSS = SpreadsheetApp.create(name);
-  const newFile = DriveApp.getFileById(newSS.getId());
-  parentFolder.addFile(newFile);
-  
-  try {
-    DriveApp.getRootFolder().removeFile(newFile);
-  } catch(e) {
-    console.error("[Archive] 루트 폴더 제거 실패 (계속 진행): " + e.message);
-  }
-  
-  return newSS;
-}
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -225,6 +97,19 @@ function executeMonthlyClosing(token, year, month) {
   
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
   const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues(); // MASTER_COLS.INIT_STOCK(인덱스 6)이 초기재고
+
+  // [TASK-011] 음수 재고 가드레일 — 시트를 건드리기 전에 검사한다.
+  //   마감은 과거 내역을 아카이브로 잘라내고 잔여 로트(remaining > 0)만 이월하므로,
+  //   음수 재고 상태로 마감하면 결손 수량이 흔적 없이 0으로 둔갑해 영구 유실된다.
+  const negativeItems = collectNegativeStockItems(masterData, txData);
+  if (negativeItems.length > 0) {
+    const sample = negativeItems.slice(0, 3).map(it => `${it.code}(${it.name}: ${it.stock}개)`).join(", ");
+    const etc = negativeItems.length > 3 ? ` 외 ${negativeItems.length - 3}건` : "";
+    return {
+      success: false,
+      message: `❌ [월마감 차단] 현재고가 음수인 품목이 ${negativeItems.length}건 있습니다 (${sample}${etc}). 누락된 입고 전표 등록 또는 재고 실사 조정을 완료한 후 마감해주세요.`
+    };
+  }
   
   // 마감일 기준: 해당 연/월의 마지막 날
   const cutoffDate = new Date(year, month, 0, 23, 59, 59);
@@ -373,6 +258,7 @@ function executeMonthlyClosing(token, year, month) {
   // [TASK-006] 리셋 전 초기재고를 메모리에 백업 (중간 실패 시 원복용)
   const initStockBackup = masterData.map(r => [Number(r[MASTER_COLS.INIT_STOCK]) || 0]);
   let txSheetMutated = false;
+  let shopTrim = { sheets: 0, removed: 0 };
 
   try {
     // [TASK-006] 초기재고 리셋을 이월 행 삽입보다 **먼저** 수행한다.
@@ -395,6 +281,11 @@ function executeMonthlyClosing(token, year, month) {
         .setBackground(COLORS.autoBg);
     }
 
+    // [TASK-006] 업장 시트에서도 마감 대상 행을 제거한다.
+    // 통합 시트는 업장 시트로부터 재구성되는 파생 뷰이므로, 업장 시트를 그대로 두면
+    // 다음 재취합에서 아카이브한 과거 행이 되살아나고 이월 행이 지워져 마감이 무효화된다.
+    shopTrim = _trimShopSheetsForClosing(ss, cutoffDate);
+
     SpreadsheetApp.flush();
   } catch (e) {
     // [TASK-006] 원복을 시도한 뒤 에러를 그대로 다시 던진다 (실패를 성공으로 둔갑시키지 않는다)
@@ -416,7 +307,18 @@ function executeMonthlyClosing(token, year, month) {
 
   recalcStockAndUsage(ss);
 
+  // [TASK-006] 마감은 재고/초기재고를 통째로 바꾸므로 캐시를 즉시 버린다.
+  // (캐시 TTL 60초 동안 웹앱이 마감 전 수치를 그대로 보여주던 문제)
+  try { CacheManager.invalidateAll(); } catch (e) { console.warn('[TASK-006] 캐시 무효화 실패: ' + e.message); }
+
+  // [TASK-010] 마감 성공이 확정된 시점에 마감 기준일을 기록한다.
+  // 이후 addTransaction/onEdit이 이 값을 기준으로 과거 마감월 입력을 차단한다.
+  setLatestClosingCutoff(cutoffDate);
+
   let closingMessage = `${year}년 ${month}월 마감 완료. ${archiveRows.length}건 보관, ${newCarryoverRows.length}건 이월됨.`;
+  if (shopTrim.removed > 0) {
+    closingMessage += ` 업장 시트 ${shopTrim.sheets}곳에서 ${shopTrim.removed}건 정리됨.`;
+  }
   if (doubleCountRisks.length > 0) {
     closingMessage += ` ⚠️ 초기재고 이중 계상 위험 ${doubleCountRisks.length}건 감지 (실행 로그 확인).`;
   }
@@ -425,6 +327,51 @@ function executeMonthlyClosing(token, year, month) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-011] 음수 재고 마감 가드레일
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 마감을 차단해야 하는 음수 재고 품목을 수집한다.
+ *
+ * 마스터 H열(현재고)은 recalcStockAndUsage()가 갱신하는 파생값이라 마지막 재계산
+ * 이후의 입출고를 반영하지 못했을 수 있다. 그래서 기록값(H열)과 초기재고+실적으로
+ * 재계산한 값을 함께 보고, **둘 중 하나라도 음수면** 차단 대상으로 판정한다
+ * (더 보수적인 쪽 수량을 보고한다). 미사용 품목은 실사 대상이 아니므로 제외한다.
+ *
+ * @param {Array<Array>} masterData 품목 마스터 3행 이후 (24열)
+ * @param {Array<Array>} txData     통합 입출고 기록장 3행 이후 (9열)
+ * @return {Array<{code: string, name: string, stock: number}>} 음수 재고 품목
+ */
+function collectNegativeStockItems(masterData, txData) {
+  const deltaMap = {};
+  (txData || []).forEach(row => {
+    const code = row[1];
+    if (!code) return;
+    const type = row[3];
+    const qty = Number(row[4]) || 0;
+    if (type === "입고") deltaMap[code] = (deltaMap[code] || 0) + qty;
+    if (type === "출고" || type === "폐기") deltaMap[code] = (deltaMap[code] || 0) - qty;
+  });
+
+  const negatives = [];
+  (masterData || []).forEach(row => {
+    const code = row[MASTER_COLS.CODE];
+    if (!code) return;
+    if (String(row[MASTER_COLS.USAGE_STATUS]).trim() === "미사용") return;
+
+    const computed = (Number(row[MASTER_COLS.INIT_STOCK]) || 0) + (deltaMap[code] || 0);
+    const recorded = Number(row[MASTER_COLS.CURRENT_STOCK]) || 0;
+    const stock = Math.min(computed, recorded);
+    if (stock < 0) {
+      negatives.push({ code: code, name: row[MASTER_COLS.NAME] || code, stock: stock });
+    }
+  });
+
+  return negatives;
 }
 
 
@@ -484,8 +431,7 @@ function detectCarryoverDoubleCount(masterRows, txRows) {
   const carryoverQty = {};
   (txRows || []).forEach(row => {
     const code = row[1];
-    if (!code || row[3] !== "입고") return;
-    if (String(row[7] || "").indexOf("마감 이월") < 0) return;
+    if (!code || !isCarryoverRow(row)) return;
     carryoverQty[code] = (carryoverQty[code] || 0) + (Number(row[4]) || 0);
   });
 
@@ -504,4 +450,207 @@ function detectCarryoverDoubleCount(masterRows, txRows) {
   });
 
   return risks;
+}
+
+
+/** 월마감이 생성하는 이월 입고 행의 비고 태그 */
+const CARRYOVER_NOTE_TAG = "마감 이월";
+
+/**
+ * 해당 행이 월마감으로 생성된 "이월 입고" 행인지 판별한다.
+ * 이월 행은 통합 시트(SHEET_INOUT)에만 존재하고 업장 시트에는 없으므로,
+ * 재취합(consolidateAllSheets)이 이 행을 지우지 않도록 식별하는 데 쓴다.
+ * @param {Array<*>} row TX_COLS(9열) 입출고 행
+ * @return {boolean}
+ */
+function isCarryoverRow(row) {
+  if (!row) return false;
+  return row[3] === "입고" && String(row[7] || "").indexOf(CARRYOVER_NOTE_TAG) >= 0;
+}
+
+/**
+ * [TASK-006] 마감 대상 행을 업장 시트에서도 제거한다.
+ *
+ * 통합 시트(SHEET_INOUT)는 `consolidateAllSheets()`가 업장 시트로부터 통째로 재구성하는
+ * **파생 뷰**다. 월마감이 통합 시트만 정리하면, 다음 재취합(자정 트리거 / '신규 내역 취합' /
+ * '시트 동기화')에서 아카이브했던 과거 행이 업장 시트로부터 되살아나고 이월 행은 사라진다.
+ * 그 결과 초기재고분이 통째로 증발한다 (2026-09-01 DEV에서 실제 발생).
+ *
+ * 원본은 이 함수가 호출되기 전에 이미 Google Drive 아카이브 스프레드시트로 이관되어 있으며,
+ * 거래ID 접두사(TX/AX/MB/WB/HA)로 어느 업장의 행이었는지 역추적할 수 있다.
+ *
+ * @param {Spreadsheet} ss
+ * @param {Date} cutoffDate 이 시각 이전(이하) 행을 제거한다
+ * @return {{sheets: number, removed: number}} 정리한 업장 시트 수와 제거 행 수
+ */
+function _trimShopSheetsForClosing(ss, cutoffDate) {
+  const result = { sheets: 0, removed: 0 };
+
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+  if (!shopSheet) return result;
+
+  const shopLastRow = shopSheet.getLastRow();
+  if (shopLastRow < 3) return result;
+
+  const configRows = shopSheet.getRange(3, 1, shopLastRow - 2, 6).getValues();
+
+  configRows.forEach(row => {
+    const shopName = row[1], status = row[3], gid = row[5];
+    if (!shopName || status !== "생성완료" || !gid) return;
+
+    const sh = ss.getSheets().find(s => s.getSheetId() == gid);
+    if (!sh) return;
+
+    const last = sh.getLastRow();
+    if (last < 3) return;
+
+    const rows = sh.getRange(3, 1, last - 2, TX_COLS).getValues();
+    const keepRows = [];
+    let removedHere = 0;
+
+    rows.forEach(r => {
+      // 품목코드가 있어야 실제 거래 행이다 (consolidateAllSheets와 동일 기준).
+      // 입력 중인 행이나 메모 등 그 외의 행은 마감이 임의로 지우지 않는다.
+      if (!r[1]) {
+        if (r.some(v => v !== '' && v !== null && v !== undefined)) keepRows.push(r);
+        return;
+      }
+      const dateVal = toLocalDate(r[0]);
+      // 날짜를 읽을 수 없는 행도 임의 삭제하지 않고 남긴다
+      if (isNaN(dateVal.getTime()) || dateVal > cutoffDate) {
+        keepRows.push(r);
+      } else {
+        removedHere++;
+      }
+    });
+
+    if (removedHere <= 0) return;
+
+    // clearContent는 서식을 보존하므로 입력 시트의 스타일이 유지된다
+    sh.getRange(3, 1, last - 2, TX_COLS).clearContent();
+    if (keepRows.length > 0) {
+      sh.getRange(3, 1, keepRows.length, TX_COLS).setValues(keepRows);
+    }
+
+    result.sheets++;
+    result.removed += removedHere;
+  });
+
+  return result;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-010] 마감 기준일(cutoff) 추적 — 과거 마감월 데이터 수정 차단의 기준
+//
+//  회계 장부 동결 원칙에 따라 마감된 월의 데이터는 Super Admin을 포함해
+//  누구도 소급 수정/입력할 수 없다. 과거 오류는 당월 정정 거래로 처리한다.
+//  (배경: 마감된 월의 원장은 이미 별도 스프레드시트로 분리되었고, 남은 로트는
+//   익월 1일자 "마감 이월" 입고 행 하나로 스냅샷되어 있다. 그보다 앞선 날짜의
+//   거래가 사후 삽입되면 FIFO 로트 체인이 이월 스냅샷과 이중 계상된다.)
+// ═══════════════════════════════════════════════════════════════════
+
+/** 최신 마감 기준일을 담아 두는 ScriptProperties 키 (값: "yyyy-MM-dd") */
+const CLOSING_CUTOFF_PROPERTY = "LAST_CLOSED_CUTOFF";
+
+/** Date → "yyyy-MM-dd" (스크립트 타임존 기준). 문자열 비교로 날짜를 다루기 위한 공통 변환 */
+function _toDateKey(date) {
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+}
+
+/**
+ * 최신 마감 기준일을 ScriptProperties에 기록한다.
+ * @param {Date|string} cutoff 마감 기준일 (Date 또는 "yyyy-MM-dd")
+ */
+function setLatestClosingCutoff(cutoff) {
+  // instanceof 대신 덕 타이핑 — 다른 실행 컨텍스트에서 만들어진 Date도 받아들인다
+  const isDate = cutoff && typeof cutoff.getTime === "function" && !isNaN(cutoff.getTime());
+  const key = isDate ? _toDateKey(cutoff) : String(cutoff).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+  PropertiesService.getScriptProperties().setProperty(CLOSING_CUTOFF_PROPERTY, key);
+}
+
+/**
+ * 최신 마감 기준일을 조회한다.
+ *
+ * 1순위는 ScriptProperties 캐시다(거래 등록마다 시트를 풀 스캔하지 않기 위함).
+ * 값이 없으면 통합 입출고 기록장의 "마감 이월" 입고 행을 훑어 역산한다.
+ * 이월 행의 날짜는 마감 **익월 1일**이므로, 마감 기준일은 그 하루 전날이다.
+ *
+ * @param {Spreadsheet} [ss] 생략 시 필요할 때만 활성 스프레드시트를 연다
+ * @return {string|null} "yyyy-MM-dd" 또는 마감 이력이 없으면 null
+ */
+function getLatestClosingCutoff(ss) {
+  const props = PropertiesService.getScriptProperties();
+  const cached = props.getProperty(CLOSING_CUTOFF_PROPERTY);
+  if (cached && /^\d{4}-\d{2}-\d{2}$/.test(String(cached).trim())) {
+    return String(cached).trim();
+  }
+
+  const spreadsheet = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const txSheet = spreadsheet.getSheetByName(SHEET_INOUT);
+  if (!txSheet) return null;
+
+  const lastRow = txSheet.getLastRow();
+  if (lastRow < 3) return null;
+
+  const rows = txSheet.getRange(3, 1, lastRow - 2, TX_COLS).getValues();
+  let latestCarryover = null;
+  rows.forEach(row => {
+    if (!isCarryoverRow(row)) return;
+    const d = toLocalDate(row[0]);
+    if (isNaN(d.getTime())) return;
+    if (!latestCarryover || d > latestCarryover) latestCarryover = d;
+  });
+
+  if (!latestCarryover) return null;
+
+  // 이월 행 날짜(익월 1일)의 하루 전 = 마감 기준일(마감월 말일)
+  const cutoff = new Date(latestCarryover.getFullYear(), latestCarryover.getMonth(), latestCarryover.getDate() - 1);
+  const key = _toDateKey(cutoff);
+  props.setProperty(CLOSING_CUTOFF_PROPERTY, key); // 다음 조회부터는 캐시 사용
+  return key;
+}
+
+/**
+ * 거래일이 마감된 기간에 속하는지 검사한다.
+ * 역할(Admin/Manager/Staff)과 무관하게 동일하게 적용된다.
+ *
+ * @param {string} dateText 거래일 "yyyy-MM-dd"
+ * @param {Spreadsheet} [ss]
+ * @return {{blocked: boolean, cutoff: string|null, message: string}}
+ */
+function validateNotClosedMonth(dateText, ss) {
+  const cutoff = getLatestClosingCutoff(ss);
+  // 마감 이력이 없으면(cutoff === null) 모든 유효한 날짜를 허용한다
+  if (!cutoff) return { blocked: false, cutoff: null, message: "" };
+
+  // cutoff는 마감월 말일이므로 그날까지가 차단 대상이고 익월 1일부터 허용된다
+  if (String(dateText) > cutoff) return { blocked: false, cutoff: cutoff, message: "" };
+
+  return {
+    blocked: true,
+    cutoff: cutoff,
+    message: `❌ ${cutoff} 이전 기간(해당일 포함)은 이미 월마감되었습니다. ` +
+             `과거 누락/정정 데이터는 당월 재고조정 거래로 등록해주세요.`
+  };
+}
+
+/**
+ * [TASK-010] 웹앱 클라이언트가 날짜 선택 하한(min)을 설정하기 위해 호출한다.
+ * 서버 검증(addTransaction)이 1차 방어이고 이 값은 UX 보조(이중 방어)다.
+ *
+ * @param {string} token 세션 토큰
+ * @return {{success: boolean, cutoff: string|null, minDate: string|null}}
+ */
+function getClosingCutoffInfo(token) {
+  const session = validateSession(token);
+  if (!session) return { success: false, cutoff: null, minDate: null };
+
+  const cutoff = getLatestClosingCutoff();
+  if (!cutoff) return { success: true, cutoff: null, minDate: null };
+
+  const c = new Date(cutoff + "T00:00:00");
+  const minDate = _toDateKey(new Date(c.getFullYear(), c.getMonth(), c.getDate() + 1));
+  return { success: true, cutoff: cutoff, minDate: minDate };
 }

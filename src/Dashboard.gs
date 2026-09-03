@@ -26,6 +26,27 @@ function consolidateAllSheets(ss) {
     rows.forEach(r => { if (r[1]) allDataRows.push(r); });
   });
 
+  // [TASK-006] "마감 이월" 행은 월마감이 통합 시트에만 기록하며 업장 시트에는 존재하지 않는다.
+  // 업장 시트만으로 재구성하면 이월 행이 사라져 마감이 통째로 무효화되므로 반드시 보존한다.
+  // (같은 거래ID가 업장 시트에도 있으면 중복이므로 업장 쪽을 우선한다)
+  const lastRow = consolidated.getLastRow();
+  const existingRows = lastRow >= 3
+    ? consolidated.getRange(3, 1, lastRow - 2, TX_COLS).getValues()
+    : [];
+
+  const shopTxIds = {};
+  allDataRows.forEach(r => {
+    const id = String(r[8] || '');
+    if (id) shopTxIds[id] = true;
+  });
+
+  const carriedOverRows = existingRows.filter(
+    r => isCarryoverRow(r) && !shopTxIds[String(r[8] || '')]
+  );
+  if (carriedOverRows.length > 0) {
+    allDataRows = carriedOverRows.concat(allDataRows);
+  }
+
   allDataRows.sort((a, b) => {
     const da = toLocalDate(a[0]);
     const db = toLocalDate(b[0]);
@@ -33,7 +54,6 @@ function consolidateAllSheets(ss) {
   });
 
   // [FIX] 데이터 유실 방지(Write-then-Clear): 모든 데이터 수집 후 마지막에 덮어쓰기
-  const lastRow = consolidated.getLastRow();
   if (lastRow >= 3) {
     consolidated.getRange(3, 1, lastRow - 2, TX_COLS).clearContent();
   }
@@ -59,8 +79,22 @@ function refreshDashboard(isSilent = false) {
     SpreadsheetApp.flush();
     
     recalcStockAndUsage(ss);
-    
+
     runDashboardSync(ss);
+
+    // [TASK-016] 서식 커버리지 자가 복구.
+    //   시트 행이 늘어나면(하단 "행 추가", 대량 붙여넣기) 서식 적용 범위를 벗어난 행이
+    //   흰 배경·좌측정렬·드롭다운 없음 상태로 남는다 — TASK-009/TASK-016이 반복된 원인이다.
+    //   셀 1개 조회로 이탈 여부만 판정하므로 정상일 때 비용은 사실상 없다.
+    //   서식은 부가 기능이므로 실패해도 동기화 본체를 중단시키지 않는다.
+    try {
+      _healSheetFormattingIfStale(ss);
+    } catch (fmtErr) {
+      console.warn("[TASK-016] 서식 자가 복구 실패 (동기화는 계속): " + fmtErr.message);
+    }
+
+    // [TASK-006] 재취합은 재고 수치를 바꾸므로 캐시를 버려야 웹앱이 최신 값을 읽는다
+    try { CacheManager.invalidateAll(); } catch (e) { console.warn('[TASK-006] 캐시 무효화 실패: ' + e.message); }
     
     // [FIX] 수동 취합 완료 시간 기록
     PropertiesService.getScriptProperties().setProperty("LAST_SYNC_TIMESTAMP", new Date().toISOString());

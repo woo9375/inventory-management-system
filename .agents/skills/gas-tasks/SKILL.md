@@ -34,6 +34,54 @@ description: >-
 - `Config.gs` 상수 확인
 - Frontend `.html` 파일 확인 (UI 관련 시)
 
+### Step 2.5: 아키텍처 진입점 역추적 게이트 (필수 · 통과 못하면 진행 금지)
+
+> **왜 있는가**: TASK-011에서 이미 사장된 `JS_Master.html`을 "웹앱 품목 마스터 화면"으로 오인해
+> 명세에 넣었고, 실제로 구현까지 이루어져 리소스가 낭비됐다. 파일이 `src/`에 존재한다는 사실은
+> **그 코드가 실행된다는 증거가 아니다.** 아래 역추적으로 실행 경로를 입증하지 못한 대상은
+> 요구사항에 포함하지 않는다.
+
+#### (1) UI 요구사항 — 웹앱 화면이라고 주장하려면 아래 2가지를 **모두** 증명
+
+| 확인 | 대상 | 방법 |
+|------|------|------|
+| ① 진입 메뉴 | `src/Index.html`의 `<nav class="sidebar-nav">` | `showTab('<탭ID>')` 버튼과 대응하는 `id="tab-<탭ID>"` 컨테이너가 **둘 다** 있는가 |
+| ② 스크립트 로딩 | `src/Index.html` 하단 | 해당 `.html` 파일이 `<?!= include('파일명') ?>`에 **실제로** 있는가 |
+
+**둘 중 하나라도 증명되지 않으면 웹앱 UI로 간주하는 것을 엄격히 금지한다.**
+`src/` 파일 목록·파일명·파일 내부 코드는 근거가 되지 않는다. 오직 `Index.html`의 두 지점만 근거다.
+
+#### (2) 서버·시트 요구사항 — 호출 경로를 증명
+
+| 유형 | 확인 지점 |
+|------|-----------|
+| 스프레드시트 메뉴 기능 | `src/Code.gs`의 `onOpen()` 메뉴 등록(`.addItem(...)`) |
+| 시트 편집 반응 | `src/Code.gs`의 `onEdit()` 핸들러 분기 |
+| 웹앱 API | `src/WebApp.gs`의 공개 함수 / `runSystemCommand()` case / 클라이언트 `google.script.run.<함수>` 호출부 |
+| 자동 실행 | `src/Triggers.gs`의 트리거 등록 함수명 |
+
+#### (3) 증빙 기록 의무
+
+`Confirmed Facts`에 **`[진입점 호출 경로 증빙: 파일명:라인번호]`** 형식으로 근거를 남긴다.
+라인 번호 없이 "~에 있다"고 쓰는 것은 증빙이 아니다.
+
+```markdown
+- **대시보드 알림 목록은 활성 UI다**
+  [진입점 호출 경로 증빙: src/Index.html:81 (showTab('dashboard')) → src/Index.html:523 (include('JS_UI'))
+   → src/JS_UI.html:120 renderDashboard() → #alertTableBody]
+```
+
+#### (4) 확인된 사장(Dead) 파일 — 요구사항 대상 금지
+
+| 파일 | 상태 |
+|------|------|
+| `src/JS_Master.html` | **사장.** `Index.html`에 include되지 않고 `tab-master`도 없다. 품목 마스터는 스프레드시트 `🗂️ 품목 마스터` 시트 전용이며 웹앱 화면이 없다 |
+| `src/UploadCsv.html` | 사장 아님. SPA에는 없지만 `Code.gs:36`이 스프레드시트 메뉴에서 모달로 띄운다 |
+
+> 이 표는 스냅샷이다. 라인 번호와 include 목록은 바뀔 수 있으므로 **매번 실제 파일로 재확인**한다.
+
+---
+
 ### Step 3: 관련 문서 확인
 - `Docs/BusinessRules.md` — 업무 규칙
 - `Docs/DataModel.md` — 데이터 모델
@@ -81,6 +129,7 @@ description: >-
 
 ## Confirmed Facts
 [실제 코드를 읽어서 확인된 사실. 파일명:줄번호로 근거 표기]
+[UI·API 요구사항이면 Step 2.5의 `[진입점 호출 경로 증빙: 파일명:라인번호]`를 반드시 포함]
 
 ## Hypotheses
 [아직 확인되지 않은 추정 — Claude Code가 구현 전 반드시 검증할 것]
@@ -185,11 +234,18 @@ Task 읽기 → 관련 Rule/Docs 확인 → 현재 코드 확인
 
 ---
 
-## 금지사항
+## 금지사항 (절대 준수)
+> 역할 경계 전문: `.agents/rules/00_roles-and-workflow.md`
+
+- **소스 코드 직접 구현 및 수정 절대 금지**: Antigravity는 `/gas-tasks` 실행 시 어떤 `.gs`, `.html`, 설정 파일도 직접 수정하지 않는다. (사용자가 "작업 실행해", "구현해" 등을 덧붙여도 Task 생성까지만 수행한다)
+- **실행 단계(Execution Plan) 진입 금지**: implementation plan을 세워 스스로 코드를 변경하는 단계로 넘어가지 않는다.
+- **태스크 상태 임의 전이 금지**: `AI/tasks/review/` 또는 `done/`으로 이동하거나 `Final Report`를 임의로 작성하지 않는다.
+- **진입점 증빙 없이 UI/API 요구사항 작성**: Step 2.5의 역추적을 통과하지 못한 파일을 활성 화면·활성 API로 간주하지 않는다. 사장된 파일(`JS_Master.html` 등)을 `Files to Modify`에 넣지 않는다.
 - 업무 규칙 임의 결정
 - 확인되지 않은 사실을 Confirmed Facts에 기록
 - 기존 API 시그니처 임의 변경 설계
 - Sheet 구조 변경 시 Migration 절차 누락
 
 ## 완료 조건
-- `AI/tasks/ready/`에 실행 가능한 수준의 상세 Task 문서 1부 완성
+1. `AI/tasks/ready/`에 실행 가능한 수준의 상세 Task 문서 1부 완성.
+2. 사용자에게 Task 생성이 완료되었음을 간결하게 안내하고 **즉시 턴을 종료**한다 (구현은 Claude Code에 위임).

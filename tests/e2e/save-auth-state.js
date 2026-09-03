@@ -50,15 +50,15 @@ if (fs.existsSync(envPath)) {
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL;
 
-const PRODUCTION_DEPLOYMENT_ID =
-  'AKfycbyi8O68axsIkBF-6yipKnV_6uSF-Q4zvbEhJKYVuObRX7c5V_Qzv3LnjOXZpbSosNTAbw';
+// Production 배포 ID는 fixtures/production-guard.js 한 곳에서만 정의한다 (사본 금지 — 낡는다)
+const { isProductionUrl } = require('./fixtures/production-guard');
 
 (async () => {
   if (!BASE_URL) {
     console.error('✗ PLAYWRIGHT_BASE_URL 환경변수가 필요합니다 (DEV Web App URL).');
     process.exit(1);
   }
-  if (BASE_URL.includes(PRODUCTION_DEPLOYMENT_ID)) {
+  if (isProductionUrl(BASE_URL)) {
     console.error('⛔ Production Web App URL입니다. DEV URL만 사용하십시오.');
     process.exit(1);
   }

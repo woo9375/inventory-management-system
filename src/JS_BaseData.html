@@ -67,9 +67,111 @@ function deleteBaseDataItem(type, value) {
     .deleteBaseDataItem(getToken(), type, value);
 }
 // ═══════════════════════════════════════════════════════════════
-//  [NEW] 재고 실사 인쇄 (Phase 7)
+//  [NEW] 재고 실사 양식 출력 (Phase 7 / TASK-013 필터링)
 // ═══════════════════════════════════════════════════════════════
-function printPhysicalCheckList() {
+
+/**
+ * [TASK-013] 현재고 값을 숫자로 정규화한다.
+ * 시트에서 온 값은 숫자·문자열 숫자·빈 문자열·null이 섞여 있다.
+ * 빈 값과 숫자가 아닌 값은 0으로 본다(= 재고 '무'로 분류).
+ */
+function parseStockValue(val) {
+  if (val === null || val === undefined || val === '') return 0;
+  var num = Number(val);
+  return isNaN(num) ? 0 : num;
+}
+
+/**
+ * [TASK-013] 실사 대상 품목을 재고 상태로 걸러낸다.
+ *
+ *   'exist' — 재고 '유': 현재고가 0이 아닌 품목. **음수 재고를 반드시 포함한다.**
+ *             음수는 선출고·실사 결손을 뜻하므로 실물 확인이 가장 필요한 대상이다
+ *             (TASK-011에서 음수 현재고 표기를 공식 지원 — Docs/BusinessRules.md 제2조).
+ *   'zero'  — 재고 '무': 현재고가 0인 품목 (빈 값·null 포함).
+ *   'all'   — 전체 (기본값). 알 수 없는 값이 오면 여기로 폴백한다.
+ */
+function filterPhysicalCheckItems(items, filterOption) {
+  if (!items || !Array.isArray(items)) return [];
+
+  if (filterOption === 'exist') {
+    return items.filter(function(item) { return parseStockValue(item.currentStock) !== 0; });
+  }
+  if (filterOption === 'zero') {
+    return items.filter(function(item) { return parseStockValue(item.currentStock) === 0; });
+  }
+  return items;
+}
+
+/** [TASK-013] 인쇄 헤더에 찍을 필터 구분명 */
+function physicalCheckFilterLabel(filterOption) {
+  if (filterOption === 'exist') return "재고 '유' (음수 포함)";
+  if (filterOption === 'zero') return "재고 '무' (0 재고)";
+  return '전체';
+}
+
+/**
+ * [TASK-013] 실사 양식 출력 옵션 선택 모달.
+ *
+ * 드롭다운에 6개 버튼(3필터 × 2포맷)을 늘어놓는 대신 모달에서 필터를 고르게 한다.
+ * 드롭다운은 :hover로 열려 있어 터치 기기에서 항목을 누르기 전에 닫히는 일이 잦다.
+ *
+ * @param {string} defaultAction 사용자가 드롭다운에서 누른 출력 방식('pdf' | 'excel').
+ *                               해당 버튼을 강조(primary)해 원래 의도를 유지한다.
+ */
+function openPhysicalCheckModal(defaultAction) {
+  var action = defaultAction === 'excel' ? 'excel' : 'pdf';
+
+  function option(value, title, desc, checked) {
+    return '<label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card);">' +
+           '<input type="radio" name="checkFilterOption" value="' + value + '"' + (checked ? ' checked' : '') + ' style="margin-top:3px;">' +
+           '<div>' +
+           '<div style="font-weight:600; color:var(--navy-800);">' + title + '</div>' +
+           '<div style="font-size:0.82rem; color:var(--text-secondary); margin-top:2px;">' + desc + '</div>' +
+           '</div></label>';
+  }
+
+  var body =
+    '<div style="padding:4px 0;">' +
+    '<p style="margin-bottom:16px; color:var(--text-secondary); font-size:0.95rem;">출력할 품목의 재고 상태를 선택해 주세요.</p>' +
+    '<div style="display:flex; flex-direction:column; gap:12px;">' +
+    option('exist', "재고 '유' (재고 있는 품목만)",
+           '현재고가 0이 아닌 품목만 출력 (<strong style="color:var(--risk);">음수 결손 재고 포함</strong>)', true) +
+    option('zero', "재고 '무' (재고 0 품목만)", '현재고가 0인 품목만 출력') +
+    option('all', '전체 품목', '재고 유·무와 관계없이 관리 대상 전체 품목 출력') +
+    '</div>' +
+    '<p style="margin-top:14px; font-size:0.82rem; color:var(--text-secondary);">' +
+    '※ 음수(마이너스) 재고는 선출고 및 실사 결손 품목으로 <strong>재고 \'유\'</strong> 옵션에 포함됩니다.</p>' +
+    '</div>';
+
+  var pdfClass = action === 'pdf' ? 'btn btn-primary' : 'btn btn-outline';
+  var excelClass = action === 'excel' ? 'btn btn-primary' : 'btn btn-gold';
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="' + pdfClass + '" onclick="submitPhysicalCheckExport(\'pdf\')">🖨️ PDF 인쇄</button>' +
+    '<button class="' + excelClass + '" onclick="submitPhysicalCheckExport(\'excel\')">📥 Excel 다운로드</button>';
+
+  openModal('📋 재고 실사 양식 출력', body, footer);
+}
+
+/** [TASK-013] 모달에서 고른 필터로 인쇄 또는 다운로드를 실행한다 */
+function submitPhysicalCheckExport(actionType) {
+  var selected = document.querySelector('input[name="checkFilterOption"]:checked');
+  var filterOption = selected ? selected.value : 'all';
+  closeModal();
+
+  if (actionType === 'excel') {
+    downloadPhysicalCheckListExcel(filterOption);
+  } else {
+    printPhysicalCheckList(filterOption);
+  }
+}
+
+/**
+ * 재고 실사 조사표 PDF 인쇄.
+ * @param {string} [filterOption='all'] 'exist' | 'zero' | 'all' — 인자 없이 부르면 전체 출력(하위 호환).
+ */
+function printPhysicalCheckList(filterOption) {
+  var opt = filterOption || 'all';
   showLoading();
   google.script.run
     .withSuccessHandler(function(items) {
@@ -78,34 +180,45 @@ function printPhysicalCheckList() {
         showToast('인쇄할 품목 데이터가 없습니다.', 'warning');
         return;
       }
-      
+
+      var targets = filterPhysicalCheckItems(items, opt);
+      if (targets.length === 0) {
+        showToast('선택한 조건에 해당하는 품목이 없습니다.', 'warning');
+        return;
+      }
+
       var container = document.getElementById('printContainer');
       var dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
-      
+
       var html = '<div class="print-header">' +
                  '<h1>📋 재고 실사 조사표</h1>' +
-                 '<p>출력일자: ' + dateStr + '</p>' +
+                 '<p>출력일자: ' + dateStr +
+                 ' | 구분: ' + escapeHtml(physicalCheckFilterLabel(opt)) +
+                 ' (' + targets.length + '건)</p>' +
                  '</div>' +
                  '<table class="print-table">' +
                  '<thead><tr>' +
                  '<th>품목코드</th><th>품목명</th><th>카테고리</th><th>단위</th>' +
                  '<th>전산재고</th><th style="width: 15%">실사재고</th><th style="width: 20%">비고</th>' +
                  '</tr></thead><tbody>';
-      
-      items.forEach(function(item) {
+
+      targets.forEach(function(item) {
+        // 음수 재고는 실사에서 가장 먼저 확인해야 할 결손 후보이므로 붉게 강조한다
+        var stock = parseStockValue(item.currentStock);
+        var stockStyle = 'font-weight: bold;' + (stock < 0 ? ' color: #dc2626;' : '');
         html += '<tr>' +
-                '<td>' + item.code + '</td>' +
-                '<td style="text-align: left">' + item.name + '</td>' +
-                '<td>' + item.category + '</td>' +
-                '<td>' + item.unit + '</td>' +
-                '<td style="font-weight: bold">' + item.currentStock + '</td>' +
+                '<td>' + escapeHtml(item.code) + '</td>' +
+                '<td style="text-align: left">' + escapeHtml(item.name) + '</td>' +
+                '<td>' + escapeHtml(item.category) + '</td>' +
+                '<td>' + escapeHtml(item.unit) + '</td>' +
+                '<td style="' + stockStyle + '">' + stock + '</td>' +
                 '<td></td><td></td>' +
                 '</tr>';
       });
-      
+
       html += '</tbody></table>';
       container.innerHTML = html;
-      
+
       // 브라우저 인쇄 호출
       setTimeout(function() {
         window.print();
@@ -120,7 +233,12 @@ function printPhysicalCheckList() {
     .getItemMasterData(getToken());
 }
 
-function downloadPhysicalCheckListExcel() {
+/**
+ * 재고 실사 조사표 Excel 다운로드.
+ * @param {string} [filterOption='all'] 'exist' | 'zero' | 'all' — 인자 없이 부르면 전체 출력(하위 호환).
+ */
+function downloadPhysicalCheckListExcel(filterOption) {
+  var opt = filterOption || 'all';
   showLoading();
   google.script.run
     .withSuccessHandler(function(items) {
@@ -130,19 +248,27 @@ function downloadPhysicalCheckListExcel() {
         return;
       }
 
+      var targets = filterPhysicalCheckItems(items, opt);
+      if (targets.length === 0) {
+        showToast('선택한 조건에 해당하는 품목이 없습니다.', 'warning');
+        return;
+      }
+
       try {
         // SheetJS용 데이터 배열 준비
         var excelData = [];
         // Header
         excelData.push(["품목코드", "품목명", "카테고리", "단위", "전산재고", "실사재고", "비고"]);
 
-        items.forEach(function(item) {
+        targets.forEach(function(item) {
           excelData.push([
             item.code,
             item.name || '',
             item.category || '',
             item.unit || '',
-            item.currentStock || 0,
+            // [TASK-013] `item.currentStock || 0`도 음수는 살아남지만 의도가 드러나지 않는다.
+            // 음수 재고가 0으로 뭉개지면 안 되므로 정규화 함수를 명시적으로 쓴다.
+            parseStockValue(item.currentStock),
             '', // 실사재고 (빈칸)
             ''  // 비고 (빈칸)
           ]);
@@ -153,7 +279,7 @@ function downloadPhysicalCheckListExcel() {
         var ws = XLSX.utils.aoa_to_sheet(excelData);
         XLSX.utils.book_append_sheet(wb, ws, "재고실사조사표");
 
-        // 파일명 생성
+        // 파일명 생성 (기존 E2E 정규식 호환을 위해 형식을 바꾸지 않는다)
         var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
         var fileName = "재고실사조사표_" + dateStr + ".xlsx";
 

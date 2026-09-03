@@ -32,15 +32,12 @@ if (fs.existsSync(envPath)) {
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || '';
 
-// Production Web App 배포 ID (이 값이 baseURL에 있으면 테스트 금지)
-const PRODUCTION_DEPLOYMENT_ID =
-  'AKfycbyi8O68axsIkBF-6yipKnV_6uSF-Q4zvbEhJKYVuObRX7c5V_Qzv3LnjOXZpbSosNTAbw';
+// Production 배포 ID는 tests/e2e/fixtures/production-guard.js 한 곳에서만 정의한다.
+// (예전에는 이 파일과 save-auth-state.js에 각각 복사돼 있었고, 대상 배포가 삭제되자 둘 다 무력화됐다)
+const { isProductionUrl, PRODUCTION_BLOCKED_MESSAGE } = require('./tests/e2e/fixtures/production-guard');
 
-if (BASE_URL && BASE_URL.includes(PRODUCTION_DEPLOYMENT_ID)) {
-  throw new Error(
-    '⛔ PLAYWRIGHT_BASE_URL이 Production Web App을 가리키고 있습니다.\n' +
-    'E2E 테스트는 DEV 환경에서만 실행해야 합니다. .env의 PLAYWRIGHT_BASE_URL을 확인하십시오.'
-  );
+if (isProductionUrl(BASE_URL)) {
+  throw new Error(PRODUCTION_BLOCKED_MESSAGE);
 }
 
 module.exports = defineConfig({

@@ -83,8 +83,7 @@ function migrate_to_v11(ss) {
       return v;
     });
 
-    caseCountInList = unitCol.filter(function(v) { return String(v).trim().toUpperCase() === "CASE"; }).length;
-    unitCol = unitCol.filter(function(v) { return v && String(v).trim().toUpperCase() !== "CASE"; });
+    unitCol = unitCol.filter(function(v) { return Boolean(v); });
 
     const existingTrimmed = unitCol.map(function(v) { return String(v).trim(); });
     toAdd = NEW_UNITS.filter(function(u) { return existingTrimmed.indexOf(u) === -1; });
@@ -113,7 +112,7 @@ function migrate_to_v11(ss) {
     }
   }
 
-  return { renamedCount, caseCountInList, toAdd, masterRenamed, masterCaseCount };
+  return { renamedCount, toAdd, masterRenamed, masterCaseCount };
 }
 // ---- end extracted logic ----
 
@@ -130,8 +129,7 @@ const { ss, state } = makeSheetStore(initialBase, initialMaster);
 const r1 = migrate_to_v11(ss);
 console.log("Result 1:", r1);
 assert(r1.renamedCount === 1, "base list: exactly 1 rename (PACK->팩), got " + r1.renamedCount);
-assert(r1.caseCountInList === 1, "base list: 1 CASE entry found before removal");
-assert(state.base.indexOf("CASE") === -1, "CASE removed from base unit list");
+assert(state.base.indexOf("CASE") !== -1, "CASE retained in base unit list");
 assert(state.base.indexOf("팩") !== -1, "팩 present in base unit list");
 assert(state.base.indexOf("PACK") === -1, "PACK no longer present in base unit list");
 assert(r1.toAdd.length === 10, "10 new units queued for addition, got " + r1.toAdd.length);
@@ -151,6 +149,6 @@ assert(r2.renamedCount === 0, "second run: no more PACK/set renames needed, got 
 assert(r2.toAdd.length === 0, "second run: no more units to add, got " + r2.toAdd.length);
 assert(r2.masterRenamed === 0, "second run: no more master renames, got " + r2.masterRenamed);
 assert(r2.masterCaseCount === 2, "second run: CASE count unchanged (still untouched), got " + r2.masterCaseCount);
-assert(state.base.length === initialBase.length - 1 + 10, "base list length stable after 2nd run: " + state.base.length);
+assert(state.base.length === initialBase.length + 10, "base list length stable after 2nd run: " + state.base.length);
 
 console.log("\nALL TESTS PASSED");
