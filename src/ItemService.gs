@@ -35,6 +35,7 @@ function getItemMasterData(token) {
       targetDays: row[MASTER_COLS.TARGET_DAYS],
       safetyStock: row[MASTER_COLS.SAFETY_STOCK], rop: row[MASTER_COLS.ROP],
       orderQty: row[MASTER_COLS.ORDER_QTY], status: row[MASTER_COLS.STATUS],
+      vendorCode: row[MASTER_COLS.VENDOR_CODE], // [TASK-017] 거래처명이 아니라 코드만 실어 보낸다
       taxType: row[MASTER_COLS.TAX_TYPE], unitPrice: row[MASTER_COLS.UNIT_PRICE],
       supplyPrice: row[MASTER_COLS.SUPPLY_PRICE],
       taxAmount: row[MASTER_COLS.TAX_AMOUNT], totalValue: row[MASTER_COLS.TOTAL_VALUE]
@@ -143,6 +144,8 @@ function addNewItem(token, itemData) {
     newRowData[MASTER_COLS.LEAD_TIME] = itemData.leadTime || 3;
     newRowData[MASTER_COLS.SAFETY_DAYS] = itemData.safetyDays || 5;
     newRowData[MASTER_COLS.TARGET_DAYS] = itemData.targetDays || 30;
+    // [TASK-017] 거래처는 선택 입력이다. 미지정이면 빈 값으로 두고 나중에 시트에서 고르게 한다.
+    newRowData[MASTER_COLS.VENDOR_CODE] = itemData.vendorCode || "";
     newRowData[MASTER_COLS.TAX_TYPE] = itemData.taxType || "과세";
     newRowData[MASTER_COLS.UNIT_PRICE] = itemData.unitPrice || 0;
     newRowData[MASTER_COLS.USAGE_STATUS] = "사용";
@@ -225,6 +228,9 @@ function uploadItemMasterCSV(token, dataRows) {
         newRow[MASTER_COLS.LEAD_TIME] = Number(row[6]) || 3;
         newRow[MASTER_COLS.SAFETY_DAYS] = Number(row[7]) || 5;
         newRow[MASTER_COLS.TARGET_DAYS] = Number(row[8]) || 30;
+        // [TASK-017] CSV 열 순서(row[N])는 파일 포맷이라 그대로 두고, 거래처코드는 빈 값으로 남긴다.
+        //   MASTER_COLS로 목적지를 잡으므로 열이 하나 늘어도 매핑이 밀리지 않는다
+        //   (newRow는 fill("")로 만들어져 VENDOR_CODE 자리는 이미 빈 값이다).
         newRow[MASTER_COLS.TAX_TYPE] = row[9] || "과세";
         newRow[MASTER_COLS.UNIT_PRICE] = Number(row[10]) || 0;
         newRow[MASTER_COLS.USAGE_STATUS] = "사용";
@@ -305,6 +311,7 @@ function updateItem(token, itemCode, updates) {
       grade: MASTER_COLS.GRADE + 1, unit: MASTER_COLS.UNIT + 1,
       initStock: MASTER_COLS.INIT_STOCK + 1, leadTime: MASTER_COLS.LEAD_TIME + 1,
       safetyDays: MASTER_COLS.SAFETY_DAYS + 1, targetDays: MASTER_COLS.TARGET_DAYS + 1,
+      vendorCode: MASTER_COLS.VENDOR_CODE + 1, // [TASK-017]
       taxType: MASTER_COLS.TAX_TYPE + 1, unitPrice: MASTER_COLS.UNIT_PRICE + 1
     };
     
@@ -312,7 +319,7 @@ function updateItem(token, itemCode, updates) {
     const fieldNameMap = {
       name: "품목명", category: "카테고리", grade: "규격", unit: "단위",
       initStock: "초기재고", leadTime: "리드타임", safetyDays: "안전재고일수",
-      targetDays: "목표유지일수", taxType: "과세구분", unitPrice: "매입단가"
+      targetDays: "목표유지일수", vendorCode: "거래처", taxType: "과세구분", unitPrice: "매입단가"
     };
     // [v10.0] MASTER_COLS 기반 oldValue 인덱스 매핑 (0-based, 배열 접근용)
     const oldColMap = {
@@ -320,6 +327,7 @@ function updateItem(token, itemCode, updates) {
       grade: MASTER_COLS.GRADE, unit: MASTER_COLS.UNIT,
       initStock: MASTER_COLS.INIT_STOCK, leadTime: MASTER_COLS.LEAD_TIME,
       safetyDays: MASTER_COLS.SAFETY_DAYS, targetDays: MASTER_COLS.TARGET_DAYS,
+      vendorCode: MASTER_COLS.VENDOR_CODE, // [TASK-017]
       taxType: MASTER_COLS.TAX_TYPE, unitPrice: MASTER_COLS.UNIT_PRICE
     };
 
@@ -425,7 +433,7 @@ function disableItemMaster(token, code) {
 
   if (targetRow === -1) return { success: false, message: "품목을 찾을 수 없습니다." };
 
-  // Set X column (사용유무) to '미사용'
+  // 사용유무 열([TASK-017] Y열)을 '미사용'으로
   masterSheet.getRange(targetRow, MASTER_COLS.USAGE_STATUS + 1).setValue("미사용");
   
   // [NF-02 FIX] 캐시 무효화 누락 수정 — 비활성화된 품목이 캐시에서 즉시 제거되도록
@@ -446,11 +454,18 @@ function disableItemMaster(token, code) {
 
 // [v9.0] 품목 마스터 사용/미사용 정렬 헬퍼 (수식 보호하면서 데이터만 정렬)
 function _sortMasterByUsageStatus(masterSheet) {
+  // [TASK-017] 정렬은 데이터 전체를 clearContent 후 25열로 되쓴다.
+  //   마이그레이션 전 시트(24열)에서 돌면 지우는 열과 쓰는 열이 한 칸씩 어긋나 사용유무가 날아간다.
+  if (!_isMasterSchemaCurrent(masterSheet)) {
+    _warnMasterSchemaStale("품목 마스터 정렬");
+    return;
+  }
+
   const lastRow = masterSheet.getLastRow();
   if (lastRow < 4) return; // 데이터 2행 이하면 정렬 불필요
   
   const numRows = lastRow - 2;
-  // 수식이 아닌 데이터 열만 읽기 (A~E: 1~5, G~M: 7~13, S~T: 19~20, X: 24)
+  // 수식이 아닌 데이터 열만 읽기 ([TASK-017] A~E: 1~5, G~M: 7~13, S~U: 19~21, Y: 25)
   // ARRAYFORMULA가 N,O,P,Q,U,V,W열에 걸려있으므로 이 열들은 수식이 자동 계산
   const data = masterSheet.getRange(3, 1, numRows, MASTER_COL_COUNT).getValues();
   
@@ -468,9 +483,9 @@ function _sortMasterByUsageStatus(masterSheet) {
   
   const sorted = filledRows.concat(emptyRows);
   
-  // 수식 열(N,O,P,Q,U,V,W)의 값은 ARRAYFORMULA가 자동 계산하므로
-  // 데이터 열(A~E, G~M, S~T, X)만 재기록
-  // 하지만 ARRAYFORMULA는 A3부터 전체 범위를 참조하므로 전체 24열을 쓰되 수식 열은 빈 값으로
+  // 수식 열([TASK-017] N,O,P,Q,V,W,X)의 값은 ARRAYFORMULA가 자동 계산하므로
+  // 데이터 열(A~E, G~M, S~U, Y)만 재기록
+  // 하지만 ARRAYFORMULA는 A3부터 전체 범위를 참조하므로 전체 25열을 쓰되 수식 열은 빈 값으로
   const writeData = sorted.map(function(row) {
     const newRow = row.slice(); // 복사
     // 수식 열은 빈 값으로 (수식이 자동 채움)
@@ -478,9 +493,9 @@ function _sortMasterByUsageStatus(masterSheet) {
     newRow[MASTER_COLS.ROP] = ""; // O: 발주점
     newRow[MASTER_COLS.ORDER_QTY] = ""; // P: 적정발주량
     newRow[MASTER_COLS.STATUS] = ""; // Q: 재고 상태
-    newRow[MASTER_COLS.SUPPLY_PRICE] = ""; // U: 공급단가
-    newRow[MASTER_COLS.TAX_AMOUNT] = ""; // V: 단위 세액
-    newRow[MASTER_COLS.TOTAL_VALUE] = ""; // W: 재고 합계금액
+    newRow[MASTER_COLS.SUPPLY_PRICE] = ""; // V: 공급단가
+    newRow[MASTER_COLS.TAX_AMOUNT] = ""; // W: 단위 세액
+    newRow[MASTER_COLS.TOTAL_VALUE] = ""; // X: 재고 합계금액
     return newRow;
   });
   

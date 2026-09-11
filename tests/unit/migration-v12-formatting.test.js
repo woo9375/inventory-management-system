@@ -17,6 +17,14 @@ const assert = require('assert');
 
 const SRC = path.join(__dirname, '..', '..', 'src');
 
+// [TASK-017] 금액 열 위치를 숫자로 적어 두면 열이 하나 끼어들 때 테스트만 거짓으로 깨진다.
+//   실제 Config.gs의 MASTER_COLS를 읽어 쓴다.
+const MASTER_COLS_REAL = (() => {
+  const c = vm.createContext({ console: console });
+  vm.runInContext(fs.readFileSync(path.join(SRC, 'Config.gs'), 'utf8'), c, { filename: 'Config.gs' });
+  return vm.runInContext('MASTER_COLS', c);
+})();
+
 // ── SpreadsheetApp 모킹 ───────────────────────────────────────────
 function makeRange(sheet, row, col, numRows, numCols) {
   const rec = { row: row, col: col, numRows: numRows, numCols: numCols, ops: [] };
@@ -39,6 +47,9 @@ function makeSheet(name, maxRows) {
     insertedRows: 0,
     unprotectedRanges: null,
     getName: () => name,
+    maxCols: 26, // [TASK-017] _ensureMinColumns가 열 수를 본다 (새 시트 기본값 26열)
+    getMaxColumns: () => sheet.maxCols,
+    insertColumnsAfter: (afterCol, howMany) => { sheet.maxCols += howMany; },
     getMaxRows: () => sheet.maxRows,
     insertRowsAfter: (afterRow, howMany) => { sheet.maxRows += howMany; sheet.insertedRows += howMany; },
     getLastRow: () => Math.min(10, sheet.maxRows),
@@ -169,15 +180,21 @@ function opsOnSheet(sheet, op) {
   });
 });
 
-check('품목 마스터: 카테고리/단위/과세/사용유무 드롭다운 4종이 재적용된다', () => {
+// [TASK-017] 호출 수가 4 → 5로 늘었다. 늘어난 1회는 드롭다운 추가가 아니라
+//   S~Y 구간의 옛 검증을 먼저 지우는 호출이다(열이 밀리며 따라온 과세 드롭다운이
+//   매입단가 열에 눌러앉는 것을 막는다). 거래처관리 시트가 있으면 거래처 드롭다운까지 6회.
+//   이 테스트의 목 스프레드시트에는 거래처 시트가 없다.
+check('품목 마스터: 카테고리/단위/과세/사용유무 드롭다운이 재적용된다', () => {
   const calls = opsOnSheet(run1.sheets['🗂️ 품목 마스터'], 'setDataValidation');
-  assert.strictEqual(calls.length, 4, '실제=' + calls.length);
+  assert.strictEqual(calls.length, 5, '실제=' + calls.length);
   calls.forEach((c) => assert.strictEqual(c.numRows, V, '드롭다운 범위가 VALIDATION_ROWS가 아님'));
 });
 
 check('품목 마스터: 매입단가 등 금액 열에 #,##0 서식이 적용된다', () => {
   const calls = opsOnSheet(run1.sheets['🗂️ 품목 마스터'], 'setNumberFormat');
-  assert.ok(calls.some((c) => c.col === 20 && c.numRows === V), 'T열(20) 숫자서식 없음');
+  const priceCol = MASTER_COLS_REAL.UNIT_PRICE + 1;
+  assert.ok(calls.some((c) => c.col === priceCol && c.numRows === V),
+    '매입단가 열(' + priceCol + ') 숫자서식 없음');
 });
 
 check('입출고 시트: 구분/수량 드롭다운이 VALIDATION_ROWS 범위로 재적용된다', () => {

@@ -106,9 +106,24 @@ Frontend (JS_Tx.html)
     → CacheManager.invalidateAll()
 ```
 
+### 입출고 일괄 업로드 흐름 (TASK-019)
+```
+Web App: JS_Tx.html openBulkUploadModal() → 안내문 → 파일 선택 → SheetJS 파싱 (CSV: UTF-8→EUC-KR 판별)
+  → uploadBulkTransactions(token, shop, rows, {dryRun:true})   // 전체 사전 검증, 쓰기 없음
+  → 확인 모달 → BULK_TX_CHUNK_SIZE(100)건씩 순차 호출
+  → TxService.gs: uploadBulkTransactions()
+    → validateSession() / _canAccessShop()
+    → _normalizeTxInput() · _validateTxAgainstMaster()   // addTransaction과 같은 헬퍼
+    → getLatestClosingCutoff() 1회 → evaluateClosingCutoff() 행별 비교
+    → LockService: 동시성 제어
+    → Sheet 1회 읽기 → _calculateFifoOutboundSplitsFromRows(existing + pending) → _buildTxRows()
+    → _appendTxRows(): 청크를 setValues 1회로 기록
+    → CacheManager.invalidateAll()
+```
+
 ### 대시보드 갱신 흐름
 ```
-refreshDashboard()
+refreshDashboard()   // 시트 메뉴에서는 menuRefreshDashboard()가 YES/NO 확인 후 호출 (TASK-019)
   → consolidateAllSheets() (업장 데이터 통합)
   → recalcStockAndUsage() (재고/일평균 재계산)
   → runDashboardSync() (대시보드 시트 업데이트)

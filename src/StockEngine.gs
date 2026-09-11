@@ -27,8 +27,16 @@ function recalcStockAndUsage(ss) {
   // [v7.0] 9열 구조: 6열(단가 스냅샷) 포함 읽기
   const logData = logSheet.getRange(3, 1, logLastRow - 2, TX_COLS).getValues();
   
+  // [TASK-017] 이 함수는 계산 결과를 MASTER_COLS 기준 열에 **되쓴다**.
+  //   마이그레이션 전 시트에 그대로 쓰면 재고 합계금액이 사용유무 열을 덮어써 값을 지운다.
+  //   자정 트리거가 배포~마이그레이션 사이에 걸릴 수 있으므로 쓰기 전에 구조를 확인한다.
+  if (!_isMasterSchemaCurrent(masterSheet)) {
+    _warnMasterSchemaStale("재고 재계산");
+    return;
+  }
+
   const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
-  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues(); // 20열까지 (T열 = 매입단가)
+  const masterData = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues(); // [TASK-017] 25열 (U열 = 매입단가)
 
   const today = new Date();
   const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
@@ -185,14 +193,18 @@ function recalcStockAndUsage(ss) {
       valueUpdates.push([Math.max(0, fifoValue)]);
     } else {
       // 입고 기록이 없는 경우 (초기재고만 있는 경우) — 현재 매입단가 × 현재고
-      const unitPrice = Number(row[19]) || 0;
+      // [TASK-017] 매입단가 인덱스를 19로 하드코딩하고 있었다. S열(거래처코드) 삽입으로
+      //   한 칸 밀렸으므로 상수를 쓴다 — 그대로 뒀다면 과세구분을 단가로 읽어 평가액이 0이 됐다.
+      const unitPrice = Number(row[MASTER_COLS.UNIT_PRICE]) || 0;
       valueUpdates.push([Math.max(0, unitPrice * currentStock)]);
     }
   });
 
   if (stockUpdates.length > 0) {
     masterSheet.getRange(3, 8, stockUpdates.length, 2).setValues(stockUpdates);
-    // [v7.0] W열(합계금액)을 FIFO 결과로 직접 기록
-    masterSheet.getRange(3, 23, valueUpdates.length, 1).setValues(valueUpdates);
+    // [v7.0] 합계금액 열을 FIFO 결과로 직접 기록
+    // [TASK-017] 열 번호를 23(W열)으로 하드코딩하고 있었다. S열 삽입 후 합계금액은 24(X열)이므로
+    //   상수를 쓴다 — 그대로 뒀다면 FIFO 평가액을 단위 세액 열에 덮어썼다.
+    masterSheet.getRange(3, MASTER_COLS.TOTAL_VALUE + 1, valueUpdates.length, 1).setValues(valueUpdates);
   }
 }

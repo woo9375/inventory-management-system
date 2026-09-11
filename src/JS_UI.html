@@ -18,6 +18,7 @@ function showTab(tabId, navEl) {
   }
   if (tabId === 'shop' || tabId === 'season' || tabId === 'user') loadConfig();
   if (tabId === 'basedata') loadBaseData();
+  if (tabId === 'vendor') loadVendors(); // [TASK-018]
 
   document.getElementById('sidebar').classList.remove('open');
 }

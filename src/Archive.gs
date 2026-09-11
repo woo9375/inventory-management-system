@@ -621,7 +621,21 @@ function getLatestClosingCutoff(ss) {
  * @return {{blocked: boolean, cutoff: string|null, message: string}}
  */
 function validateNotClosedMonth(dateText, ss) {
-  const cutoff = getLatestClosingCutoff(ss);
+  return evaluateClosingCutoff(dateText, getLatestClosingCutoff(ss));
+}
+
+/**
+ * [TASK-019] 거래일을 **이미 조회해 둔** 마감 기준일과 비교한다 (validateNotClosedMonth의 순수 비교부).
+ *
+ * 일괄 업로드가 수백 행을 검증할 때 행마다 getLatestClosingCutoff를 부르면, 마감 이력이 없는
+ * 환경에서는 그때마다 통합 시트를 풀 스캔한다. 기준일을 1회 조회해 이 함수에 넘겨 재사용한다.
+ * 판정 규칙과 메시지는 validateNotClosedMonth와 한 벌이다(이 함수가 그 본체).
+ *
+ * @param {string} dateText 거래일 "yyyy-MM-dd"
+ * @param {string|null} cutoff getLatestClosingCutoff() 결과 (마감 이력 없음 = null)
+ * @return {{blocked: boolean, cutoff: string|null, message: string}}
+ */
+function evaluateClosingCutoff(dateText, cutoff) {
   // 마감 이력이 없으면(cutoff === null) 모든 유효한 날짜를 허용한다
   if (!cutoff) return { blocked: false, cutoff: null, message: "" };
 

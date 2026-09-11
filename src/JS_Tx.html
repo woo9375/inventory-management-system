@@ -246,5 +246,398 @@ function saveTransaction() {
     .addTransaction(getToken(), shopName, txData);
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  [TASK-019] 입출고 일괄 업로드 (CSV / XLSX)
+//
+//  흐름: 안내문 모달 → 파일 선택 → 클라이언트 파싱·1차 검증
+//        → 서버 사전 검증(dryRun, 쓰기 없음) → 확인 모달
+//        → BULK_TX_CHUNK_SIZE 단위로 순차 저장(진행률) → 결과 요약 → 목록 새로고침
+//
+//  "전체를 먼저 검증하고, 하나라도 틀리면 아무것도 저장하지 않는다"가 원칙이다.
+//  청크 단위 저장은 GAS 6분 실행 제한 때문이지 부분 저장을 허용하려는 것이 아니다.
+//  서버 규칙(검증·FIFO 분할·담당자=로그인 사용자)은 uploadBulkTransactions가 단건 등록과 같은 코드로 보장한다.
+// ═══════════════════════════════════════════════════════════════
+var BULK_TX_COLUMNS = ['날짜', '품목코드', '구분', '수량', '비고'];
+var bulkUploadState = { shopName: '', fileName: '', rows: [], running: false };
+
+function bulkChunkSize() {
+  return (typeof BULK_TX_CHUNK_SIZE === 'number' && BULK_TX_CHUNK_SIZE > 0) ? BULK_TX_CHUNK_SIZE : 100;
+}
+function bulkMaxRows() {
+  return (typeof BULK_TX_MAX_ROWS === 'number' && BULK_TX_MAX_ROWS > 0) ? BULK_TX_MAX_ROWS : 2000;
+}
+
+// ── 1) 안내문 모달 ──
+function openBulkUploadModal() {
+  var shopName = document.getElementById('txShopSelect').value;
+  if (!shopName) {
+    showToast('업장을 먼저 선택하세요', 'warning');
+    return openShopSelectionModal();
+  }
+  bulkUploadState.shopName = shopName;
+  bulkUploadState.rows = [];
+  bulkUploadState.fileName = '';
+
+  var body =
+    '<div id="bulkGuide" style="font-size:0.92rem; line-height:1.6;">' +
+      '<p style="margin-bottom:12px;">대상 업장: <strong>' + escapeHtml(shopName) + '</strong></p>' +
+      '<div style="background:linear-gradient(135deg,#f0f4ff,#e8f0fb); border-left:4px solid var(--navy-600,#1e3a5f); border-radius:8px; padding:10px 14px; margin-bottom:14px;">' +
+        '<strong>📄 파일 형식</strong> — CSV 또는 엑셀(XLSX) 파일, 첫 번째 시트만 읽습니다.<br>' +
+        '첫 행은 제목 행으로 두고 아래 열을 채워 주세요. (제목이 있으면 열 순서가 달라도 이름으로 찾습니다)' +
+      '</div>' +
+      '<div class="data-table-wrapper" style="margin-bottom:14px;">' +
+        '<table class="data-table"><thead><tr><th>열</th><th>필수</th><th>규칙</th></tr></thead><tbody>' +
+          '<tr><td><strong>날짜</strong></td><td>✔</td><td>YYYY-MM-DD (엑셀 날짜 셀도 가능). 마감된 기간의 날짜는 거부됩니다.</td></tr>' +
+          '<tr><td><strong>품목코드</strong></td><td>✔</td><td>품목 마스터에 등록된 코드 (품목명이 아닙니다)</td></tr>' +
+          '<tr><td><strong>구분</strong></td><td>✔</td><td>입고 / 출고 / 폐기 중 하나</td></tr>' +
+          '<tr><td><strong>수량</strong></td><td>✔</td><td>0보다 큰 숫자</td></tr>' +
+          '<tr><td><strong>비고</strong></td><td></td><td>선택, 500자 이내</td></tr>' +
+        '</tbody></table>' +
+      '</div>' +
+      '<ul style="padding-left:18px; margin-bottom:12px; color:var(--text-secondary);">' +
+        '<li>담당자는 <strong>로그인한 사용자</strong>로 기록됩니다 (파일의 담당자 열은 무시).</li>' +
+        '<li>저장 전에 <strong>파일 전체를 먼저 검증</strong>합니다. 오류가 하나라도 있으면 <strong>아무것도 저장하지 않고</strong> 오류 행을 보여 드립니다.</li>' +
+        '<li>출고·폐기는 단건 등록과 똑같이 <strong>FIFO 로트별로 분할</strong> 저장됩니다. 파일 안의 앞선 입고가 뒤의 출고에 반영됩니다.</li>' +
+        '<li>한 번에 최대 <strong>' + bulkMaxRows().toLocaleString('ko-KR') + '건</strong>. ' + bulkChunkSize() + '건씩 나누어 저장되므로 완료될 때까지 <strong>창을 닫거나 새로고침하지 마세요</strong>.</li>' +
+      '</ul>' +
+      '<p style="color:var(--risk); font-weight:600;">⚠️ 저장된 기록은 웹앱에서 되돌릴 수 없습니다(시트에서 직접 삭제). 업로드 전 파일을 한 번 더 확인하세요.</p>' +
+    '</div>';
+
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn btn-outline" onclick="downloadBulkTemplate()">📥 양식 다운로드</button>' +
+    '<button class="btn btn-gold" id="btnBulkStart" onclick="startBulkFileSelect()">📂 파일 선택 후 시작</button>';
+  openModal('📤 입출고 일괄 업로드', body, footer);
+}
+
+/** 제목 행 + 예시 1행짜리 XLSX 양식. 예시 행은 지우고 쓰라고 비고에 적어 둔다. */
+function downloadBulkTemplate() {
+  if (typeof XLSX === 'undefined') return showToast('엑셀 라이브러리를 불러오지 못했습니다. 페이지를 새로고침해 주세요.', 'error');
+  var today = new Date();
+  var ymd = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  var ws = XLSX.utils.aoa_to_sheet([
+    BULK_TX_COLUMNS,
+    [ymd, 'ITEM-0001', '입고', 10, '예시 행입니다 — 지우고 실제 데이터를 입력하세요']
+  ]);
+  ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 8 }, { wch: 40 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '입출고');
+  XLSX.writeFile(wb, '입출고_일괄업로드_양식.xlsx');
+}
+
+function startBulkFileSelect() {
+  var input = document.getElementById('txBulkFile');
+  input.value = ''; // 같은 파일을 다시 골라도 change가 나게 한다
+  input.click();
+}
+
+// ── 2) 파일 읽기 · 파싱 ──
+function onBulkFileSelected(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var shopName = bulkUploadState.shopName || document.getElementById('txShopSelect').value;
+  if (!shopName) return showToast('업장을 먼저 선택하세요', 'warning');
+  bulkUploadState.shopName = shopName;
+  bulkUploadState.fileName = file.name;
+
+  showLoading();
+  readBulkFile(file, function(err, aoa) {
+    if (err) { hideLoading(); return showToast('❌ ' + err.message, 'error'); }
+
+    var parsed = parseBulkRows(aoa);
+    var totalRows = parsed.rows.length + parsed.errors.length;
+    if (totalRows === 0) { hideLoading(); return showToast('데이터 행이 없습니다. 제목 행 아래에 내용을 입력했는지 확인하세요.', 'warning'); }
+    if (totalRows > bulkMaxRows()) {
+      hideLoading();
+      return showToast('❌ 한 번에 최대 ' + bulkMaxRows().toLocaleString('ko-KR') + '건까지 업로드할 수 있습니다. (파일: ' + totalRows + '건)', 'error');
+    }
+    if (parsed.errors.length > 0) { hideLoading(); return showBulkErrors(totalRows, parsed.errors, '파일 형식 검사에서 오류가 발견되었습니다.'); }
+
+    // 서버 사전 검증 — 품목코드 존재·마감 기간 등 시트를 알아야 하는 규칙. 아무것도 쓰지 않는다.
+    google.script.run
+      .withSuccessHandler(function(r) {
+        hideLoading();
+        if (!r || !r.success) {
+          return showBulkErrors(totalRows, (r && r.errors) || [], (r && r.message) || '서버 검증에 실패했습니다.');
+        }
+        bulkUploadState.rows = parsed.rows;
+        showBulkConfirm(parsed.rows, parsed.hasHeader);
+      })
+      .withFailureHandler(function(e) { hideLoading(); showToast('검증 실패: ' + e.message, 'error'); })
+      .uploadBulkTransactions(getToken(), shopName, parsed.rows, { dryRun: true });
+  });
+}
+
+/**
+ * 파일을 2차원 배열(aoa)로 읽는다.
+ * CSV는 인코딩을 스스로 판별한다 — 엑셀이 저장한 CSV는 흔히 EUC-KR(CP949)이라
+ * UTF-8로만 읽으면 한글이 깨진다. UTF-8 엄격 디코딩이 실패하면 EUC-KR로 다시 읽는다.
+ */
+function readBulkFile(file, cb) {
+  if (typeof XLSX === 'undefined') return cb(new Error('엑셀 라이브러리를 불러오지 못했습니다. 페이지를 새로고침해 주세요.'));
+  var reader = new FileReader();
+  reader.onerror = function() { cb(new Error('파일을 읽을 수 없습니다.')); };
+  reader.onload = function(e) {
+    try {
+      var buf = e.target.result;
+      var wb;
+      if (/\.(csv|txt)$/i.test(file.name)) {
+        wb = XLSX.read(decodeBulkCsv(buf), { type: 'string', raw: true }); // raw: 문자열을 날짜/숫자로 임의 변환하지 않는다
+      } else {
+        wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true }); // 날짜 셀은 Date 객체로 받는다
+      }
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) return cb(new Error('읽을 수 있는 시트가 없습니다.'));
+      cb(null, XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }));
+    } catch (ex) {
+      cb(new Error('파일을 해석할 수 없습니다: ' + ex.message));
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function decodeBulkCsv(buf) {
+  var bytes = new Uint8Array(buf);
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch (e) {
+    try { return new TextDecoder('euc-kr').decode(bytes); }
+    catch (e2) { return new TextDecoder('utf-8').decode(bytes); }
+  }
+}
+
+/** 제목 행이면 열 이름 → 인덱스 매핑, 아니면 null (그때는 고정 순서로 읽는다) */
+function detectBulkHeader(firstRow) {
+  if (!firstRow) return null;
+  var aliases = {
+    date: ['날짜', '거래일', '일자', 'date'],
+    code: ['품목코드', '코드', 'code', 'itemcode'],
+    type: ['구분', '거래구분', 'type'],
+    qty:  ['수량', 'qty', 'quantity'],
+    note: ['비고', '메모', 'note', 'remark', 'memo']
+  };
+  var map = {};
+  firstRow.forEach(function(cell, idx) {
+    var key = String(cell == null ? '' : cell).replace(/\s+/g, '').toLowerCase();
+    if (!key) return;
+    Object.keys(aliases).forEach(function(field) {
+      if (map[field] === undefined && aliases[field].indexOf(key) >= 0) map[field] = idx;
+    });
+  });
+  var required = ['date', 'code', 'type', 'qty'];
+  var found = required.every(function(f) { return map[f] !== undefined; });
+  if (!found) return null;
+  if (map.note === undefined) map.note = -1;
+  return map;
+}
+
+function normalizeBulkDate(v) {
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+    return v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
+  }
+  if (typeof v === 'number') {
+    if (v >= 20000 && v <= 80000 && typeof XLSX !== 'undefined' && XLSX.SSF) { // 엑셀 날짜 일련번호
+      var d = XLSX.SSF.parse_date_code(v);
+      if (d) return d.y + '-' + String(d.m).padStart(2, '0') + '-' + String(d.d).padStart(2, '0');
+    }
+    v = String(v);
+  }
+  var s = String(v == null ? '' : v).trim();
+  var m = /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?:\D.*)?$/.exec(s);
+  if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+  m = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  return '';
+}
+
+function normalizeBulkQty(v) {
+  if (typeof v === 'number') return v;
+  var s = String(v == null ? '' : v).replace(/[,\s]/g, '');
+  if (!s) return NaN;
+  return Number(s);
+}
+
+/** aoa → { rows:[{rowNo,date,code,type,qty,note}], errors:[{row,message}], hasHeader } — 빈 행은 건너뛴다 */
+function parseBulkRows(aoa) {
+  var header = detectBulkHeader(aoa[0]);
+  var col = header || { date: 0, code: 1, type: 2, qty: 3, note: 4 };
+  var start = header ? 1 : 0;
+  var rows = [], errors = [];
+
+  for (var i = start; i < aoa.length; i++) {
+    var r = aoa[i];
+    if (!r || r.every(function(c) { return c === '' || c === null || c === undefined; })) continue;
+    var rowNo = i + 1; // 파일에서 사람이 보는 행 번호(제목 행 포함)
+    var cell = function(idx) { return (idx >= 0 && idx < r.length) ? r[idx] : ''; };
+
+    var date = normalizeBulkDate(cell(col.date));
+    var code = String(cell(col.code) == null ? '' : cell(col.code)).trim();
+    var type = String(cell(col.type) == null ? '' : cell(col.type)).trim();
+    var qty = normalizeBulkQty(cell(col.qty));
+    var note = String(cell(col.note) == null ? '' : cell(col.note)).trim();
+
+    var problems = [];
+    if (!date) problems.push('날짜 형식 오류(YYYY-MM-DD)');
+    if (!code) problems.push('품목코드 누락');
+    if (['입고', '출고', '폐기'].indexOf(type) < 0) problems.push('구분은 입고/출고/폐기 중 하나');
+    if (!(qty > 0) || !isFinite(qty)) problems.push('수량은 0보다 큰 숫자');
+    if (note.length > 500) problems.push('비고 500자 초과');
+
+    if (problems.length) errors.push({ row: rowNo, message: problems.join(', ') });
+    else rows.push({ rowNo: rowNo, date: date, code: code, type: type, qty: qty, note: note });
+  }
+  return { rows: rows, errors: errors, hasHeader: !!header };
+}
+
+// ── 3) 결과 · 확인 모달 ──
+function showBulkErrors(total, errors, headline) {
+  var body =
+    '<p style="margin-bottom:10px;">' + escapeHtml(headline || '') + '</p>' +
+    '<p style="margin-bottom:12px; color:var(--text-secondary);">파일 <strong>' + escapeHtml(bulkUploadState.fileName) + '</strong> · 전체 ' + total + '건 중 오류 <strong style="color:var(--risk)">' + errors.length + '건</strong>. <strong>아무것도 저장하지 않았습니다.</strong></p>' +
+    '<div class="data-table-wrapper" style="max-height:320px; overflow-y:auto;"><table class="data-table"><thead><tr><th style="width:70px">행</th><th>오류</th></tr></thead><tbody id="bulkErrorBody"></tbody></table></div>';
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">닫기</button>' +
+    '<button class="btn btn-gold" onclick="startBulkFileSelect()">📂 다른 파일 선택</button>';
+  openModal('❌ 검증 실패 — 저장하지 않았습니다', body, footer);
+
+  var tbody = document.getElementById('bulkErrorBody');
+  var MAX = 50;
+  errors.slice(0, MAX).forEach(function(e) {
+    var tr = document.createElement('tr');
+    var tdRow = document.createElement('td'); tdRow.textContent = e.row + '행'; tdRow.style.fontWeight = '600';
+    var tdMsg = document.createElement('td'); tdMsg.textContent = e.message; tdMsg.style.textAlign = 'left';
+    tr.appendChild(tdRow); tr.appendChild(tdMsg); tbody.appendChild(tr);
+  });
+  if (errors.length > MAX) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td'); td.colSpan = 2; td.textContent = '… 외 ' + (errors.length - MAX) + '건';
+    td.style.color = 'var(--text-secondary)';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+}
+
+function showBulkConfirm(rows, hasHeader) {
+  var counts = { '입고': 0, '출고': 0, '폐기': 0 };
+  rows.forEach(function(r) { counts[r.type]++; });
+
+  var body =
+    '<p style="margin-bottom:6px;">파일 <strong>' + escapeHtml(bulkUploadState.fileName) + '</strong> → 업장 <strong>' + escapeHtml(bulkUploadState.shopName) + '</strong></p>' +
+    '<p style="margin-bottom:12px;">✅ 검증 통과 <strong>' + rows.length + '건</strong> — 입고 ' + counts['입고'] + ' · 출고 ' + counts['출고'] + ' · 폐기 ' + counts['폐기'] +
+      (hasHeader ? '' : ' <span style="color:var(--text-secondary)">(제목 행 없음 — 고정 열 순서로 읽음)</span>') + '</p>' +
+    '<div class="data-table-wrapper" style="max-height:280px; overflow-y:auto; margin-bottom:12px;"><table class="data-table"><thead><tr>' +
+      '<th>행</th><th>날짜</th><th>품목코드</th><th>구분</th><th>수량</th><th>비고</th></tr></thead><tbody id="bulkPreviewBody"></tbody></table></div>' +
+    '<p style="color:var(--risk); font-weight:600;">⚠️ 저장을 시작하면 되돌릴 수 없습니다. ' + bulkChunkSize() + '건씩 나누어 저장되며, 완료될 때까지 창을 닫지 마세요.</p>';
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn btn-gold" id="btnBulkRun" onclick="runBulkUpload()">🚀 ' + rows.length + '건 저장 시작</button>';
+  openModal('📋 업로드 확인', body, footer);
+
+  var tbody = document.getElementById('bulkPreviewBody');
+  var MAX = 20;
+  rows.slice(0, MAX).forEach(function(r) {
+    var tr = document.createElement('tr');
+    [r.rowNo, r.date, r.code, r.type, r.qty, r.note || '-'].forEach(function(v, idx) {
+      var td = document.createElement('td');
+      td.textContent = String(v);
+      if (idx === 3) td.style.color = r.type === '입고' ? 'var(--normal)' : (r.type === '폐기' ? 'var(--risk)' : 'var(--order)');
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  if (rows.length > MAX) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td'); td.colSpan = 6; td.textContent = '… 외 ' + (rows.length - MAX) + '건';
+    td.style.color = 'var(--text-secondary)';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+}
+
+// ── 4) 청크 저장 ──
+function runBulkUpload() {
+  if (bulkUploadState.running) return;
+  var rows = bulkUploadState.rows;
+  var shopName = bulkUploadState.shopName;
+  if (!rows.length || !shopName) return showToast('업로드할 데이터가 없습니다. 파일을 다시 선택하세요.', 'warning');
+
+  var size = bulkChunkSize();
+  var chunks = [];
+  for (var i = 0; i < rows.length; i += size) chunks.push(rows.slice(i, i + size));
+
+  bulkUploadState.running = true;
+  var closeBtn = document.querySelector('#modalOverlay .modal-close');
+  if (closeBtn) closeBtn.style.visibility = 'hidden'; // 진행 중 닫기 방지
+
+  openModal('⏳ 저장 중…',
+    '<p id="bulkProgressText" style="margin-bottom:10px; font-weight:600;">0 / ' + rows.length + '건</p>' +
+    '<div style="background:#e8f0fb; border-radius:8px; height:14px; overflow:hidden; margin-bottom:12px;">' +
+      '<div id="bulkProgressBar" style="height:100%; width:0%; background:var(--gold,#d4af37); transition:width 0.3s;"></div></div>' +
+    '<p style="color:var(--risk); font-weight:600;">⚠️ 완료될 때까지 이 창을 닫거나 새로고침하지 마세요.</p>',
+    '');
+
+  var done = 0, saved = 0, written = 0, overdraft = 0;
+  var RETRY_MAX = 2;
+
+  function updateProgress() {
+    var t = document.getElementById('bulkProgressText');
+    var b = document.getElementById('bulkProgressBar');
+    if (t) t.textContent = done + ' / ' + rows.length + '건';
+    if (b) b.style.width = Math.round(done / rows.length * 100) + '%';
+  }
+
+  function finish(failure) {
+    bulkUploadState.running = false;
+    if (closeBtn) closeBtn.style.visibility = '';
+    bulkUploadState.rows = [];
+    loadTransactions();
+
+    if (!failure) {
+      var msg = '✅ ' + saved + '건 저장 완료 (시트 ' + written + '행' + (written > saved ? ', FIFO 분할 포함' : '') + ')' +
+        (overdraft > 0 ? ' · ⚠️ 초과출고 ' + overdraft + '건은 마스터 단가로 기록' : '');
+      showToast(msg, 'success');
+      openModal('✅ 업로드 완료',
+        '<p style="font-size:1.05rem; margin-bottom:8px;">' + escapeHtml(msg) + '</p>' +
+        '<p style="color:var(--text-secondary);">최근 입출고 내역이 갱신되었습니다. 재고 수치는 다음 통합 갱신 때 반영됩니다.</p>',
+        '<button class="btn btn-gold" onclick="closeModal()">확인</button>');
+      return;
+    }
+
+    var firstUnsaved = failure.chunk[0].rowNo;
+    var reason = failure.error ? ('통신 오류: ' + failure.error.message) : ((failure.result && failure.result.message) || '알 수 없는 오류');
+    showToast('⚠️ 업로드가 중단되었습니다 (' + done + '/' + rows.length + '건 저장)', 'error');
+    openModal('⚠️ 업로드 중단',
+      '<p style="margin-bottom:8px;">' + done + '건은 저장되었고, 파일의 <strong>' + firstUnsaved + '행부터</strong>는 저장되지 않았습니다.</p>' +
+      '<p style="margin-bottom:12px; color:var(--risk);">' + escapeHtml(reason) + '</p>' +
+      (failure.error
+        ? '<p style="color:var(--text-secondary);">통신 오류는 서버가 저장을 끝냈는데 응답만 유실됐을 수도 있습니다. 최근 입출고 내역에서 ' + firstUnsaved + '행 내용이 있는지 확인한 뒤, 없는 행부터 다시 업로드하세요.</p>'
+        : '<p style="color:var(--text-secondary);">파일에서 ' + firstUnsaved + '행 이전을 지우고 나머지만 다시 업로드하세요.</p>'),
+      '<button class="btn btn-gold" onclick="closeModal()">확인</button>');
+  }
+
+  function sendChunk(idx, attempt) {
+    if (idx >= chunks.length) return finish(null);
+    var chunk = chunks[idx];
+    google.script.run
+      .withSuccessHandler(function(r) {
+        if (!r || !r.success) {
+          // 락 대기 초과("⏳")는 서버가 아무것도 쓰지 않은 상태이므로 재시도해도 중복이 생기지 않는다
+          if (r && /⏳/.test(r.message || '') && attempt < RETRY_MAX) {
+            return setTimeout(function() { sendChunk(idx, attempt + 1); }, 2000);
+          }
+          return finish({ chunk: chunk, result: r });
+        }
+        done += chunk.length;
+        saved += r.saved || 0;
+        written += r.rowsWritten || 0;
+        overdraft += r.overdraftCount || 0;
+        updateProgress();
+        sendChunk(idx + 1, 0);
+      })
+      // 통신 오류는 서버가 이미 저장했을 수 있으므로 자동 재시도하지 않는다(중복 방지) — 사람이 확인하도록 안내
+      .withFailureHandler(function(e) { finish({ chunk: chunk, error: e }); })
+      .uploadBulkTransactions(getToken(), shopName, chunk, { dryRun: false });
+  }
+
+  sendChunk(0, 0);
+}
 
 </script>

@@ -70,6 +70,8 @@ const SHEET_SEASONS   = "📅 시즌설정";
 const SHEET_USERS     = "👤 사용자관리";
 const SHEET_BASE_DATA = "📂 기초데이터";
 const SHEET_CHANGELOG = "📋 변경이력";
+// [TASK-017] 매입처(거래처) 마스터 — 품목 마스터가 거래처코드로만 참조한다(거래처명 복제 금지)
+const SHEET_VENDORS   = "🤝 거래처관리";
 const SHEET_SYSTEM_LOGS = "🚨 System_Logs"; // [v10.0] 에러 로그 시트
 
 const STATUS_RISK  = "🚨 위험";
@@ -92,11 +94,12 @@ const VALIDATION_ROWS = 5000; // 서식/검증을 미리 구워 두는 최소 �
 
 // [TASK-002] v9 → v11로 상향: 기존 v10(System_Logs) 마이그레이션이 이 상수가
 // 9에 머물러 있어 runMigrations()에서 한 번도 실행되지 않았던 것을 함께 바로잡음.
-const CURRENT_SCHEMA_VERSION = 16; // [v12] 서식/검증 행 범위 확장(TASK-009) + [v13] 단위 목록 CASE 삭제 + [v14] 음수 재고 수식/서식(TASK-011) + [v15] 단위 '조', '줄' 추가 + [v16] 서식 범위 동적 확장(TASK-016)
+const CURRENT_SCHEMA_VERSION = 18; // [v12] 서식/검증 행 범위 확장(TASK-009) + [v13] 단위 목록 CASE 삭제 + [v14] 음수 재고 수식/서식(TASK-011) + [v15] 단위 '조', '줄' 추가 + [v16] 서식 범위 동적 확장(TASK-016) + [v17] 거래처 마스터 신설(TASK-017) + [v18] 사용유무 손상 복구 + 거래처 드롭다운 소스 열 정리
 
 // [v8.0] 성능 최적화용 캐시 키 & TTL 상수
 const CACHE_KEYS = {
-  ITEM_MAP: 'ITEM_CODE_MAP'
+  ITEM_MAP: 'ITEM_CODE_MAP',
+  VENDOR_LIST: 'VENDOR_LIST' // [TASK-018] 거래처 목록
 };
 const TTL = {
   ITEM_MAP: 600 // 품목 마스터 인덱스 (10분)
@@ -126,6 +129,14 @@ const INITIAL_ADMIN_PROPERTY_KEYS = {
 const VALID_TRANSACTION_TYPES = ["입고", "출고", "폐기"];
 const MAX_TRANSACTION_QTY = 100000000;
 const MAX_TRANSACTION_NOTE_LENGTH = 500;
+
+// [TASK-019] 웹앱 입출고 일괄 업로드(CSV/XLSX)
+//   BULK_TX_CHUNK_SIZE — 서버가 한 번의 호출에서 저장하는 최대 행 수.
+//     GAS 실행 제한(6분) 안에서 FIFO 분할 계산 + 1회 setValues가 넉넉히 끝나는 크기다.
+//     클라이언트는 Index.html 템플릿이 이 값을 그대로 주입받아 같은 크기로 나눠 보낸다(양쪽이 어긋나지 않게 한 곳에만 둔다).
+//   BULK_TX_MAX_ROWS   — 파일 1개에서 받아들이는 최대 행 수(사전 검증 호출의 상한).
+const BULK_TX_CHUNK_SIZE = 100;
+const BULK_TX_MAX_ROWS = 2000;
 
 // [v7.0] 사용자 데이터 열 매핑 (👤 사용자관리 시트 A~E열)
 const USER_COLS = {
@@ -160,11 +171,57 @@ const MASTER_COLS = {
   ORDER_QTY: 15,    // P열: 적정발주량 (수식)
   STATUS: 16,       // Q열: 재고 상태 (수식)
   // R열(17): 스페이서
-  TAX_TYPE: 18,     // S열: 과세구분
-  UNIT_PRICE: 19,   // T열: 매입단가
-  SUPPLY_PRICE: 20, // U열: 공급단가 (수식)
-  TAX_AMOUNT: 21,   // V열: 단위 세액 (수식)
-  TOTAL_VALUE: 22,  // W열: 재고 합계금액
-  USAGE_STATUS: 23  // X열: 사용유무
+  // [TASK-017] S열에 거래처코드를 삽입 — 이하 과세구분~사용유무가 한 칸씩 우측으로 이동했다
+  VENDOR_CODE: 18,  // S열: 거래처코드 (🤝 거래처관리 참조, 빈 값 허용)
+  TAX_TYPE: 19,     // T열: 과세구분
+  UNIT_PRICE: 20,   // U열: 매입단가
+  SUPPLY_PRICE: 21, // V열: 공급단가 (수식)
+  TAX_AMOUNT: 22,   // W열: 단위 세액 (수식)
+  TOTAL_VALUE: 23,  // X열: 재고 합계금액
+  USAGE_STATUS: 24  // Y열: 사용유무
 };
-const MASTER_COL_COUNT = 24; // 총 열 수 (getRange 호출 시 사용)
+const MASTER_COL_COUNT = 25; // 총 열 수 (getRange 호출 시 사용) — [TASK-017] 24 → 25
+
+// [TASK-017] 🤝 거래처관리 시트 열 인덱스 매핑 (0-based, getValues() 배열용)
+//
+// 거래처명은 여기에만 존재한다. 품목 마스터는 코드만 들고 있으므로
+// 거래처명이 바뀌어도 품목 마스터를 손댈 필요가 없다(VLOOKUP 복제 금지).
+const VENDOR_COLS = {
+  CODE: 0,          // A열: 거래처코드 (PK, VND-001 형식)
+  NAME: 1,          // B열: 거래처명
+  SHORT_NAME: 2,    // C열: 약어명
+  BIZ_NO: 3,        // D열: 사업자번호
+  CEO: 4,           // E열: 대표자명
+  BIZ_TYPE: 5,      // F열: 업태
+  BIZ_ITEM: 6,      // G열: 업종
+  ADDRESS: 7,       // H열: 주소
+  PHONE: 8,         // I열: 전화
+  EMAIL: 9,         // J열: 이메일
+  BIZ_ENTITY: 10,   // K열: 사업자구분 (개인/법인)
+  NOTE: 11,         // L열: 비고
+  USAGE_STATUS: 12  // M열: 사용여부 (사용/미사용 — 논리 삭제)
+};
+const VENDOR_COL_COUNT = 13; // A~M 총 열 수
+
+// 거래처코드 표기 규칙 — 입력 경고(데이터 검증)와 문서가 같은 규칙을 보게 상수로 둔다
+const VENDOR_CODE_PREFIX = "VND-";
+const VENDOR_BIZ_ENTITIES = ["개인", "법인"]; // K열 드롭다운
+
+// [TASK-017] 품목 마스터 거래처 드롭다운의 소스 열 (🤝 거래처관리 N열, 1-based).
+//
+// 데이터 검증의 requireValueInRange는 조건 필터를 걸 수 없다. "사용여부=사용"인 코드만
+// 고르게 하려면 걸러진 목록이 시트 어딘가에 실제로 존재해야 하므로,
+// 13열 입력 폼(A~M) 바깥에 FILTER 수식용 숨김 열을 하나 둔다.
+//
+// [v18] 15(O열) → 14(N열). 처음에는 입력 폼과 한 칸 떼어 두려고 O열에 뒀는데,
+//   그 사이의 N열이 **보이는 빈 열**로 남았다. 서식 복구가 열을 확충할 때마다
+//   "N열이 새로 생겼다"로 보여 사용자가 결함으로 신고했다(실제로는 소스 열 재생성).
+//   소스 열은 어차피 숨기므로 M 바로 옆으로 당기면 시트가 M에서 끝나는 것처럼 보인다.
+const VENDOR_ACTIVE_CODE_COL = 14;   // N열 (숨김)
+
+// [v18] v17이 쓰던 옛 소스 열. 마이그레이션이 이 열을 비울 때만 참조한다.
+//   헤더 문구가 일치할 때만 손대므로 사용자가 O열에 적어 둔 내용은 건드리지 않는다.
+const VENDOR_ACTIVE_CODE_COL_LEGACY = 15;
+const VENDOR_ACTIVE_CODE_HEADER = "사용중 거래처코드(자동)";
+
+const VENDOR_DROPDOWN_ROWS = 500;    // 드롭다운 소스로 잡아 두는 행 수

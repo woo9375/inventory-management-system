@@ -1,0 +1,315 @@
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  [TASK-018] 거래처 관리
+//
+//  목록은 한 번 받아 vendorState.all에 두고, 검색·필터는 클라이언트에서 건다.
+//  거래처는 수백 건 규모라 매 입력마다 서버를 다시 부를 이유가 없다.
+// ═══════════════════════════════════════════════════════════════
+var vendorState = { all: [], editingCode: null };
+
+function loadVendors() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || res.success === false) {
+        showToast((res && res.message) || '거래처 목록을 불러오지 못했습니다', 'error');
+        vendorState.all = [];
+        renderVendors();
+        return;
+      }
+      vendorState.all = res.vendors || [];
+      renderVendors();
+    })
+    .withFailureHandler(function(err) { hideLoading(); showToast('거래처 로드 실패: ' + err.message, 'error'); })
+    .getVendors(getToken());
+}
+
+/** 검색어 · 사용여부 필터를 적용한 목록 */
+function filteredVendors() {
+  var q = (document.getElementById('vendorSearch').value || '').trim().toLowerCase();
+  var usage = document.getElementById('vendorUsageFilter').value;
+
+  return vendorState.all.filter(function(v) {
+    if (usage !== 'all' && v.usageStatus !== usage) return false;
+    if (!q) return true;
+    // 거래처명 · 약어명 · 사업자번호 부분 일치
+    return [v.name, v.shortName, v.bizNo].some(function(field) {
+      return String(field || '').toLowerCase().indexOf(q) >= 0;
+    });
+  });
+}
+
+function renderVendors() {
+  var isAdmin = currentUser && currentUser.role === 'admin';
+  var list = filteredVendors();
+  var tbody = document.getElementById('vendorTableBody');
+  tbody.replaceChildren();
+
+  document.getElementById('vendorCount').textContent =
+    list.length === vendorState.all.length
+      ? list.length + '건'
+      : list.length + ' / ' + vendorState.all.length + '건';
+
+  if (list.length === 0) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = isAdmin ? 8 : 7;
+    td.className = 'empty-state';
+    var icon = document.createElement('span');
+    icon.className = 'empty-icon';
+    icon.textContent = '🤝';
+    var p = document.createElement('p');
+    p.textContent = vendorState.all.length === 0
+      ? '등록된 거래처가 없습니다'
+      : '검색 조건에 맞는 거래처가 없습니다';
+    td.appendChild(icon); td.appendChild(p);
+    tr.appendChild(td); tbody.appendChild(tr);
+    return;
+  }
+
+  var fragment = document.createDocumentFragment();
+  list.forEach(function(v) {
+    var tr = document.createElement('tr');
+
+    [v.code, v.name, v.shortName, v.bizNo, v.ceo, v.phone].forEach(function(value, index) {
+      var td = document.createElement('td');
+      var node = index === 0 ? document.createElement('strong') : document.createElement('span');
+      node.textContent = value == null ? '' : String(value);
+      td.appendChild(node);
+      tr.appendChild(td);
+    });
+
+    // 사용여부 — 미사용은 회색 배지로 죽여 둔다 (시트의 회색 처리와 같은 관례)
+    var usageCell = document.createElement('td');
+    var badge = document.createElement('span');
+    badge.className = 'status-badge ' + (v.usageStatus === '미사용' ? '' : 'normal');
+    badge.textContent = v.usageStatus;
+    if (v.usageStatus === '미사용') badge.style.cssText = 'background:#f0f0f0;color:#999;border-color:#ddd;';
+    usageCell.appendChild(badge);
+    tr.appendChild(usageCell);
+
+    if (isAdmin) {
+      var actionCell = document.createElement('td');
+      var edit = document.createElement('button');
+      edit.className = 'action-btn edit'; edit.title = '수정'; edit.textContent = '✏️';
+      edit.addEventListener('click', function() { openEditVendorModal(v.code); });
+      var remove = document.createElement('button');
+      remove.className = 'action-btn delete'; remove.title = '삭제'; remove.textContent = '🗑️';
+      remove.addEventListener('click', function() { confirmDeleteVendor(v.code); });
+      actionCell.appendChild(edit);
+      actionCell.appendChild(document.createTextNode(' '));
+      actionCell.appendChild(remove);
+      tr.appendChild(actionCell);
+    }
+
+    fragment.appendChild(tr);
+  });
+  tbody.replaceChildren(fragment);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  등록 / 수정 모달
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 등록·수정이 같은 폼을 쓴다. 다른 것은 거래처코드 칸의 내용과 저장 버튼의 동작뿐이다.
+ *
+ * 값은 여기 HTML에 박아 넣지 않고 fillVendorForm()이 나중에 .value로 넣는다.
+ * escapeHtml()은 textContent → innerHTML 방식이라 `&`, `<`, `>`만 막고 큰따옴표는 그대로 통과시킨다.
+ * 거래처명에 "가 하나 들어가면 value="..." 속성이 그 자리에서 닫혀 마크업이 깨진다.
+ * (기존 코드가 escapeHtml을 쓰는 자리는 전부 텍스트 위치라 문제가 없었다.)
+ */
+function vendorFormHtml() {
+  return '<div class="form-grid">' +
+    '<div class="form-group"><label>거래처코드</label>' +
+      '<input type="text" id="vdCode" readonly style="background:#e8f0fb"></div>' +
+    '<div class="form-group"><label>거래처명 <span style="color:var(--risk-text)">*</span></label>' +
+      '<input type="text" id="vdName" placeholder="예: (주)덕구식자재"></div>' +
+    '<div class="form-group"><label>약어명</label>' +
+      '<input type="text" id="vdShortName" placeholder="예: 덕구식자재"></div>' +
+    '<div class="form-group"><label>사업자번호</label>' +
+      '<input type="text" id="vdBizNo" placeholder="000-00-00000"></div>' +
+    '<div class="form-group"><label>대표자명</label>' +
+      '<input type="text" id="vdCeo"></div>' +
+    '<div class="form-group"><label>사업자구분</label>' +
+      '<select id="vdBizEntity"><option value="">선택...</option>' +
+      '<option value="개인">개인</option><option value="법인">법인</option></select></div>' +
+    '<div class="form-group"><label>업태</label>' +
+      '<input type="text" id="vdBizType" placeholder="예: 도소매"></div>' +
+    '<div class="form-group"><label>업종</label>' +
+      '<input type="text" id="vdBizItem" placeholder="예: 식자재"></div>' +
+    '<div class="form-group"><label>전화</label>' +
+      '<input type="text" id="vdPhone" placeholder="054-000-0000"></div>' +
+    '<div class="form-group"><label>이메일</label>' +
+      '<input type="text" id="vdEmail"></div>' +
+    '<div class="form-group"><label>사용여부</label>' +
+      '<select id="vdUsageStatus"><option value="사용">사용</option>' +
+      '<option value="미사용">미사용</option></select></div>' +
+    '<div class="form-group" style="grid-column: 1 / -1"><label>주소</label>' +
+      '<input type="text" id="vdAddress"></div>' +
+    '<div class="form-group" style="grid-column: 1 / -1"><label>비고</label>' +
+      '<input type="text" id="vdNote"></div>' +
+    '</div>';
+}
+
+/**
+ * 모달이 열린 뒤 값을 채운다. v가 null이면 신규 등록 폼이다.
+ * .value 대입은 문자열을 그대로 담으므로 따옴표·꺾쇠가 들어가도 안전하다.
+ */
+function fillVendorForm(v) {
+  var d = v || {};
+  var set = function(id, value) { document.getElementById(id).value = value == null ? '' : String(value); };
+
+  var codeInput = document.getElementById('vdCode');
+  if (v) {
+    codeInput.value = d.code;
+  } else {
+    codeInput.value = '';
+    codeInput.placeholder = '등록 시 자동 부여 (VND-001 형식)';
+  }
+
+  set('vdName', d.name);
+  set('vdShortName', d.shortName);
+  set('vdBizNo', d.bizNo);
+  set('vdCeo', d.ceo);
+  set('vdBizType', d.bizType);
+  set('vdBizItem', d.bizItem);
+  set('vdPhone', d.phone);
+  set('vdEmail', d.email);
+  set('vdAddress', d.address);
+  set('vdNote', d.note);
+  set('vdBizEntity', d.bizEntity || '');
+  set('vdUsageStatus', d.usageStatus || '사용');
+}
+
+/** 모달 입력값 수집 — 거래처코드는 서버가 정하므로 보내지 않는다 */
+function collectVendorForm() {
+  var val = function(id) { return (document.getElementById(id).value || '').trim(); };
+  return {
+    name: val('vdName'),
+    shortName: val('vdShortName'),
+    bizNo: val('vdBizNo'),
+    ceo: val('vdCeo'),
+    bizType: val('vdBizType'),
+    bizItem: val('vdBizItem'),
+    address: val('vdAddress'),
+    phone: val('vdPhone'),
+    email: val('vdEmail'),
+    bizEntity: val('vdBizEntity'),
+    note: val('vdNote'),
+    usageStatus: val('vdUsageStatus') || '사용'
+  };
+}
+
+function openAddVendorModal() {
+  vendorState.editingCode = null;
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn btn-gold" onclick="submitVendor()">등록</button>';
+  openModal('➕ 거래처 등록', vendorFormHtml(), footer);
+  fillVendorForm(null);
+}
+
+function openEditVendorModal(code) {
+  var v = vendorState.all.find(function(x) { return x.code === code; });
+  if (!v) return showToast('거래처를 찾을 수 없습니다', 'error');
+
+  vendorState.editingCode = code;
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn btn-gold" onclick="submitVendor()">저장</button>';
+  openModal('✏️ 거래처 수정 — ' + v.code, vendorFormHtml(), footer);
+  fillVendorForm(v);
+}
+
+/** 등록·수정 공통 저장. editingCode 유무로 갈린다. */
+function submitVendor() {
+  var data = collectVendorForm();
+  if (!data.name) return showToast('거래처명을 입력해주세요', 'warning');
+
+  var code = vendorState.editingCode;
+  var done = function(r) {
+    hideLoading();
+    showToast(r.message, r.success ? 'success' : 'error');
+    if (r.success) { closeModal(); loadVendors(); }
+  };
+  var failed = function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); };
+
+  showLoading();
+  if (code) {
+    google.script.run.withSuccessHandler(done).withFailureHandler(failed)
+      .updateVendor(getToken(), code, data);
+  } else {
+    google.script.run.withSuccessHandler(done).withFailureHandler(failed)
+      .addVendor(getToken(), data);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  삭제
+// ═══════════════════════════════════════════════════════════════
+function confirmDeleteVendor(code) {
+  var v = vendorState.all.find(function(x) { return x.code === code; });
+  if (!v) return showToast('거래처를 찾을 수 없습니다', 'error');
+
+  vendorState.editingCode = code;
+  var body = '<p style="text-align:center;font-size:1rem;">거래처 <strong>"' + escapeHtml(v.name) + '"</strong>' +
+    ' (' + escapeHtml(v.code) + ')을(를) 삭제하시겠습니까?<br>' +
+    '<span style="color:var(--order);font-size:0.85rem;">⚠️ 품목이 사용 중인 거래처는 삭제되지 않습니다. ' +
+    '그 경우 사용여부를 \'미사용\'으로 바꿔주세요.</span></p>';
+  var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn btn-danger" onclick="doDeleteVendor(vendorState.editingCode)">삭제</button>';
+  openModal('🗑️ 거래처 삭제 확인', body, footer);
+}
+
+function doDeleteVendor(code) {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) {
+      hideLoading();
+      if (r.success) {
+        showToast(r.message, 'success');
+        closeModal();
+        loadVendors();
+        return;
+      }
+      // 사용 중이라 거절된 경우는 토스트로 흘려보내면 안 된다 — 어떤 품목이 막고 있는지,
+      // 다음에 무엇을 해야 하는지(미사용 처리)를 모달에 그대로 남긴다.
+      if (r.inUse) {
+        var body = '<p style="white-space:pre-wrap;font-size:0.95rem;">' + escapeHtml(r.message) + '</p>';
+        var footer = '<button class="btn btn-outline" onclick="closeModal()">닫기</button>' +
+          '<button class="btn btn-gold" onclick="markVendorUnused(vendorState.editingCode)">미사용으로 변경</button>';
+        openModal('⚠️ 삭제할 수 없습니다', body, footer);
+        return;
+      }
+      showToast(r.message, 'error');
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
+    .deleteVendor(getToken(), code);
+}
+
+/** 삭제 거절 모달에서 곧바로 논리 삭제로 넘어가는 경로 */
+function markVendorUnused(code) {
+  var v = vendorState.all.find(function(x) { return x.code === code; });
+  if (!v) return showToast('거래처를 찾을 수 없습니다', 'error');
+
+  var data = {
+    name: v.name, shortName: v.shortName, bizNo: v.bizNo, ceo: v.ceo,
+    bizType: v.bizType, bizItem: v.bizItem, address: v.address, phone: v.phone,
+    email: v.email, bizEntity: v.bizEntity, note: v.note,
+    usageStatus: '미사용'
+  };
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) {
+      hideLoading();
+      showToast(r.success ? "✅ 거래처 '" + v.name + "'을(를) 미사용으로 변경했습니다" : r.message,
+        r.success ? 'success' : 'error');
+      if (r.success) { closeModal(); loadVendors(); }
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
+    .updateVendor(getToken(), code, data);
+}
+</script>

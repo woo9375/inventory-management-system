@@ -90,13 +90,16 @@
           <span class="nav-icon">🏪</span> 업장 관리
         </button>
         <button id="navSeason" class="nav-item admin-only" onclick="showTab('season', this)">
-          <span class="nav-icon">📅</span> 시즌 관리
+          <span class="nav-icon">📅</span> 시즌 설정
         </button>
         <button id="navUser" class="nav-item admin-only" onclick="showTab('user', this)">
           <span class="nav-icon">👥</span> 계정 관리
         </button>
         <button id="navBaseData" class="nav-item admin-only" onclick="showTab('basedata', this)">
           <span class="nav-icon">📂</span> 기초데이터
+        </button>
+        <button id="navVendor" class="nav-item admin-only" onclick="showTab('vendor', this)">
+          <span class="nav-icon">🤝</span> 거래처 관리
         </button>
         <button id="navMySettings" class="nav-item" onclick="showTab('mysettings', this)">
           <span class="nav-icon">⚙️</span> 내 설정
@@ -205,6 +208,10 @@
             <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()"
               style="border: 1px solid var(--gold); background: #fffdf5;"
               title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
+            <!-- [TASK-019] 입출고 일괄 업로드 — 안내문 모달 → 파일 선택 → 사전 검증 → 청크 저장 (JS_Tx.html) -->
+            <button id="btnTxBulkUpload" class="btn btn-outline btn-sm" onclick="openBulkUploadModal()"
+              title="CSV/엑셀 파일로 입출고 기록을 한 번에 등록합니다.">📤 일괄 업로드</button>
+            <input type="file" id="txBulkFile" accept=".csv,.xlsx,.xls" style="display:none;" onchange="onBulkFileSelected(this)">
             <button id="btnShopSelectModal" class="btn btn-outline" onclick="openShopSelectionModal()" style="font-weight:bold; font-size:1.0rem; border: 2px solid var(--navy-600); border-radius: 8px; padding: 6px 16px; color: var(--navy-800); background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
               🏪 업장 선택...
             </button>
@@ -331,10 +338,10 @@
         </div>
       </div>
 
-      <!-- ━━━━━━━━━ 시즌 관리 탭 ━━━━━━━━━ -->
+      <!-- ━━━━━━━━━ 시즌 설정 탭 ━━━━━━━━━ -->
       <div id="tab-season" class="tab-content">
         <div class="page-header">
-          <h2>📅 시즌 관리</h2>
+          <h2>📅 시즌 설정</h2>
           <div class="header-meta">
             <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('validateSeason')"
               title="시즌 설정이 올바른지 검증하고 누락된 설정을 확인합니다.">✅ 시즌 설정 검증</button>
@@ -342,7 +349,7 @@
         </div>
         <div class="card">
           <div class="card-header">
-            <h3>시즌 설정</h3>
+            <h3>시즌 목록</h3>
             <button class="btn btn-gold btn-sm admin-only" onclick="openAddSeasonModal()">➕ 추가</button>
           </div>
           <div class="card-body">
@@ -449,6 +456,58 @@
         </div>
       </div>
 
+      <!-- ━━━━━━━━━ 거래처 관리 탭 (TASK-018) ━━━━━━━━━ -->
+      <div id="tab-vendor" class="tab-content">
+        <div class="page-header">
+          <h2>🤝 거래처 관리</h2>
+          <div class="header-meta">
+            <span id="vendorCount" class="season-badge">0건</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>거래처 목록</h3>
+            <button class="btn btn-gold btn-sm admin-only" onclick="openAddVendorModal()">➕ 추가</button>
+          </div>
+          <div class="card-body">
+            <div class="form-grid" style="margin-bottom:16px;">
+              <div class="form-group">
+                <label>검색 (거래처명 · 약어명 · 사업자번호)</label>
+                <input type="text" id="vendorSearch" placeholder="검색어 입력..." autocomplete="off"
+                  oninput="renderVendors()">
+              </div>
+              <div class="form-group">
+                <label>사용여부</label>
+                <select id="vendorUsageFilter" onchange="renderVendors()">
+                  <option value="all">전체</option>
+                  <option value="사용">사용</option>
+                  <option value="미사용">미사용</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>거래처코드</th>
+                    <th>거래처명</th>
+                    <th>약어명</th>
+                    <th>사업자번호</th>
+                    <th>대표자명</th>
+                    <th>전화</th>
+                    <th>사용여부</th>
+                    <th class="admin-only">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="vendorTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ━━━━━━━━━ 내 설정 탭 ━━━━━━━━━ -->
       <div id="tab-mysettings" class="tab-content">
         <div class="page-header">
@@ -518,12 +577,19 @@
   <!-- ═══════ 인쇄 전용 영역 ═══════ -->
   <div id="printContainer" class="print-container"></div>
 
+  <!-- [TASK-019] 일괄 업로드 청크 크기 — Config.gs 상수를 템플릿으로 주입해 서버 제한과 어긋나지 않게 한다 -->
+  <script>
+    var BULK_TX_CHUNK_SIZE = Number('<?= BULK_TX_CHUNK_SIZE ?>') || 100;
+    var BULK_TX_MAX_ROWS = Number('<?= BULK_TX_MAX_ROWS ?>') || 2000;
+  </script>
+
   <?!= include('JS_Auth') ?>
   <?!= include('JS_UI') ?>
   <?!= include('JS_Tx') ?>
 
   <?!= include('JS_Config') ?>
   <?!= include('JS_BaseData') ?>
+  <?!= include('JS_Vendor') ?>
 </body>
 
 </html>

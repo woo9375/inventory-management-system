@@ -262,6 +262,11 @@ const MIGRATIONS = {
     console.log("[Migration v9] 사용유무 컬럼 + 단위 추가 시작...");
     
     // ── Step 1: 품목 마스터 시트에 X열(24번째) '사용유무' 헤더 추가 ──
+    //
+    // ⚠️ [TASK-017] 아래 "X2" · 24는 **v9 당시의** 열 번호다. 현재 코드에서 사용유무는 Y열(25)이지만
+    //    여기를 Y/25로 고치면 안 된다. 마이그레이션은 낮은 버전부터 순서대로 도는 탓에,
+    //    이 함수가 도는 시점의 시트는 아직 24열 구조이고 S열(거래처코드)은 v17에서야 끼어든다.
+    //    지금 값을 최신 열로 바꾸면 레거시 시트(v8 이하)의 업그레이드 경로가 그 자리에서 어긋난다.
     const masterSheet = ss.getSheetByName(SHEET_MASTER);
     if (masterSheet) {
       // 현재 X2 헤더 확인 — 이미 있으면 스킵
@@ -725,13 +730,26 @@ MIGRATIONS[14] = function migrate_to_v14(ss) {
   }
 
   // ── Step 1: 적정발주량(P3) / 재고 합계금액(W3) 수식 갱신 ──
+  //
+  // ⚠️ [TASK-017] "W3"와 T3:T도 **v14 당시의** 주소다(현재 합계금액은 X열, 매입단가는 U열).
+  //    v9와 같은 이유로 최신 열로 올리지 않는다 — 이 함수가 도는 시점의 시트는 아직 24열이고,
+  //    열을 미는 일은 v17이 뒤이어 한 번만 한다. 여기서 미리 밀면 두 번 밀린다.
   masterSheet.getRange("P3").setFormula(`=ARRAYFORMULA(IF(A3:A="", "", IF(I3:I<=0, 0, IF((I3:I * M3:M) - H3:H < 0, 0, ROUNDUP((I3:I * M3:M) - H3:H, 0)))))`);
   masterSheet.getRange("W3").setFormula(`=ARRAYFORMULA(IF(A3:A="", "", IF(T3:T * H3:H < 0, 0, T3:T * H3:H)))`);
   console.log("[Migration v14] P3(적정발주량) / W3(재고 합계금액) 수식 갱신 완료");
 
   // ── Step 2: H열 음수 조건부 서식 + 숫자 서식 ──
-  applyItemMasterFormatting(ss, masterSheet);
-  console.log("[Migration v14] 품목 마스터 서식 재적용 완료 (H열 음수 강조 포함)");
+  //
+  // [TASK-017] applyItemMasterFormatting은 공용 헬퍼라 늘 **현재**(25열) 구조를 기준으로 굽는다.
+  //   v14가 도는 시점의 레거시 시트는 아직 24열이라 서식이 한 칸씩 어긋나게 발린다.
+  //   바로 뒤따라 도는 v17이 reapplyAllSheetFormatting으로 전부 다시 구우므로 최종 상태는 옳고,
+  //   여기서 실패하더라도 수식 갱신(Step 1)과 남은 마이그레이션까지 같이 죽어서는 안 된다.
+  try {
+    applyItemMasterFormatting(ss, masterSheet);
+    console.log("[Migration v14] 품목 마스터 서식 재적용 완료 (H열 음수 강조 포함)");
+  } catch (e) {
+    console.log("[Migration v14] ⚠️ 서식 재적용 실패(수식은 정상 적용됨, v17이 다시 굽는다): " + e.message);
+  }
 
   SpreadsheetApp.flush();
 
@@ -810,3 +828,437 @@ MIGRATIONS[16] = function migrate_to_v16(ss) {
   console.log("[Migration v16] 완료 — 시트 " + r.sheets + "개 서식 재적용, 총 " + r.addedRows + "행 확충" +
     (r.missing.length ? " (없는 시트: " + r.missing.join(", ") + ")" : ""));
 };
+
+// [TASK-017] v17: 거래처(매입처) 마스터 신설 + 품목 마스터에 거래처코드 열 삽입
+//
+// 발주·정산이 담당자 기억에 의존하던 문제를 없애기 위해 거래처를 데이터로 만든다.
+// 품목 마스터는 거래처코드만 들고(거래처명 복제 금지) 🤝 거래처관리를 참조한다.
+//
+// 이 마이그레이션이 하는 일은 4가지다.
+//   1) 🤝 거래처관리 시트 생성 (빈 폼만 — 초기 59건은 Human이 직접 붙여넣는다)
+//   2) 품목 마스터 S열에 거래처코드 열 삽입 → 과세구분~사용유무가 한 칸씩 우측 이동
+//   3) 회계 ARRAYFORMULA(V3·W3·X3) 명시적 재작성
+//   4) 전 시트 서식 재적용
+//
+// (3)을 굳이 다시 쓰는 이유: 시트는 열을 끼워 넣을 때 수식 참조를 자동으로 밀어 주지만,
+// 그 자동 시프트는 "지금 시트에 들어 있는 수식"에만 걸린다. 수식이 지워졌거나 손으로
+// 고쳐진 시트에서는 아무 일도 일어나지 않고, 결과가 시트마다 달라진다.
+// 코드가 최종 형태를 직접 못 박아야 어느 시트에서 돌려도 같은 상태로 끝난다.
+//
+// 멱등: 시트/열이 이미 있으면 만들지 않고, 수식과 서식만 같은 값으로 다시 쓴다.
+MIGRATIONS[17] = function migrate_to_v17(ss) {
+  console.log("[Migration v17] 거래처 마스터 신설 + 품목 마스터 거래처코드 열 삽입 시작...");
+
+  // ── Step 1: 🤝 거래처관리 시트 ──
+  // 존재 여부로 스킵하지 않고 항상 부른다. buildVendors는 멱등이며(있으면 고쳐 쓴다),
+  // "시트는 있는데 안이 덜 만들어진" 상태 — 이전 실행이 시트 생성 직후 실패한 경우 — 를
+  // 존재 검사만으로는 구별할 수 없기 때문이다. 값은 같은 값으로 다시 쓰므로 데이터는 보존된다.
+  const vendorExisted = Boolean(ss.getSheetByName(SHEET_VENDORS));
+  buildVendors(ss);
+  console.log("[Migration v17] " + SHEET_VENDORS + (vendorExisted
+    ? " 시트 이미 존재 — 서식/헤더 재적용(복구)"
+    : " 시트 생성 완료 (13열 빈 폼 — 초기 데이터는 수동 입력)"));
+
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  if (!masterSheet) {
+    console.log("[Migration v17] 품목 마스터 시트 없음 — 열 삽입 스킵");
+    return;
+  }
+
+  // ── Step 2: 거래처코드 열 삽입 (S열) ──
+  const vendorCol = MASTER_COLS.VENDOR_CODE + 1; // 19
+  const headerCell = masterSheet.getRange(2, vendorCol);
+  if (String(headerCell.getValue()).trim() === "거래처코드") {
+    console.log("[Migration v17] 품목 마스터 S열에 거래처코드 이미 존재 — 열 삽입 스킵(멱등)");
+  } else {
+    masterSheet.insertColumnBefore(vendorCol);
+    masterSheet.getRange(2, vendorCol).setValue("거래처코드")
+      .setBackground("#16a085").setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+
+    // 삽입된 열은 **왼쪽 열의 서식/너비를 물려받는다**. 왼쪽은 R열(스페이서, 너비 20)이라
+    // 그대로 두면 거래처코드가 20px 폭의 회색 칸으로 태어난다. 명시적으로 되돌린다.
+    //   (배경색은 바로 뒤 reapplyAllSheetFormatting이 입력색으로 덮는다)
+    masterSheet.setColumnWidth(vendorCol, 110);
+    console.log("[Migration v17] 품목 마스터 S열에 거래처코드 열 삽입 완료 (24열 → " + MASTER_COL_COUNT + "열)");
+  }
+
+  // 1행 제목 병합 범위도 늘어난 열에 맞춘다. 열 삽입으로 자동 확장되긴 하지만,
+  // 병합이 이미 깨져 있던 시트에서는 아무 일도 일어나지 않으므로 여기서 못 박는다.
+  masterSheet.getRange(1, 1, 1, MASTER_COL_COUNT).breakApart().merge();
+
+  // ── Step 3: 회계 ARRAYFORMULA 재작성 (V3 공급단가 / W3 단위세액 / X3 재고합계금액) ──
+  masterSheet.getRange(3, MASTER_COLS.SUPPLY_PRICE + 1).setFormula(_masterSupplyPriceFormula());
+  masterSheet.getRange(3, MASTER_COLS.TAX_AMOUNT + 1).setFormula(_masterTaxAmountFormula());
+  masterSheet.getRange(3, MASTER_COLS.TOTAL_VALUE + 1).setFormula(_masterTotalValueFormula());
+  console.log("[Migration v17] 회계 수식 V3/W3/X3 재작성 완료");
+
+  // ── Step 4: 대시보드 KPI 수식 재작성 ──
+  // KPI 4개는 품목 마스터의 사용유무 열(X → Y)을 참조한다. 시트가 열 삽입 때 참조를
+  // 자동으로 밀어 주긴 하지만, 그 시프트는 "지금 들어 있는 수식"에만 걸린다.
+  // 대시보드 KPI가 지워졌거나 손으로 고쳐진 시트에서는 아무 일도 일어나지 않으므로 못 박는다.
+  const dashSheet = ss.getSheetByName(SHEET_DASHBOARD);
+  if (dashSheet) {
+    applyDashboardKpiFormulas(dashSheet);
+    console.log("[Migration v17] 대시보드 KPI 수식 재작성 완료 (사용유무 참조 → " + _colLetter(MASTER_COLS.USAGE_STATUS + 1) + "열)");
+  } else {
+    console.log("[Migration v17] 대시보드 시트 없음 — KPI 재작성 스킵");
+  }
+
+  // ── Step 5: 서식 재적용 ──
+  // 품목 마스터의 거래처 드롭다운, 밀려난 과세/사용유무 드롭다운, 조건부 서식(=$Y3="미사용")이
+  // 여기서 새 열 구조에 맞게 다시 구워진다.
+  const r = reapplyAllSheetFormatting(ss);
+  console.log("[Migration v17] 전 시트 서식 재적용 완료 — 시트 " + r.sheets + "개" +
+    (r.missing.length ? " (없는 시트: " + r.missing.join(", ") + ")" : ""));
+
+  SpreadsheetApp.flush();
+
+  // 캐시에는 MASTER_COL_COUNT 기준으로 읽은 품목 배열이 들어 있다. 열 수가 바뀌었으므로 버린다.
+  try {
+    if (typeof CacheManager !== "undefined" && CacheManager.invalidateAll) CacheManager.invalidateAll();
+  } catch (e) {
+    console.log("[Migration v17] 캐시 무효화 스킵/실패: " + e.message);
+  }
+
+  // 재고 합계금액을 기록하는 열이 W → X로 바뀌었다(StockEngine). 한 번 돌려 새 열에 값을 채운다.
+  // 재계산 실패가 구조 변경까지 되돌리게 해서는 안 되므로 로그만 남긴다.
+  try {
+    recalcStockAndUsage(ss);
+    console.log("[Migration v17] 재고 재계산 완료 — 재고 합계금액이 X열에 기록됩니다");
+  } catch (e) {
+    console.log("[Migration v17] ⚠️ 재고 재계산 실패(구조/수식/서식은 정상 적용됨): " + e.message);
+  }
+
+  console.log("[Migration v17] 완료");
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// [v18] v17 운영 중 드러난 두 가지를 바로잡는다.
+//
+// ── 1) 품목 마스터 사용유무(Y열)에 숫자가 들어간 시트 복구 ──
+//
+// 무슨 일이 있었나: TASK-017 코드는 MASTER_COLS(25열 구조)를 믿고 재고 합계금액을
+// TOTAL_VALUE + 1 = **24열**에 쓴다. 그런데 코드 배포(clasp push)와 시트 마이그레이션
+// (사람이 메뉴에서 누르는 runMigrations)은 동시에 일어나지 않는다. 그 사이 창에서는
+// 시트가 아직 24열이고 24열은 사용유무다. 이때 recalcStockAndUsage가 한 번이라도 돌면
+// FIFO 평가액이 전 품목의 사용유무를 덮어쓰고, 뒤이어 v17이 그 값을 통째로 Y열로 밀어 놓는다.
+// (DEV에서 실제로 일어났다 — 97개 품목의 사용유무가 전부 숫자가 됐다.)
+//
+// 이 창은 지금 _isMasterSchemaCurrent 가드가 막는다(StockEngine·ItemService).
+// 여기서는 이미 망가진 값만 되돌린다. 사용/미사용 중 하나가 아닌 값만 "사용"으로 바꾸므로,
+// 멀쩡한 시트(Production)에서 돌면 한 칸도 건드리지 않는다.
+//
+// ⚠️ 되돌릴 수 없는 정보가 하나 있다: 덮어쓰이기 전 "미사용"이었던 품목은 알 길이 없다.
+//    전부 "사용"으로 복구되므로, 미사용 품목이 있었다면 사람이 다시 지정해야 한다.
+//
+// ── 2) 거래처 드롭다운 소스 열을 O(15) → N(14)로 당긴다 ──
+//
+// 소스 열은 숨김이지만 M과 그 사이의 N열이 **보이는 빈 열**로 남았다. 서식 복구가
+// 열을 확충할 때마다(_ensureMinColumns) 사용자 눈에는 "누르지도 않은 N열이 생겼다"로
+// 보여 결함으로 신고됐다. 소스 열을 M 바로 옆으로 당기면 시트가 M에서 끝나는 것처럼 보인다.
+//
+// ── 3) 거래처코드가 빈 행에 코드 일괄 부여 ──
+//
+// 초기 거래처는 시트에 직접 붙여넣는 경로를 쓰는데 그 경로에는 채번하는 손이 없다.
+// 코드 없는 행은 웹앱 목록에도, 드롭다운 소스에도 나타나지 않는다.
+//
+// 멱등: 셋 다 "어긋난 것만 고친다". 두 번 돌려도 결과가 같다.
+MIGRATIONS[18] = function migrate_to_v18(ss) {
+  console.log("[Migration v18] 사용유무 복구 + 거래처 드롭다운 소스 열 정리 시작...");
+
+  // ── Step 1: 품목 마스터 사용유무 복구 ──
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  if (!masterSheet) {
+    console.log("[Migration v18] 품목 마스터 시트 없음 — 사용유무 복구 스킵");
+  } else if (!_isMasterSchemaCurrent(masterSheet)) {
+    // v17이 바로 앞에서 돌았으므로 정상 경로에서는 여기 오지 않는다.
+    // 그래도 왔다면 열 위치를 믿을 수 없다는 뜻이라 **쓰지 않는다** — 그게 이 사고의 교훈이다.
+    console.error("[Migration v18] 품목 마스터가 v17(25열) 구조가 아니어서 사용유무 복구를 건너뜁니다.");
+  } else {
+    const repaired = _v18RepairUsageStatus(masterSheet);
+    console.log(repaired > 0
+      ? "[Migration v18] 사용유무 복구 " + repaired + "건 (사용/미사용이 아닌 값 → \"사용\")"
+      : "[Migration v18] 사용유무 이상 없음 — 복구할 값 없음");
+  }
+
+  // ── Step 2 · 3: 거래처 시트 ──
+  const vendorSheet = ss.getSheetByName(SHEET_VENDORS);
+  if (!vendorSheet) {
+    console.log("[Migration v18] " + SHEET_VENDORS + " 시트 없음 — 거래처 작업 스킵");
+  } else {
+    _v18RetireLegacySourceColumn(vendorSheet);
+    applyVendorsFormatting(vendorSheet); // 새 소스 열(N)에 FILTER 수식 생성 + 숨김
+
+    const r = _backfillVendorCodes(vendorSheet);
+    console.log(r.assigned > 0
+      ? "[Migration v18] 거래처코드 " + r.assigned + "건 부여 (" + r.firstCode + " ~ " + r.lastCode + ")"
+      : "[Migration v18] 거래처코드가 빈 행 없음 (검사한 행: " + r.total + ")");
+  }
+
+  // ── Step 4: 서식 재적용 ──
+  // 품목 마스터의 거래처 드롭다운이 O열을 가리키고 있다. 소스가 N으로 옮겨졌으므로
+  // 여기서 다시 세우지 않으면 드롭다운이 빈 열을 바라본다.
+  const fmt = reapplyAllSheetFormatting(ss);
+  console.log("[Migration v18] 전 시트 서식 재적용 완료 — 시트 " + fmt.sheets + "개" +
+    (fmt.missing.length ? " (없는 시트: " + fmt.missing.join(", ") + ")" : ""));
+
+  SpreadsheetApp.flush();
+
+  try {
+    if (typeof CacheManager !== "undefined" && CacheManager.invalidateAll) CacheManager.invalidateAll();
+  } catch (e) {
+    console.log("[Migration v18] 캐시 무효화 스킵/실패: " + e.message);
+  }
+
+  console.log("[Migration v18] 완료");
+};
+
+/**
+ * [v18] 품목코드가 있는 행 중 사용유무가 사용/미사용이 아닌 것을 "사용"으로 되돌린다.
+ *
+ * getLastRow()를 쓰지 않는 이유: 품목 마스터에는 시트 끝까지 흐르는 ARRAYFORMULA가 있어
+ * 데이터가 끝난 뒤에도 "내용 있는 행"으로 잡힐 수 있다. 권위 있는 기준은 A열(품목코드)이다.
+ *
+ * @returns {number} 실제로 고친 셀 수
+ */
+function _v18RepairUsageStatus(masterSheet) {
+  const maxRow = masterSheet.getMaxRows();
+  if (maxRow < 3) return 0;
+
+  const codes = masterSheet.getRange(3, MASTER_COLS.CODE + 1, maxRow - 2, 1).getValues();
+  let lastRow = 2;
+  for (let i = codes.length - 1; i >= 0; i--) {
+    if (String(codes[i][0] || "").trim()) { lastRow = i + 3; break; }
+  }
+  if (lastRow < 3) return 0;
+
+  const count = lastRow - 2;
+  const range = masterSheet.getRange(3, MASTER_COLS.USAGE_STATUS + 1, count, 1);
+  const current = range.getValues();
+
+  let repaired = 0;
+  const out = current.map(function (r, i) {
+    const value = String(r[0] === null || r[0] === undefined ? "" : r[0]).trim();
+    if (value === "사용" || value === "미사용") return [value];
+    if (!String(codes[i][0] || "").trim()) return [value]; // 품목코드 없는 행은 손대지 않는다
+    repaired++;
+    return ["사용"];
+  });
+
+  if (repaired > 0) range.setValues(out);
+  return repaired;
+}
+
+/**
+ * [v18] v17이 쓰던 옛 드롭다운 소스 열(O)을 비운다.
+ *
+ * 헤더 문구가 우리가 쓴 값일 때만 손댄다 — 사용자가 그 열에 무언가 적어 뒀다면
+ * 마이그레이션이 말없이 지우는 일이 있어서는 안 된다.
+ * 지운 뒤에도 숨김 상태로 둔다. 빈 열을 다시 보이게 하면 사용자에게는 또 하나의
+ * "갑자기 생긴 열"이 되기 때문이다.
+ */
+function _v18RetireLegacySourceColumn(vendorSheet) {
+  const legacy = VENDOR_ACTIVE_CODE_COL_LEGACY;
+  if (legacy === VENDOR_ACTIVE_CODE_COL) return;      // 이미 같은 열이면 할 일이 없다
+  if (vendorSheet.getMaxColumns() < legacy) return;   // 옛 열 자체가 없다
+
+  const header = String(vendorSheet.getRange(2, legacy).getValue() || "").trim();
+  if (header !== VENDOR_ACTIVE_CODE_HEADER) {
+    console.log("[Migration v18] 옛 소스 열(" + _colLetter(legacy) + ")이 우리 것이 아님 — 그대로 둠");
+    return;
+  }
+
+  vendorSheet.getRange(1, legacy, vendorSheet.getMaxRows(), 1).clearContent();
+  vendorSheet.hideColumns(legacy);
+  console.log("[Migration v18] 옛 드롭다운 소스 열 " + _colLetter(legacy) + " 비움 (소스는 " +
+    _colLetter(VENDOR_ACTIVE_CODE_COL) + "열로 이동)");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// [TASK-019] 업장 개편 — 기존 업장 시트를 지우고 전체 23개 부서/업장으로 갱신 (일회성 · 수동 실행)
+//
+// MIGRATIONS 레지스트리에 넣지 않는 이유: 스키마 마이그레이션은 "데이터를 보존하며 구조를 바꾸는"
+// 멱등 작업이다. 이것은 업장 시트와 그 안의 입출고 이력을 **영구 삭제**하는 운영 작업이라
+// runMigrations()의 버전 진행에 끼워 자동으로 돌아서는 안 된다. Apps Script 편집기에서 사람이
+// 이 함수를 직접 골라 실행하고, YES/NO 확인을 거친다. (스프레드시트를 연 상태에서 실행할 것 — 확인창이 거기 뜬다)
+//
+// 절차
+//   0. 확인창 — 지워질 시트 목록과 새 업장 수를 보여 주고 YES를 받는다
+//   1. CSV 백업 (통합 기록장 · 품목 마스터)
+//   2. 🏢 업장관리의 기존 행을 지우고 새 23개 행을 쓴다 — 실패하면 이전 행을 복원한다 (여기까지는 되돌릴 수 있다)
+//   3. 기존 업장 시트를 삭제한다 (GID → 이름 순으로 찾는다. 시스템 시트는 이름이 겹쳐도 절대 지우지 않는다)
+//   4. generateNewShops() — 템플릿 복사로 시트 생성 + 생성완료/바로가기/GID 기록
+//   5. 캐시 무효화 + 통합 갱신(refreshDashboard) — 통합 기록장에서 사라진 업장의 행을 걷어내고 재고를 재계산
+//
+// 순서가 중요하다: 되돌릴 수 있는 2단계를 되돌릴 수 없는 3단계보다 먼저 한다.
+// 2단계가 검증(분류 드롭다운 등)에 걸려 실패하면 시트는 아직 하나도 지워지지 않은 상태다.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 신규 업장 목록 — [분류, 업장명, 거래ID 태그]. 업장명은 사용자가 지정한 23개.
+ *
+ * 분류는 🏢 업장관리 A열 드롭다운 목록(buildShopsSheet의 9종) 안의 값이어야 한다 —
+ *   엄격 검증(setAllowInvalid(false))이라 목록 밖 값은 setValues 자체가 거부된다.
+ * 태그는 영어 대문자 2~3자(addShop의 규칙), 서로 달라야 한다(거래ID 접두사).
+ *   기존 4개 업장(맛다락·술다락·남탕·여탕)의 태그 TX·AX·MB·WB는 그대로 두어 거래ID 체계가 이어지게 했다.
+ * 분류·태그는 명세에 없어 임의 배정한 값이다 — 첫 입출고 기록 전에는 🏢 업장관리에서 바꿀 수 있다.
+ */
+const TASK019_NEW_SHOPS = [
+  ["관리",     "관리팀",      "ADM"],
+  ["구매",     "구매팀",      "PUR"],
+  ["판촉",     "예약홍보팀",  "MKT"],
+  ["호텔",     "호텔프론트",  "HFD"],
+  ["호텔",     "호텔객실",    "HRM"],
+  ["호텔",     "호텔 세탁실", "HLD"],
+  ["식음",     "식음료",      "FNB"],
+  ["조리",     "조리팀",      "KIT"],
+  ["조리",     "직원식당",    "STF"],
+  ["관리",     "기전실",      "ENG"],
+  ["관리",     "영선",        "MNT"],
+  ["식음",     "로봇커피",    "RBC"],
+  ["식음",     "달콤덕구",    "DKD"],
+  ["스파월드", "매표소",      "TKT"],
+  ["스파월드", "가족실",      "FMB"],
+  ["식음",     "카페테리아",  "CAF"],
+  ["스파월드", "남탕",        "MB"],
+  ["스파월드", "여탕",        "WB"],
+  ["콘도",     "콘도프론트",  "CFD"],
+  ["콘도",     "콘도객실",    "CRM"],
+  ["콘도",     "콘도 세탁실", "CLD"],
+  ["식음",     "맛다락",      "TX"],
+  ["식음",     "술다락",      "AX"]
+];
+
+function migrateShops_TASK019() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+  if (!shopSheet) throw new Error("'" + SHEET_SHOPS + "' 시트가 없습니다.");
+  if (!ss.getSheetByName(SHEET_TEMPLATE)) throw new Error("'" + SHEET_TEMPLATE + "' 시트가 없어 업장 시트를 만들 수 없습니다.");
+
+  _task019ValidateShopList(TASK019_NEW_SHOPS);
+
+  // 현재 업장관리 행 스냅샷 (A~G: 분류·업장명·태그·상태·바로가기·GID·담당자) — 2단계 실패 시 복원용
+  const lastRow = shopSheet.getLastRow();
+  const oldRows = lastRow >= 3 ? shopSheet.getRange(3, 1, lastRow - 2, 7).getValues() : [];
+  const targets = _task019FindOldShopSheets(ss, oldRows);
+
+  // 0) 확인
+  const ui = _task019Ui();
+  if (!ui) throw new Error("확인 대화상자를 띄울 수 없는 환경입니다. 스프레드시트를 연 상태에서 편집기에서 실행하세요.");
+  const res = ui.alert(
+    "⚠️ 업장 개편 (TASK-019)",
+    "다음 작업을 수행합니다.\n\n" +
+    "1) 기존 업장 시트 " + targets.length + "개를 영구 삭제합니다 — 그 안의 입출고 이력도 함께 사라집니다:\n   " +
+    (targets.length ? targets.map(s => s.getName()).join(", ") : "(없음)") + "\n" +
+    "2) 🏢 업장관리 목록을 신규 " + TASK019_NEW_SHOPS.length + "개 업장으로 교체하고 시트를 새로 만듭니다.\n" +
+    "3) 통합 기록장을 다시 취합하고 재고를 재계산합니다.\n\n" +
+    "실행 전 CSV 백업을 자동으로 수행하지만, 시트 자체의 스냅샷(파일 > 사본 만들기)을 먼저 확보하기를 권장합니다.\n\n" +
+    "계속하시겠습니까?",
+    ui.ButtonSet.YES_NO
+  );
+  if (res !== ui.Button.YES) { console.log("[TASK-019] 업장 개편 취소"); return; }
+
+  // 1) 백업
+  try { backupToCSV(); console.log("[TASK-019] 사전 CSV 백업 완료"); }
+  catch (e) { console.error("[TASK-019] CSV 백업 실패 (계속 진행): " + e.message); }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  let deleted = 0;
+  const failed = [];
+  try {
+    // 2) 업장관리 행 교체 — 되돌릴 수 있는 단계를 먼저
+    try {
+      _task019WriteShopRows(shopSheet, oldRows.length, TASK019_NEW_SHOPS);
+    } catch (writeErr) {
+      if (oldRows.length) shopSheet.getRange(3, 1, oldRows.length, 7).setValues(oldRows);
+      throw new Error("업장관리 시트 갱신 실패 — 이전 목록을 복원했고 시트는 하나도 삭제하지 않았습니다: " + writeErr.message);
+    }
+
+    // 3) 기존 시트 삭제
+    targets.forEach(sh => {
+      try { ss.deleteSheet(sh); deleted++; }
+      catch (e) { failed.push(sh.getName() + " (" + e.message + ")"); }
+    });
+    SpreadsheetApp.flush();
+
+    // 4) 시트 생성 — '대기' 행만 만든다. 삭제에 실패해 같은 이름이 남아 있으면 그 시트를 재사용한다(generateNewShops 규칙).
+    generateNewShops();
+  } finally {
+    lock.releaseLock();
+  }
+
+  // 5) 캐시 · 통합 갱신 (refreshDashboard는 자체 락을 잡으므로 위 락을 푼 뒤에 부른다)
+  try { CacheManager.invalidateAll(); } catch (e) { console.warn("[TASK-019] 캐시 무효화 실패: " + e.message); }
+  try { refreshDashboard(true); }
+  catch (e) { console.error("[TASK-019] 통합 갱신 실패 — 관리자 도구 > 통합 갱신을 수동 실행하세요: " + e.message); }
+
+  const created = _getActiveShopNames().length;
+  const summary =
+    "✅ 업장 개편 완료\n\n" +
+    "삭제한 시트: " + deleted + "개" + (failed.length ? "\n삭제 실패: " + failed.join(", ") : "") + "\n" +
+    "생성완료 업장: " + created + " / " + TASK019_NEW_SHOPS.length + "개\n\n" +
+    "• 분류·거래ID 태그는 임의 배정입니다. 첫 입출고 기록 전에는 🏢 업장관리에서 바꿀 수 있습니다.\n" +
+    "• 👤 사용자관리의 '배정된 업장'이 옛 업장명을 가리키면 웹앱 '계정 관리'에서 다시 배정하세요.";
+  console.log(summary);
+  try { ui.alert(summary); } catch (e) { /* UI 없는 환경 */ }
+}
+
+/** 목록 자체의 결함(중복 태그 등)은 시트를 건드리기 전에 걸러낸다. */
+function _task019ValidateShopList(shops) {
+  const names = {};
+  const tags = {};
+  shops.forEach((s, i) => {
+    const category = String(s[0] || "").trim();
+    const name = String(s[1] || "").trim();
+    const tag = String(s[2] || "").trim();
+    if (!category || !name || !tag) throw new Error("업장 목록 " + (i + 1) + "번째 항목에 빈 값이 있습니다: " + JSON.stringify(s));
+    if (!/^[A-Z]{2,3}$/.test(tag)) throw new Error("태그 '" + tag + "'는 영어 대문자 2~3자여야 합니다 (" + name + ")");
+    if (names[name]) throw new Error("업장명 중복: " + name);
+    if (tags[tag]) throw new Error("태그 중복: " + tag + " (" + tags[tag] + ", " + name + ")");
+    names[name] = true;
+    tags[tag] = name;
+  });
+}
+
+/** 업장관리에 적힌 업장의 시트를 찾는다 — GID 우선, 없으면 이름. 시스템 시트는 제외한다. */
+function _task019FindOldShopSheets(ss, oldRows) {
+  const systemNames = [
+    SHEET_DASHBOARD, SHEET_INOUT, SHEET_MASTER, SHEET_TEMPLATE, SHEET_SHOPS, SHEET_SEASONS,
+    SHEET_USERS, SHEET_BASE_DATA, SHEET_CHANGELOG, SHEET_VENDORS, SHEET_SYSTEM_LOGS
+  ];
+  const allSheets = ss.getSheets();
+  const targets = [];
+  oldRows.forEach(r => {
+    const name = String(r[1] || "").trim();
+    if (!name) return;
+    const gid = r[5];
+    let sh = (gid !== "" && gid !== null && gid !== undefined)
+      ? allSheets.find(s => String(s.getSheetId()) === String(gid))
+      : null;
+    if (!sh) sh = ss.getSheetByName(name);
+    if (!sh) return;
+    if (systemNames.indexOf(sh.getName()) >= 0) return;
+    if (targets.indexOf(sh) < 0) targets.push(sh);
+  });
+  return targets;
+}
+
+/**
+ * 업장관리 3행부터를 비우고 새 목록을 '대기' 상태로 쓴다.
+ * '삭제됨' 처리로 회색이 된 행이 있을 수 있어 배경·글자색도 원래 규칙(A~C 입력색, D~F 자동색)으로 되돌린다.
+ */
+function _task019WriteShopRows(shopSheet, oldCount, shops) {
+  const n = shops.length;
+  const clearCount = Math.max(oldCount, n);
+  if (clearCount > 0) {
+    shopSheet.getRange(3, 1, clearCount, 7).clearContent();
+    shopSheet.getRange(3, 1, clearCount, 3).setBackground(COLORS.inputBg).setFontColor("#000000").setHorizontalAlignment("center");
+    shopSheet.getRange(3, 4, clearCount, 3).setBackground(COLORS.autoBg).setFontColor("#000000").setHorizontalAlignment("center");
+  }
+  shopSheet.getRange(3, 1, n, 4).setValues(shops.map(s => [s[0], s[1], s[2], "대기"]));
+}
+
+function _task019Ui() {
+  try { return SpreadsheetApp.getUi(); } catch (e) { return null; }
+}

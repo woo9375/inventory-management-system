@@ -17,6 +17,13 @@ const vm = require('vm');
 const assert = require('assert');
 
 const SRC = path.join(__dirname, '..', '..', 'src');
+// [TASK-017] 픽스처가 열 번호를 직접 적어 두면, 열이 하나 끼어들 때(v17: 24 → 25열)
+//   프로덕션 코드는 멀쩡한데 테스트만 거짓으로 깨진다. 실제 Config.gs의 상수를 읽어 쓴다.
+const MASTER = (() => {
+  const c = vm.createContext({ console: console });
+  vm.runInContext(fs.readFileSync(path.join(SRC, 'Config.gs'), 'utf8'), c, { filename: 'Config.gs' });
+  return { COLS: vm.runInContext('MASTER_COLS', c), COUNT: vm.runInContext('MASTER_COL_COUNT', c) };
+})();
 const ARCHIVE_FOLDER_ID = 'TEST-ARCHIVE-FOLDER';
 
 function pad(n, w) { return String(n).padStart(w, '0'); }
@@ -50,6 +57,9 @@ function makeSheet(name, rowsFromRow3) {
     setFrozenRows() { return sheet; },
     setColumnWidth() { return sheet; },
     getMaxRows() { return 3000; },
+    // [TASK-017] _ensureMinColumns가 열 수를 본다 (새 시트 기본값 26열)
+    getMaxColumns() { return 26; },
+    insertColumnsAfter() {},
     insertRowsAfter() { return sheet; },
     setConditionalFormatRules(rules) { sheet.cfRules = rules; return sheet; },
     getProtections() { return sheet.protections; },
@@ -65,6 +75,10 @@ function makeSheet(name, rowsFromRow3) {
         [startRow, startCol, numRows, numCols] = parseA1(a1);
       } else {
         [startRow, startCol, numRows, numCols] = arguments;
+        // [TASK-017] GAS의 getRange(row, col)은 단일 셀이다. 목이 4인자 형태만 다뤄
+        //   numRows/numCols가 undefined로 남아 getValues()가 빈 배열을 돌려주고 있었다.
+        if (numRows === undefined) numRows = 1;
+        if (numCols === undefined) numCols = 1;
       }
 
       const range = {
@@ -88,6 +102,8 @@ function makeSheet(name, rowsFromRow3) {
           });
           return range;
         },
+        // [TASK-017] 단일 셀 조회 — 스키마 가드가 헤더 셀 1개를 이 API로 읽는다
+        getValue() { return range.getValues()[0][0]; },
         setValue(v) { return range.setValues([[v]]); },
         setFormula(f) { sheet.formulas[a1 || `r${startRow}c${startCol}`] = f; return range; },
         setNumberFormat(format) {
@@ -144,7 +160,7 @@ function makeSeasonSheet() {
 
 function loadContext(txRows, masterRows) {
   const txSheet = makeSheet('TX', txRows);
-  const masterSheet = makeSheet('MASTER', masterRows);
+  const masterSheet = seedMasterHeader(makeSheet('MASTER', masterRows));
   const seasonSheet = makeSeasonSheet();
   const baseDataSheet = makeSheet('BASE', []);
   const archiveSheet = makeSheet('ARCHIVE_NEW', []);
@@ -257,26 +273,36 @@ function loadContext(txRows, masterRows) {
 //  데이터 빌더
 // ─────────────────────────────────────────────────────────────
 
+// [TASK-017] recalcStockAndUsage / _sortMasterByUsageStatus는 마스터에 되쓰기 전에
+//   2행 헤더(사용유무)로 시트가 v17(25열) 구조인지 확인한다. 실제 시트에는 헤더가 있으므로
+//   목에도 채워 준다 — 없으면 가드가 걸려 계산이 통째로 스킵된다.
+function seedMasterHeader(sheet) {
+  const header = new Array(MASTER.COUNT).fill('');
+  header[MASTER.COLS.USAGE_STATUS] = '사용유무';
+  sheet.grid[2] = header;
+  return sheet;
+}
+
 function tx(date, code, name, type, qty, price) {
   return [new Date(date + 'T00:00:00'), code, name, type, qty, price, '테스터', '', 'FB-X'];
 }
 
-/** MASTER_COLS: CODE(0) NAME(1) INIT_STOCK(6) CURRENT_STOCK(7) UNIT_PRICE(19) TOTAL_VALUE(22) USAGE_STATUS(23) */
+/** 품목 마스터 한 행 — 열 위치는 MASTER_COLS에서 가져온다 */
 function master(code, name, initStock, unitPrice, opts) {
   const o = opts || {};
-  const row = new Array(24).fill('');
-  row[0] = code;
-  row[1] = name;
-  row[6] = initStock;
-  row[7] = o.currentStock === undefined ? 0 : o.currentStock;
-  row[19] = unitPrice;
-  row[22] = 0;
-  row[23] = o.usageStatus === undefined ? '사용' : o.usageStatus;
+  const row = new Array(MASTER.COUNT).fill('');
+  row[MASTER.COLS.CODE] = code;
+  row[MASTER.COLS.NAME] = name;
+  row[MASTER.COLS.INIT_STOCK] = initStock;
+  row[MASTER.COLS.CURRENT_STOCK] = o.currentStock === undefined ? 0 : o.currentStock;
+  row[MASTER.COLS.UNIT_PRICE] = unitPrice;
+  row[MASTER.COLS.TOTAL_VALUE] = 0;
+  row[MASTER.COLS.USAGE_STATUS] = o.usageStatus === undefined ? '사용' : o.usageStatus;
   return row;
 }
 
-const CURRENT_STOCK_COL = 7;
-const TOTAL_VALUE_COL = 22;
+const CURRENT_STOCK_COL = MASTER.COLS.CURRENT_STOCK;
+const TOTAL_VALUE_COL = MASTER.COLS.TOTAL_VALUE;
 
 function masterRowsOf(ctx) {
   const sheet = ctx.__masterSheet;

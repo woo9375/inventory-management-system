@@ -26,6 +26,7 @@ DEV 배포가 Google 계정 로그인을 요구하면 `node tests/e2e/save-auth-
 | `smoke.spec.js` | DEV Web App 접속, 로그인 화면 렌더링, SheetJS(XLSX) CDN 로드 |
 | `transaction.spec.js` | 입고 등록 성공 및 거래ID 생성 (TASK-001A 회귀 방지) |
 | `basedata-excel.spec.js` | 단위 목록 신규 10종 노출 (TASK-002), 실사 양식 xlsx 다운로드 (TASK-001B) |
+| `transaction-bulk-upload.spec.js` | 입출고 일괄 업로드 (TASK-019): 안내 모달 취소, 오류 CSV 검증 실패(무저장), 정상 CSV 저장 → 최근 내역 표시 |
 
 `fixtures/env.js`가 `.env` 로드, 로그인, iframe 진입, 로딩 대기 헬퍼를 제공한다.
 

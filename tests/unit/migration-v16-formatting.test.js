@@ -59,6 +59,9 @@ function makeSheet(name, maxRows) {
     insertedRows: 0,
     unprotectedRanges: null,
     getName: () => name,
+    maxCols: 26, // [TASK-017] _ensureMinColumns가 열 수를 본다 (새 시트 기본값 26열)
+    getMaxColumns: () => sheet.maxCols,
+    insertColumnsAfter: (afterCol, howMany) => { sheet.maxCols += howMany; },
     getMaxRows: () => sheet.maxRows,
     insertRowsAfter: (afterRow, howMany) => { sheet.maxRows += howMany; sheet.insertedRows += howMany; },
     getLastRow: () => Math.min(10, sheet.maxRows),
@@ -193,9 +196,13 @@ run1.evalIn('MIGRATIONS[16]')(run1.ss);
   });
 });
 
-check('품목 마스터: 드롭다운 4종이 시트 끝(' + REQUIRED + '행)까지 적용된다', () => {
+// [TASK-017] 호출 수가 4 → 5로 늘었다. 늘어난 1회는 드롭다운 추가가 아니라
+//   S~Y 구간의 옛 검증을 먼저 지우는 호출이다(열이 밀리며 따라온 과세 드롭다운이
+//   매입단가 열에 눌러앉는 것을 막는다). 거래처관리 시트가 있으면 거래처 드롭다운까지 6회.
+//   이 테스트의 목 스프레드시트에는 거래처 시트가 없다.
+check('품목 마스터: 드롭다운이 시트 끝(' + REQUIRED + '행)까지 적용된다', () => {
   const calls = opsOnSheet(run1.sheets['🗂️ 품목 마스터'], 'setDataValidation');
-  assert.strictEqual(calls.length, 4, '실제=' + calls.length);
+  assert.strictEqual(calls.length, 5, '실제=' + calls.length);
   calls.forEach((c) => assert.strictEqual(c.row + c.numRows - 1, REQUIRED));
 });
 
@@ -312,8 +319,12 @@ check('repairAllSheetFormatting 실행 시 서식이 재적용되고 완료 알�
   assert.ok(run6.alerts[0].indexOf('복구 완료') >= 0, '완료 알림이 아님: ' + run6.alerts[0]);
 });
 check('onOpen 메뉴에 서식 복구 항목이 등록되어 있다', () => {
+  // [TASK-019] 메뉴는 확인창 래퍼(menuRepairAllSheetFormatting)에 묶이고, 래퍼가 본체를 부른다.
   const src = fs.readFileSync(path.join(SRC, 'Code.gs'), 'utf8');
-  assert.ok(src.indexOf('"repairAllSheetFormatting"') > 0, '메뉴 등록 누락');
+  assert.ok(src.indexOf('"menuRepairAllSheetFormatting"') > 0, '메뉴 등록 누락');
+  const wrapper = /function menuRepairAllSheetFormatting\(\)\s*\{[\s\S]*?\n\}/.exec(src);
+  assert.ok(wrapper, '메뉴 래퍼 함수 누락');
+  assert.ok(wrapper[0].indexOf('repairAllSheetFormatting();') > 0, '래퍼가 본체를 부르지 않음');
 });
 
 // ── CSV 업로드: 행 부족 시 쓰기 실패 방지 + 신규 행 서식 ──────────────
@@ -334,7 +345,7 @@ check('CSV 업로드: 신규 등록 건수가 정확하다', () => {
 });
 check('CSV 업로드: 업로드 직후 신규 행에 서식/드롭다운이 재적용된다', () => {
   assert.strictEqual(lastRowCovered(master7), REQUIRED, '실제=' + lastRowCovered(master7));
-  assert.strictEqual(opsOnSheet(master7, 'setDataValidation').length, 4);
+  assert.strictEqual(opsOnSheet(master7, 'setDataValidation').length, 5); // [TASK-017] +1: S~Y 검증 클리어
 });
 
 if (failures > 0) {

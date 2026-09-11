@@ -102,6 +102,17 @@ function getDashboardData(token) {
 }
 
 
+// [TASK-018] 거래처 관리 — 프런트가 부르는 공개 이름.
+//   구현은 VendorService.gs에 있고 이름이 서로 다르다(getVendors ↔ getVendorList).
+//   GAS는 모든 .gs가 전역 스코프 하나를 공유하므로 같은 이름을 양쪽에 두면 나중에 로드된 쪽이
+//   조용히 이기고, 래퍼가 자기 자신을 부르는 무한 재귀가 된다.
+//   계정 관리(createUser ↔ createUserAccount)가 쓰는 것과 같은 회피 방식이다.
+function getVendors(token) { return getVendorList(token); }
+function addVendor(token, data) { return addVendorRecord(token, data); }
+function updateVendor(token, code, data) { return updateVendorRecord(token, code, data); }
+function deleteVendor(token, code) { return deleteVendorRecord(token, code); }
+
+
 function createUser(token, userData) { return createUserAccount(token, userData); }
 function updateUser(token, username, updates) { return updateUserAccount(token, username, updates); }
 function deleteUser(token, username) { return deleteUserAccount(token, username); }

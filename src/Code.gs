@@ -10,15 +10,105 @@
 // ═══════════════════════════════════════════════════════════════════
 
 function onOpen() {
+  // [TASK-019] 모든 항목이 menu* 래퍼를 거친다 — 실행 전 안내문 + YES/NO 확인 (아래 "관리자 도구 실행 전 확인" 참고)
   SpreadsheetApp.getUi()
     .createMenu("🏨 관리자 도구")
-    .addItem("🔄 통합 갱신",                     "refreshDashboard")
-    .addItem("🔐 권한 재동기화",                 "syncPermissions")
-    .addItem("✅ 시즌 설정 검증",                 "validateSeasonSettings")
-    .addItem("💾 CSV 백업 실행",                 "backupCSV")
-    .addItem("📤 품목마스터 CSV 업로드",           "openCsvUploadModal")
-    .addItem("🎨 시트 서식/검증 복구",             "repairAllSheetFormatting")
+    .addItem("🔄 통합 갱신",                     "menuRefreshDashboard")
+    .addItem("🔐 권한 재동기화",                 "menuSyncPermissions")
+    .addItem("✅ 시즌 설정 검증",                 "menuValidateSeasonSettings")
+    .addItem("💾 CSV 백업 실행",                 "menuBackupCSV")
+    .addItem("📤 품목마스터 CSV 업로드",           "menuOpenCsvUploadModal")
+    .addItem("🎨 시트 서식/검증 복구",             "menuRepairAllSheetFormatting")
+    .addItem("🤝 거래처코드 일괄 부여",            "menuAssignMissingVendorCodes")
     .addToUi();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-019] 관리자 도구 실행 전 확인
+//
+//  메뉴를 누르면 즉시 실행되던 것을, 무엇을 하는지 안내하고 YES를 받은 뒤에만 실행한다.
+//  실수 클릭 한 번이 통합 갱신 같은 무거운 스크립트를 돌려 쿼터를 소진하던 문제의 방지책이다.
+//
+//  확인창은 이 래퍼(menu*)에만 둔다. refreshDashboard(true)·backupToCSV()처럼 트리거·웹앱·
+//  createAll·마이그레이션이 부르는 프로그램 경로에 대화상자가 끼어들면 안 되기 때문이다.
+//  본체 함수(refreshDashboard, syncPermissions, …)의 시그니처와 동작은 그대로다.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 안내문을 YES/NO 대화상자로 띄우고 사용자의 선택을 돌려준다.
+ * @param {string} title 메뉴 항목 이름 그대로 (사용자가 방금 누른 것과 같은 문구여야 헷갈리지 않는다)
+ * @param {string} guide 무엇을 하는지 · 데이터를 바꾸는지 · 얼마나 걸리는지
+ * @return {boolean} YES를 눌렀으면 true
+ */
+function _confirmAdminAction(title, guide) {
+  const ui = SpreadsheetApp.getUi();
+  const res = ui.alert(title, guide + "\n\n계속하시겠습니까?", ui.ButtonSet.YES_NO);
+  if (res !== ui.Button.YES) {
+    try { SpreadsheetApp.getActiveSpreadsheet().toast("실행하지 않았습니다.", title, 3); } catch (e) { /* UI 없는 환경 */ }
+    return false;
+  }
+  return true;
+}
+
+function menuRefreshDashboard() {
+  if (!_confirmAdminAction("🔄 통합 갱신",
+    "모든 업장 시트의 입출고를 통합 기록장으로 다시 취합하고, 전 품목의 현재고·일평균·FIFO 평가액을 " +
+    "재계산한 뒤 대시보드를 갱신합니다.\n\n" +
+    "• 품목·거래가 많으면 수 분이 걸리며, 실행 중에는 다른 저장 작업이 잠시 대기합니다.\n" +
+    "• 매일 자동으로도 실행됩니다. 방금 입력한 내역을 지금 바로 반영해야 할 때만 사용하세요.")) return;
+  refreshDashboard();
+}
+
+function menuSyncPermissions() {
+  if (!_confirmAdminAction("🔐 권한 재동기화",
+    "시스템 시트(품목 마스터·통합 기록장·대시보드·설정 시트 등)에 경고 전용 보호를 다시 걸고, " +
+    "품목 마스터 초기재고(G열) 보호를 동기화합니다.\n\n" +
+    "• 셀 값은 바꾸지 않습니다.\n" +
+    "• 웹앱 로그인 권한은 여기서 바뀌지 않습니다(웹앱 '계정 관리'에서 관리).")) return;
+  syncPermissions();
+}
+
+function menuValidateSeasonSettings() {
+  if (!_confirmAdminAction("✅ 시즌 설정 검증",
+    "📅 시즌설정 시트의 날짜 형식, 시작일/종료일 역전, 기간 중복, 배수 값을 검사해 결과를 알려 줍니다.\n\n" +
+    "• 검사만 하며 아무것도 수정하지 않습니다.")) return;
+  validateSeasonSettings();
+}
+
+function menuBackupCSV() {
+  if (!_confirmAdminAction("💾 CSV 백업 실행",
+    "통합 입출고 기록장과 품목 마스터를 CSV 파일로 내보내 이 스프레드시트가 있는 폴더의 " +
+    "'시스템_데이터_백업' 폴더에 저장합니다.\n\n" +
+    "• 시트 데이터는 바꾸지 않습니다.\n" +
+    "• 실행할 때마다 새 파일이 생기므로 드라이브 용량을 사용합니다.")) return;
+  backupCSV();
+}
+
+function menuOpenCsvUploadModal() {
+  if (!_confirmAdminAction("📤 품목마스터 CSV 업로드",
+    "CSV 파일로 품목 마스터에 품목을 일괄 등록하는 창을 엽니다.\n\n" +
+    "• 다음 창에서 파일을 고르고 '업로드 실행'을 눌러야 실제로 반영됩니다.\n" +
+    "• 이미 있는 품목코드는 건너뛰고 새 코드만 추가합니다.\n" +
+    "• 추가된 품목은 되돌리려면 직접 지워야 하므로, 먼저 'CSV 백업 실행'을 권장합니다.")) return;
+  openCsvUploadModal();
+}
+
+function menuRepairAllSheetFormatting() {
+  if (!_confirmAdminAction("🎨 시트 서식/검증 복구",
+    "품목 마스터·통합 기록장·템플릿·업장·거래처 시트의 서식, 드롭다운(데이터 검증), 보호 범위를 " +
+    "현재 행 수 기준으로 다시 적용합니다.\n\n" +
+    "• 셀 값은 건드리지 않으므로 데이터 유실이 없고, 여러 번 눌러도 결과가 같습니다.\n" +
+    "• 품목 마스터 거래처코드(S열)의 엄격 검증(목록 외 입력 차단)도 이때 전체 행에 적용됩니다.\n" +
+    "• 시트가 크면 1~2분 걸릴 수 있습니다.")) return;
+  repairAllSheetFormatting();
+}
+
+function menuAssignMissingVendorCodes() {
+  if (!_confirmAdminAction("🤝 거래처코드 일괄 부여",
+    "🤝 거래처관리 시트에서 거래처코드(A열)가 빈 행에 VND-### 코드를 순서대로 부여합니다.\n\n" +
+    "• 이미 코드가 있는 행은 건드리지 않습니다.\n" +
+    "• 부여된 코드는 품목 마스터가 참조하므로 이후에 바꾸면 안 됩니다.")) return;
+  assignMissingVendorCodes();
 }
 
 /**
@@ -39,6 +129,8 @@ function repairAllSheetFormatting() {
       "🎨 시트 서식/검증 복구 완료\n\n" +
       "대상 시트: " + r.sheets + "개\n" +
       "확충한 행: " + r.addedRows + "행\n" +
+      // [v18] 열 확충을 조용히 하지 않는다 — 거래처 시트의 숨김 소스 열이 여기서 되살아난다
+      (r.addedCols ? "확충한 열: " + r.addedCols + "열 (드롭다운 소스 등 숨김 보조 열)\n" : "") +
       "적용 범위: 3행 ~ 각 시트 마지막 행" +
       (r.missing.length ? "\n\n⚠️ 찾지 못한 시트: " + r.missing.join(", ") : "")
     );
@@ -94,6 +186,10 @@ function createAll() {
   buildUsersSheet(ss);
   buildChangelogSheet(ss);
   buildTemplateSheet(ss);
+  // [TASK-017] 거래처관리가 품목 마스터보다 먼저다 —
+  //   품목 마스터의 거래처 드롭다운이 거래처 시트의 코드 목록을 소스로 잡기 때문이다.
+  //   (기초데이터 시트를 업장관리보다 먼저 만드는 것과 같은 이유)
+  buildVendors(ss);
   buildItemMaster(ss);   
   buildConsolidatedLog(ss); 
   buildDashboard(ss);    
@@ -147,13 +243,16 @@ function onEdit(e) {
     const numCols = e.range.getNumColumns();
     // 변경 추적 대상 컬럼 (1-based 열 번호 → 필드명, MASTER_COLS는 0-based)
     // B(NAME+1), C(CATEGORY+1), D(GRADE+1), E(UNIT+1), G(INIT_STOCK+1),
-    // K(LEAD_TIME+1), L(SAFETY_DAYS+1), M(TARGET_DAYS+1), S(TAX_TYPE+1), T(UNIT_PRICE+1), X(USAGE_STATUS+1)
+    // K(LEAD_TIME+1), L(SAFETY_DAYS+1), M(TARGET_DAYS+1),
+    // [TASK-017] S(VENDOR_CODE+1), T(TAX_TYPE+1), U(UNIT_PRICE+1), Y(USAGE_STATUS+1)
     const TRACKED_COLS = {
       [MASTER_COLS.NAME + 1]: "품목명", [MASTER_COLS.CATEGORY + 1]: "카테고리",
       [MASTER_COLS.GRADE + 1]: "규격", [MASTER_COLS.UNIT + 1]: "단위",
       [MASTER_COLS.INIT_STOCK + 1]: "초기재고",
       [MASTER_COLS.LEAD_TIME + 1]: "리드타임", [MASTER_COLS.SAFETY_DAYS + 1]: "안전재고일수",
       [MASTER_COLS.TARGET_DAYS + 1]: "목표유지일수",
+      // [TASK-017] 매입처 변경은 발주·정산의 근거가 바뀌는 일이라 이력이 남아야 한다
+      [MASTER_COLS.VENDOR_CODE + 1]: "거래처",
       [MASTER_COLS.TAX_TYPE + 1]: "과세구분", [MASTER_COLS.UNIT_PRICE + 1]: "매입단가",
       [MASTER_COLS.USAGE_STATUS + 1]: "사용유무"
     };

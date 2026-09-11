@@ -109,6 +109,9 @@ const CacheManager = {
     this.remove('CONFIG_DATA');
     this.remove('BASE_DATA');
     this.remove('SHOP_LIST');
+    // [TASK-018] 거래처 목록. 이 목록은 여기 나열되지 않으면 등록/수정/삭제 직후에도
+    //   TTL(60초)이 끝날 때까지 낡은 값이 화면에 남는다.
+    this.remove(CACHE_KEYS.VENDOR_LIST);
     this.remove(CACHE_KEYS.ITEM_MAP);
     // [CR-04 + NF-03] 역할별 캐시 키 전부 삭제
     ROLE_SUFFIXES.forEach(suffix => {
