@@ -88,6 +88,7 @@ description: >-
 - `Docs/SheetSchema.md` — 시트 구조
 - `Docs/Architecture.md` — 아키텍처
 - `Docs/Security.md` — 보안/RBAC
+- `Docs/UIGuidelines.md` — 화면 규칙 (UI 관련 Task는 `Constraints`에 인용)
 
 ### Step 4: Business Rule 확인
 - `.agents/rules/02_business-rules.md` 참조

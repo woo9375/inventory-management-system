@@ -1,0 +1,318 @@
+<title>입출고 화면 목업</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* ───────── 목업 페이지 크롬 (앱이 아님) ───────── */
+  :root { --c-bg: #1b2230; --c-ink: #e8edf5; --c-ink-2: #9aa7ba; --c-line: #2c3646; --c-accent: #7ea2f0; --c-panel: #222b3a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--c-bg); color: var(--c-ink); font-family: "Noto Sans KR", "Pretendard", -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; font-size: 14px; line-height: 1.6; }
+  .chrome { max-width: 1480px; margin: 0 auto; padding: 22px 24px 12px; display: grid; gap: 14px; }
+  .chrome h1 { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -.01em; }
+  .chrome .sub { color: var(--c-ink-2); font-size: .9rem; margin: 0; max-width: 90ch; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--c-line); border-radius: 8px; overflow: hidden; background: var(--c-panel); }
+  .seg button { background: none; border: 0; color: var(--c-ink-2); font: inherit; font-weight: 500; padding: 7px 14px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--c-accent); color: #0f1522; font-weight: 600; }
+  .seg button:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
+  .lbl { color: var(--c-ink-2); font-size: .82rem; margin-right: 6px; }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px 18px; padding: 12px 16px; background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 10px; font-size: .86rem; color: var(--c-ink-2); }
+  .rules b { color: var(--c-ink); font-weight: 600; }
+  .rules span::before { content: "— "; color: var(--c-accent); }
+  .stage { max-width: 1480px; margin: 0 auto; padding: 0 24px 40px; }
+  .frame { border: 1px solid var(--c-line); border-radius: 10px; overflow: auto; background: #f8fafc; box-shadow: 0 20px 50px -20px rgba(0,0,0,.6); }
+  .frame img { display: block; width: 100%; min-width: 1180px; }
+  .notes { max-width: 1480px; margin: 0 auto; padding: 0 24px 60px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .note { background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 10px; padding: 14px 16px; font-size: .86rem; color: var(--c-ink-2); }
+  .note h3 { margin: 0 0 6px; font-size: .92rem; color: var(--c-ink); font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .note .k { display: inline-grid; place-items: center; min-width: 22px; padding: 0 7px; height: 22px; border-radius: 6px; background: var(--c-accent); color: #0f1522; font-size: .78rem; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .note code { font-family: "IBM Plex Mono", monospace; font-size: .82em; background: #1b2230; padding: 1px 5px; border-radius: 4px; color: var(--c-ink); }
+  .note.opt { border-style: dashed; }
+  [hidden] { display: none !important; }
+
+  /* ───────── 앱 스타일: src/Stylesheet.html 토큰·클래스 그대로 (필요 부분만) ───────── */
+  .app {
+    --bg-primary: #f8fafc; --bg-card: #ffffff; --bg-sidebar: #ffffff; --bg-muted: #f1f5f9;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --primary-light: #eff6ff; --primary-text: #ffffff;
+    --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8; --border: #e2e8f0; --border-focus: #3b82f6;
+    --risk: #ef4444; --risk-light: #fef2f2; --risk-border: #fecaca; --risk-text: #dc2626;
+    --order: #f59e0b; --order-light: #fffbeb; --order-border: #fde68a; --order-text: #d97706;
+    --normal: #10b981; --normal-light: #ecfdf5; --normal-border: #a7f3d0; --normal-text: #059669;
+    --shadow-sm: 0 1px 2px 0 rgba(0,0,0,.05); --shadow-md: 0 4px 6px -1px rgba(0,0,0,.07), 0 2px 4px -2px rgba(0,0,0,.05);
+    --radius: 12px; --radius-sm: 8px; --transition: all .2s cubic-bezier(.4,0,.2,1); --focus-ring: 0 0 0 3px rgba(37,99,235,.15);
+    position: relative; min-width: 1180px; min-height: 860px; background: var(--bg-primary); color: var(--text-primary);
+    font-family: "Noto Sans KR", "Pretendard", -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; font-size: 14px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app *, .app *::before, .app *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  .app button { font-family: inherit; }
+  .app .sidebar { width: 260px; background: var(--bg-sidebar); position: absolute; top: 0; left: 0; bottom: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+  .app .sidebar-header { padding: 24px 20px; border-bottom: 1px solid var(--border); text-align: center; }
+  .app .sidebar-header .brand-icon { font-size: 2rem; margin-bottom: 8px; display: block; line-height: 1; }
+  .app .sidebar-header h1 { font-size: 1rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.4; color: var(--text-primary); }
+  .app .sidebar-header .brand-sub { font-size: .72rem; font-weight: 600; letter-spacing: .02em; color: var(--primary); margin-top: 6px; }
+  .app .sidebar-nav { flex: 1; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .app .nav-item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 10px; cursor: pointer; transition: var(--transition); color: var(--text-secondary); font-size: .92rem; font-weight: 500; border: none; background: none; width: 100%; text-align: left; }
+  .app .nav-item:hover { background: var(--bg-muted); color: var(--text-primary); }
+  .app .nav-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+  .app .nav-item .nav-icon { font-size: 1.15rem; width: 24px; text-align: center; display: inline-flex; justify-content: center; }
+  .app .nav-item .nav-badge { margin-left: auto; background: var(--risk); color: #fff; font-size: .7rem; line-height: 1.5; padding: 1px 8px; border-radius: 9999px; font-weight: 700; }
+  .app .sidebar-actions { padding: 16px 20px; border-top: 1px solid var(--border); }
+  .app .logout-btn { display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); font-size: .88rem; font-weight: 600; cursor: pointer; }
+  .app .sidebar-footer { padding: 0 20px 20px; font-size: .72rem; color: var(--text-muted); text-align: center; line-height: 1.5; }
+  .app .main-content { min-width: 0; margin-left: 260px; padding: 24px 32px; }
+  .app .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; }
+  .app .page-header h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; color: var(--text-primary); white-space: nowrap; display: flex; align-items: center; gap: 10px; }
+  .app .page-title-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .app .header-meta { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+  .app .card { background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow-sm); margin-bottom: 20px; overflow: hidden; }
+  .app .card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .app .card-header h3 { font-size: 1.05rem; font-weight: 600; color: var(--text-primary); }
+  .app .card-body { padding: 24px; }
+  .app .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .app .form-group label { font-size: .8rem; font-weight: 600; color: var(--text-secondary); }
+  .app input:not([type="checkbox"]), .app select { height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: .9rem; font-family: inherit; background: var(--bg-card); color: var(--text-primary); width: 100%; }
+  .app input::placeholder { color: var(--text-muted); }
+  .app input:focus, .app select:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--focus-ring); }
+  .app input[readonly] { background: var(--bg-muted); color: var(--text-secondary); }
+  .app .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border: 1px solid transparent; border-radius: var(--radius-sm); font-size: .88rem; font-weight: 600; cursor: pointer; transition: var(--transition); white-space: nowrap; }
+  .app .btn-primary { background: var(--primary); color: var(--primary-text); }
+  .app .btn-primary:hover { background: var(--primary-hover); box-shadow: var(--shadow-md); }
+  .app .btn-outline { background: var(--bg-card); color: var(--text-secondary); border-color: var(--border); }
+  .app .btn-outline:hover { background: var(--bg-muted); color: var(--text-primary); border-color: #cbd5e1; }
+  .app .btn-sm { height: 32px; padding: 0 12px; font-size: .8rem; }
+  .app .data-table { width: 100%; border-collapse: collapse; font-size: .87rem; }
+  .app .data-table thead th { background: #f8fafc; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: .82rem; font-weight: 600; padding: 12px 16px; text-align: left; white-space: nowrap; }
+  .app .data-table tbody td { padding: 14px 16px; border-bottom: 1px solid var(--border); color: var(--text-primary); vertical-align: middle; }
+  .app .data-table tbody tr:hover td { background: #f1f5f9; }
+  .app .status-badge { display: inline-flex; align-items: center; border-radius: 9999px; padding: 4px 10px; font-size: .75rem; font-weight: 600; border: 1px solid transparent; line-height: 1.3; }
+  .app .status-badge.normal { background: var(--normal-light); color: var(--normal-text); border-color: var(--normal-border); }
+  .app .status-badge.risk { background: var(--risk-light); color: var(--risk-text); border-color: var(--risk-border); }
+  .app .status-badge.primary { background: var(--primary-light); color: var(--primary); border-color: #bfdbfe; }
+  .app .ico { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* ═════════ 제안 (C 태스크에서 Stylesheet.html에 추가/변경할 부분) ═════════ */
+  /* C-1 업장 컨텍스트 칩 — 거대 버튼 대신 제목 옆 컨텍스트 */
+  .app .shop-chip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 14px; border: 1px solid var(--border); border-radius: 9999px; background: var(--bg-card); color: var(--text-primary); font-size: .88rem; font-weight: 600; cursor: pointer; transition: var(--transition); }
+  .app .shop-chip:hover { background: var(--bg-muted); border-color: #cbd5e1; }
+  .app .shop-chip .k { color: var(--text-muted); font-weight: 500; }
+  .app .shop-chip .ico { color: var(--text-muted); }
+  /* C-2 폼 그리드: PC 4열 고정, 넓은 필드는 클래스로 (인라인 span 제거) */
+  .app .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 20px; }
+  .app .form-group--wide { grid-column: span 2; }
+  .app .form-group .hint { font-size: .76rem; color: var(--text-muted); }
+  /* C-3 카드 푸터: 주 액션 우측 정렬, 카드당 솔리드 블루 하나 */
+  .app .card-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--border); background: #fbfcfd; }
+  .app .card-footer .kbd { font-size: .78rem; color: var(--text-muted); margin-right: auto; }
+  .app .kbd kbd { font-family: "IBM Plex Mono", monospace; font-size: .74rem; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--bg-card); color: var(--text-secondary); }
+  /* C-4 카드 헤더 캡션 — 상시 배너 대체 */
+  .app .card-header .cap { font-size: .8rem; color: var(--text-muted); font-weight: 400; margin-left: 10px; }
+  .app .card-header .count { font-size: .82rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  /* C-5 테이블 정렬 규칙: 텍스트 좌 · 숫자 우 · 상태 가운데 */
+  .app .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .app .data-table .ctr { text-align: center; }
+  .app .data-table .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .8rem; color: var(--text-muted); }
+  .app .data-table td.muted { color: var(--text-secondary); }
+  /* C-6 (옵션) 구분 세그먼트 — select 대신 한 번 클릭 */
+  .app .segmented { display: grid; grid-template-columns: repeat(3, 1fr); height: 40px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-card); }
+  .app .segmented button { border: 0; background: none; font-size: .88rem; font-weight: 500; color: var(--text-secondary); cursor: pointer; border-right: 1px solid var(--border); }
+  .app .segmented button:last-child { border-right: 0; }
+  .app .segmented button[aria-pressed="true"] { background: var(--primary-light); color: var(--primary); font-weight: 600; box-shadow: inset 0 0 0 1px #bfdbfe; }
+  .app .segmented button:hover:not([aria-pressed="true"]) { background: var(--bg-muted); }
+  /* C-7 헤더 우측: outline 2개 + 관리 드롭다운 (admin) */
+  .app .dropdown { position: relative; }
+  .app .dropdown-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 200px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-md); padding: 6px; z-index: 20; }
+  .app .dropdown-menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; border: 0; background: none; border-radius: 6px; font-size: .86rem; color: var(--text-primary); cursor: pointer; text-align: left; }
+  .app .dropdown-menu button:hover { background: var(--bg-muted); }
+  .app .dropdown-menu button.danger { color: var(--risk-text); }
+  .app .dropdown-menu .sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  /* 자동완성 드롭다운 (기존 스타일) */
+  .app .autocomplete-wrapper { position: relative; }
+  .app .autocomplete-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-md); z-index: 10; overflow: hidden; }
+  .app .autocomplete-item { padding: 10px 14px; font-size: .85rem; display: flex; justify-content: space-between; cursor: pointer; }
+  .app .autocomplete-item:hover, .app .autocomplete-item.hl { background: var(--primary-light); }
+  .app .autocomplete-item .code { color: var(--text-muted); font-family: "IBM Plex Mono", monospace; font-size: .78rem; }
+  /* 아이콘 모드 */
+  .app[data-icons="lucide"] .em { display: none; }
+  .app[data-icons="emoji"] .lu { display: none; }
+  .app .lu.ico { width: 1.15rem; height: 1.15rem; }
+  .app h2 .lu.ico { width: 1.3rem; height: 1.3rem; color: var(--text-secondary); }
+  .app .brand-icon .lu.ico { width: 2rem; height: 2rem; color: var(--primary); stroke-width: 1.75; }
+  .app .example-tag { font-size: .72rem; color: var(--text-muted); font-weight: 500; border: 1px dashed var(--border); border-radius: 4px; padding: 1px 6px; margin-left: 8px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-dash" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></symbol>
+  <symbol id="i-tx" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></symbol>
+  <symbol id="i-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+  <symbol id="i-bld" viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+</svg>
+
+<header class="chrome">
+  <h1>입출고 기록 화면 — PC 1440px 목업</h1>
+  <p class="sub">감사 항목 5·6(헤더 위계·배너)과 확정 결정 ①②③을 적용한 제안. 앱의 실제 <code style="font-family:'IBM Plex Mono',monospace">Stylesheet.html</code> 토큰·클래스를 그대로 쓰고, 바뀌는 부분만 C-1 ~ C-7로 표시했다. 아래 표 데이터는 <b>예시</b>. 폰트는 Pretendard 대신 Noto Sans KR로 대체 표시.</p>
+  <div class="bar">
+    <div><span class="lbl">보기</span><span class="seg" role="tablist"><button id="tabBefore" aria-pressed="false">현재 (DEV 캡처)</button><button id="tabAfter" aria-pressed="true">제안</button></span></div>
+    <div id="iconBar"><span class="lbl">제목·메뉴 그림</span><span class="seg"><button id="icEmoji" aria-pressed="false">이모지 (지금)</button><button id="icLucide" aria-pressed="true">Lucide 아이콘</button></span></div>
+    <div id="segBar"><span class="lbl">구분 입력</span><span class="seg"><button id="sgSelect" aria-pressed="false">select (지금)</button><button id="sgSeg" aria-pressed="true">세그먼트 (옵션)</button></span></div>
+  </div>
+  <div class="rules">
+    <span><b>솔리드 블루는 카드당 하나</b> — 기록 저장</span>
+    <span><b>업장은 제목 옆 컨텍스트 칩</b> — 버튼 아님</span>
+    <span><b>관리자 액션은 「관리」 드롭다운</b></span>
+    <span><b>배너 제거</b> → 카드 헤더 캡션</span>
+    <span><b>텍스트 좌 · 숫자 우 · 상태 가운데</b></span>
+    <span><b>컨트롤 높이 40px 통일</b></span>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="frame" id="viewBefore" hidden><img src="D03-transactions.png" alt="현재 DEV 입출고 화면"></div>
+  <div class="frame" id="viewAfter">
+    <div class="app" data-icons="lucide" id="app">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <span class="brand-icon"><span class="em">🏨</span><svg class="lu ico"><use href="#i-bld"/></svg></span>
+          <h1>호텔덕구온천<br>재고 관리 시스템</h1>
+          <div class="brand-sub">Inventory Management v1.0.0</div>
+        </div>
+        <nav class="sidebar-nav">
+          <button class="nav-item"><span class="nav-icon"><span class="em">📊</span><svg class="lu ico"><use href="#i-dash"/></svg></span>대시보드<span class="nav-badge">3</span></button>
+          <button class="nav-item active"><span class="nav-icon"><span class="em">📝</span><svg class="lu ico"><use href="#i-tx"/></svg></span>입출고 기록</button>
+          <button class="nav-item"><span class="nav-icon"><span class="em">🏪</span><svg class="lu ico"><use href="#i-store"/></svg></span>업장 관리</button>
+          <button class="nav-item"><span class="nav-icon"><span class="em">📅</span><svg class="lu ico"><use href="#i-cal"/></svg></span>시즌 설정</button>
+          <button class="nav-item"><span class="nav-icon"><span class="em">👥</span><svg class="lu ico"><use href="#i-users"/></svg></span>계정 관리</button>
+          <button class="nav-item"><span class="nav-icon"><span class="em">📂</span><svg class="lu ico"><use href="#i-folder"/></svg></span>기초데이터</button>
+          <button class="nav-item"><span class="nav-icon"><span class="em">🤝</span><svg class="lu ico"><use href="#i-hand"/></svg></span>거래처 관리</button>
+          <button class="nav-item"><span class="nav-icon"><span class="em">⚙️</span><svg class="lu ico"><use href="#i-gear"/></svg></span>내 설정</button>
+        </nav>
+        <div class="sidebar-actions"><button class="logout-btn"><svg class="ico"><use href="#i-out"/></svg>로그아웃</button></div>
+        <div class="sidebar-footer">© 2026 (주)호텔덕구온천<br>재고 관리 시스템</div>
+      </aside>
+
+      <main class="main-content">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h2><span class="em">📝</span><svg class="lu ico"><use href="#i-tx"/></svg>입출고 기록</h2>
+            <button class="shop-chip" title="작업 업장 변경"><span class="k">업장</span>관리팀 (관리)<svg class="ico"><use href="#i-chev"/></svg></button>
+          </div>
+          <div class="header-meta">
+            <button class="btn btn-outline btn-sm"><svg class="ico"><use href="#i-refresh"/></svg>시트 동기화</button>
+            <button class="btn btn-outline btn-sm"><svg class="ico"><use href="#i-upload"/></svg>일괄 업로드</button>
+            <div class="dropdown">
+              <button class="btn btn-outline btn-sm" id="adminBtn" aria-expanded="true"><svg class="ico"><use href="#i-sliders"/></svg>관리<svg class="ico"><use href="#i-chev"/></svg></button>
+              <div class="dropdown-menu" id="adminMenu">
+                <button><svg class="ico"><use href="#i-zap"/></svg>신규 내역 취합</button>
+                <div class="sep"></div>
+                <button class="danger"><svg class="ico"><use href="#i-lock"/></svg>수동 월마감…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>새 입출고 기록</h3></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="form-group"><label>날짜</label><input type="date" value="2026-09-11"></div>
+              <div class="form-group form-group--wide autocomplete-wrapper">
+                <label>품목명 검색</label>
+                <input type="text" value="수건" placeholder="품목명 입력 후 선택…" id="acInput">
+                <div class="autocomplete-list" id="acList">
+                  <div class="autocomplete-item hl"><span>수건 (대) 화이트</span><span class="code">ITEM-0412</span></div>
+                  <div class="autocomplete-item"><span>수건 (중) 화이트</span><span class="code">ITEM-0413</span></div>
+                  <div class="autocomplete-item"><span>수건 (소) 페이스타월</span><span class="code">ITEM-0414</span></div>
+                </div>
+              </div>
+              <div class="form-group"><label>품목코드</label><input type="text" readonly value="ITEM-0412" placeholder="자동 입력"></div>
+
+              <div class="form-group" id="typeSelectWrap" hidden><label>구분</label><select><option>선택…</option><option selected>출고</option><option>입고</option><option>폐기</option></select></div>
+              <div class="form-group" id="typeSegWrap"><label>구분</label><div class="segmented"><button>입고</button><button aria-pressed="true">출고</button><button>폐기</button></div></div>
+              <div class="form-group"><label>수량</label><input type="number" value="24" min="1"></div>
+              <div class="form-group"><label>담당자</label><input type="text" value="배영우"></div>
+              <div class="form-group"><label>비고 <span class="hint">(선택)</span></label><input type="text" placeholder="메모"></div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span class="kbd"><kbd>Enter</kbd> 저장 · <kbd>Esc</kbd> 초기화</span>
+            <button class="btn btn-outline">초기화</button>
+            <button class="btn btn-primary"><svg class="ico"><use href="#i-save"/></svg>기록 저장</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>최근 입출고 내역 <span class="cap">최근 50건 · 최신순</span><span class="example-tag">예시 데이터</span></h3>
+            <span class="count">5건</span>
+          </div>
+          <table class="data-table">
+            <thead><tr><th>날짜</th><th>품목코드</th><th>품목명</th><th class="ctr">구분</th><th class="num">수량</th><th>담당자</th><th>비고</th><th>거래ID</th></tr></thead>
+            <tbody>
+              <tr><td class="muted">2026-09-11</td><td class="mono">ITEM-0412</td><td>수건 (대) 화이트</td><td class="ctr"><span class="status-badge primary">출고</span></td><td class="num">24</td><td>배영우</td><td class="muted">객실 3층</td><td class="mono">TX-260911-0031</td></tr>
+              <tr><td class="muted">2026-09-11</td><td class="mono">ITEM-0207</td><td>샴푸 리필 1L</td><td class="ctr"><span class="status-badge normal">입고</span></td><td class="num">120</td><td>김지은</td><td class="muted">—</td><td class="mono">TX-260911-0030</td></tr>
+              <tr><td class="muted">2026-09-10</td><td class="mono">ITEM-0898</td><td>일회용 슬리퍼</td><td class="ctr"><span class="status-badge primary">출고</span></td><td class="num">300</td><td>배영우</td><td class="muted">—</td><td class="mono">TX-260910-0128</td></tr>
+              <tr><td class="muted">2026-09-10</td><td class="mono">ITEM-1140</td><td>생수 500ml</td><td class="ctr"><span class="status-badge risk">폐기</span></td><td class="num">6</td><td>박민수</td><td class="muted">유통기한 경과</td><td class="mono">TX-260910-0127</td></tr>
+              <tr><td class="muted">2026-09-09</td><td class="mono">ITEM-0412</td><td>수건 (대) 화이트</td><td class="ctr"><span class="status-badge normal">입고</span></td><td class="num">200</td><td>김지은</td><td class="muted">세탁 반입</td><td class="mono">TX-260909-0092</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<section class="notes" id="notes">
+  <div class="note"><h3><span class="k">C-1</span>업장 = 컨텍스트 칩</h3>지금의 2px 블루 대형 버튼(<code>Index.html:215</code>)을 제목 옆 pill로. 클릭하면 기존 <code>openShopSelectionModal()</code> 그대로. 어느 업장에 기록하는지는 항상 보이되, 버튼 위계에서는 빠진다.</div>
+  <div class="note"><h3><span class="k">C-2</span>폼 4열 고정 · 인라인 span 제거</h3><code>auto-fit</code> 대신 PC 4열 고정. 품목명 검색은 <code>.form-group--wide</code>(2열)로 넓혀 자동완성이 읽히게. 태블릿 2열·모바일 1열에서는 wide가 전체 폭 — P0 1·2번 결함이 여기서 함께 해결된다.</div>
+  <div class="note"><h3><span class="k">C-3</span>카드 푸터에 주 액션</h3>솔리드 블루 <b>기록 저장</b>은 이 화면에서 유일. 옆에 outline <b>초기화</b>. 단축키 힌트는 텍스트만 (기능은 이미 Enter 저장이 있는지 확인 후 결정).</div>
+  <div class="note"><h3><span class="k">C-4</span>배너 → 캡션</h3><code>Index.html:279</code> 네이비 배너 삭제. "최근 50건 · 최신순"을 카드 제목 옆 캡션으로, 건수는 우측.</div>
+  <div class="note"><h3><span class="k">C-5</span>테이블 정렬 · 구분 pill</h3>텍스트 좌측, 수량 우측 <code>tabular-nums</code>, 구분은 <code>.status-badge</code> 재사용 — 입고 normal(초록) · 출고 primary(블루) · 폐기 risk(로즈). 거래ID·품목코드는 모노스페이스 muted. 렌더 위치 <code>JS_Tx.html</code> 테이블 생성부.</div>
+  <div class="note opt"><h3><span class="k">C-6</span>구분 세그먼트 (옵션)</h3>select 한 번 열고 고르는 대신 클릭 한 번. <code>#txType</code> select는 숨긴 채 유지하고 버튼이 값을 넣는 JS 10줄. 위 토글로 select 버전과 비교. 빼도 나머지에 영향 없음.</div>
+  <div class="note"><h3><span class="k">C-7</span>관리자 액션은 「관리」 드롭다운</h3>시트 동기화·일괄 업로드는 outline으로 노출. 신규 내역 취합·수동 월마감(파괴적, 드묾)은 admin 전용 드롭다운 안으로. 헤더가 5개 버튼 → 3개.</div>
+  <div class="note"><h3><span class="k">②</span>이모지 vs Lucide</h3>이모지 모양은 OS가 정한다(Windows = Segoe UI Emoji, 캡처의 그 모양). "더 예쁜 이모지"는 폰트(Noto Color Emoji 10MB급)를 실어야 해 GAS에 부적합. Lucide는 단색 선형이라 활성 탭에서 블루로 물들고 굵기가 글자와 맞는다 — shadcn 벤치마크가 쓰는 세트. 위 토글로 비교.</div>
+</section>
+
+<script>
+  var app = document.getElementById('app');
+  function press(onBtn, offBtn) { onBtn.setAttribute('aria-pressed', 'true'); offBtn.setAttribute('aria-pressed', 'false'); }
+  var tabBefore = document.getElementById('tabBefore'), tabAfter = document.getElementById('tabAfter');
+  var viewBefore = document.getElementById('viewBefore'), viewAfter = document.getElementById('viewAfter');
+  var iconBar = document.getElementById('iconBar'), segBar = document.getElementById('segBar');
+  tabBefore.onclick = function () { press(tabBefore, tabAfter); viewBefore.hidden = false; viewAfter.hidden = true; iconBar.hidden = true; segBar.hidden = true; };
+  tabAfter.onclick = function () { press(tabAfter, tabBefore); viewBefore.hidden = true; viewAfter.hidden = false; iconBar.hidden = false; segBar.hidden = false; };
+  var icEmoji = document.getElementById('icEmoji'), icLucide = document.getElementById('icLucide');
+  icEmoji.onclick = function () { press(icEmoji, icLucide); app.setAttribute('data-icons', 'emoji'); };
+  icLucide.onclick = function () { press(icLucide, icEmoji); app.setAttribute('data-icons', 'lucide'); };
+  var sgSelect = document.getElementById('sgSelect'), sgSeg = document.getElementById('sgSeg');
+  var selWrap = document.getElementById('typeSelectWrap'), segWrap = document.getElementById('typeSegWrap');
+  sgSelect.onclick = function () { press(sgSelect, sgSeg); selWrap.hidden = false; segWrap.hidden = true; };
+  sgSeg.onclick = function () { press(sgSeg, sgSelect); selWrap.hidden = true; segWrap.hidden = false; };
+  // 세그먼트 클릭
+  segWrap.querySelectorAll('.segmented button').forEach(function (b) {
+    b.onclick = function () { segWrap.querySelectorAll('.segmented button').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); }); b.setAttribute('aria-pressed', 'true'); };
+  });
+  // 관리 드롭다운 토글
+  var adminBtn = document.getElementById("adminBtn"), adminMenu = document.getElementById("adminMenu"); adminMenu.hidden = true; adminBtn.setAttribute("aria-expanded", "false");
+  adminBtn.onclick = function (e) { e.stopPropagation(); var open = adminMenu.hidden; adminMenu.hidden = !open; adminBtn.setAttribute('aria-expanded', String(open)); };
+  document.addEventListener('click', function () { adminMenu.hidden = true; adminBtn.setAttribute('aria-expanded', 'false'); });
+  adminMenu.onclick = function (e) { e.stopPropagation(); };
+  // 자동완성: 인풋 포커스 시에만 열림
+  var acInput = document.getElementById('acInput'), acList = document.getElementById('acList');
+  acList.hidden = true;
+  acInput.addEventListener('focus', function () { acList.hidden = false; });
+  acInput.addEventListener('blur', function () { setTimeout(function () { acList.hidden = true; }, 120); });
+  // 사이드바 탭은 시각 전용
+  app.querySelectorAll('.nav-item').forEach(function (b) { b.onclick = function () { app.querySelectorAll('.nav-item').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); }; });
+</script>
