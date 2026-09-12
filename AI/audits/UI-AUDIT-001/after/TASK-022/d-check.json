@@ -1,0 +1,80 @@
+{
+  "checks": [
+    {
+      "name": "#12 DOM 인라인 style 0 (로그인·앱·모달)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "#16 업장 선택 모달 푸터 숨김 (hidden · display none)",
+      "ok": true,
+      "detail": "{\"hidden\":true,\"display\":\"none\",\"html\":0,\"shopListClass\":\"shop-list\"}"
+    },
+    {
+      "name": "#16 푸터 있는 모달(일괄 업로드)은 정상 노출",
+      "ok": true,
+      "detail": "{\"hidden\":false,\"display\":\"flex\",\"btns\":3}"
+    },
+    {
+      "name": "#17 초기 25건 · 더 보기 버튼 · 빈 셀은 — (공백 셀 0)",
+      "ok": true,
+      "detail": "{\"rows\":25,\"count\":\"59건\",\"more\":\"더 보기 (25건 더보기 / 전체 59건)\",\"dash\":25,\"empty\":0,\"h\":1845}"
+    },
+    {
+      "name": "#17 더 보기 → 50건, 남은 건 표시",
+      "ok": true,
+      "detail": "{\"rows\":50,\"more\":\"더 보기 (9건 더보기 / 전체 59건)\"}"
+    },
+    {
+      "name": "#17 전부 펼치면 더 보기 사라짐",
+      "ok": true,
+      "detail": "{\"rows\":59,\"more\":false,\"count\":\"59건\"}"
+    },
+    {
+      "name": "#17 검색어 변경 시 1페이지(25건)로 리셋",
+      "ok": true,
+      "detail": "{\"rows\":25,\"more\":true}"
+    },
+    {
+      "name": "#17 사용여부 필터 → 건수 배지 \"n / 전체\"",
+      "ok": true,
+      "detail": "{\"rows\":1,\"count\":\"0 / 59건\"}"
+    },
+    {
+      "name": "#10 내 설정 두 카드 폭 일치 (600px) · 2열/1열",
+      "ok": true,
+      "detail": "[{\"cls\":\"card card--settings\",\"w\":600,\"cols\":2},{\"cls\":\"card card--settings\",\"w\":600,\"cols\":1}]"
+    },
+    {
+      "name": "#2 768px 내 설정: 1열 · wide/저장 버튼 카드 안 · 가로 스크롤 0",
+      "ok": true,
+      "detail": "{\"o\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"ms\":{\"cardW\":600,\"wideRight\":591,\"cardRight\":616,\"btnRight\":591,\"cols\":1,\"inlineSpan\":false}}"
+    },
+    {
+      "name": "#14 768px 대시보드 헤더 ≤ 100px · 시즌 배지 제목 옆 · KPI 그리드 첫 화면(1024) 안",
+      "ok": true,
+      "detail": "{\"headerH\":76,\"headerTop\":72,\"kpiTop\":164,\"kpiBottom\":391,\"seasonInTitle\":true}"
+    },
+    {
+      "name": "#3 768px 사이드바 열림: 백드롭 active · z-index sidebar 200 > backdrop 150 > header 101 · 상단 클릭 대상이 사이드바",
+      "ok": true,
+      "detail": "{\"open\":true,\"backdropActive\":true,\"backdropDisplay\":\"block\",\"backdropOpacity\":\"1\",\"zSidebar\":\"200\",\"zBackdrop\":\"150\",\"zHeader\":\"101\",\"sidebarLeft\":0,\"topEl\":\"sidebar\"}"
+    },
+    {
+      "name": "#3 백드롭 클릭 → 사이드바·백드롭 닫힘",
+      "ok": true,
+      "detail": "{\"open\":false,\"backdropActive\":false}"
+    },
+    {
+      "name": "#3 메뉴 클릭 → 탭 이동 + 사이드바·백드롭 닫힘",
+      "ok": true,
+      "detail": "{\"open\":false,\"backdropActive\":false,\"tab\":\"tab-mysettings\"}"
+    },
+    {
+      "name": "768px 8개 탭 가로 오버플로우 0",
+      "ok": true,
+      "detail": "{\"dashboard\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"transactions\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"shop\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"season\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"user\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"basedata\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"vendor\":{\"sw\":768,\"cw\":768,\"bad\":[]},\"mysettings\":{\"sw\":768,\"cw\":768,\"bad\":[]}}"
+    }
+  ],
+  "consoleErrors": []
+}

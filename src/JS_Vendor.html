@@ -5,7 +5,9 @@
 //  목록은 한 번 받아 vendorState.all에 두고, 검색·필터는 클라이언트에서 건다.
 //  거래처는 수백 건 규모라 매 입력마다 서버를 다시 부를 이유가 없다.
 // ═══════════════════════════════════════════════════════════════
-var vendorState = { all: [], editingCode: null };
+// [TASK-022] 목록은 25건씩 점진 렌더 — 59건을 한 번에 그리면 페이지가 3600px까지 늘어난다 (감사 #17)
+var VENDOR_PAGE_SIZE = 25;
+var vendorState = { all: [], editingCode: null, visibleCount: VENDOR_PAGE_SIZE };
 
 function loadVendors() {
   showLoading();
@@ -40,6 +42,38 @@ function filteredVendors() {
   });
 }
 
+/** 검색어·필터가 바뀌면 1페이지부터 다시 보여준다 */
+function resetAndRenderVendors() {
+  vendorState.visibleCount = VENDOR_PAGE_SIZE;
+  renderVendors();
+}
+
+function showMoreVendors() {
+  vendorState.visibleCount += VENDOR_PAGE_SIZE;
+  renderVendors();
+}
+
+/** 빈 값은 빈칸 대신 — (UIGuidelines §5) */
+function cellText(value) {
+  return (value == null || String(value).trim() === '') ? '—' : String(value);
+}
+
+/** 목록 아래 "더 보기" 푸터 — 남은 건이 없으면 지운다 */
+function renderVendorMore(total, visible) {
+  var wrap = document.getElementById('vendorMoreWrap');
+  var remaining = total - visible;
+  if (remaining <= 0) { if (wrap) wrap.remove(); return; }
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'vendorMoreWrap';
+    wrap.className = 'card-footer card-footer--center';
+    var body = document.querySelector('#tab-vendor .card .card-body');
+    body.parentNode.insertBefore(wrap, body.nextSibling);
+  }
+  wrap.innerHTML = '<button type="button" class="btn btn-outline btn-sm" onclick="showMoreVendors()">더 보기 (' +
+    Math.min(VENDOR_PAGE_SIZE, remaining) + '건 더보기 / 전체 ' + total + '건)</button>';
+}
+
 function renderVendors() {
   var isAdmin = currentUser && currentUser.role === 'admin';
   var list = filteredVendors();
@@ -51,6 +85,9 @@ function renderVendors() {
       ? list.length + '건'
       : list.length + ' / ' + vendorState.all.length + '건';
 
+  var visibleList = list.slice(0, vendorState.visibleCount);
+  renderVendorMore(list.length, visibleList.length);
+
   if (list.length === 0) {
     var tr = document.createElement('tr');
     var td = document.createElement('td');
@@ -58,7 +95,7 @@ function renderVendors() {
     td.className = 'empty-state';
     var icon = document.createElement('span');
     icon.className = 'empty-icon';
-    icon.textContent = '🤝';
+    icon.innerHTML = iconSvg('inbox');
     var p = document.createElement('p');
     p.textContent = vendorState.all.length === 0
       ? '등록된 거래처가 없습니다'
@@ -68,38 +105,33 @@ function renderVendors() {
     return;
   }
 
+  // [TASK-020] 열 정렬 — 코드·사업자번호 mono, 사용여부/관리 ctr (UIGuidelines §5)
+  var VENDOR_CELL_CLASS = ['mono', '', '', 'mono', '', ''];
   var fragment = document.createDocumentFragment();
-  list.forEach(function(v) {
+  visibleList.forEach(function(v) {
     var tr = document.createElement('tr');
 
     [v.code, v.name, v.shortName, v.bizNo, v.ceo, v.phone].forEach(function(value, index) {
       var td = document.createElement('td');
-      var node = index === 0 ? document.createElement('strong') : document.createElement('span');
-      node.textContent = value == null ? '' : String(value);
-      td.appendChild(node);
+      if (VENDOR_CELL_CLASS[index]) td.className = VENDOR_CELL_CLASS[index];
+      td.textContent = cellText(value);
       tr.appendChild(td);
     });
 
-    // 사용여부 — 미사용은 회색 배지로 죽여 둔다 (시트의 회색 처리와 같은 관례)
+    // 사용여부 — 미사용은 회색 pill로 죽여 둔다 (시트의 회색 처리와 같은 관례)
     var usageCell = document.createElement('td');
+    usageCell.className = 'ctr';
     var badge = document.createElement('span');
-    badge.className = 'status-badge ' + (v.usageStatus === '미사용' ? '' : 'normal');
+    badge.className = 'status-badge ' + (v.usageStatus === '미사용' ? 'muted' : 'normal');
     badge.textContent = v.usageStatus;
-    if (v.usageStatus === '미사용') badge.style.cssText = 'background:#f0f0f0;color:#999;border-color:#ddd;';
     usageCell.appendChild(badge);
     tr.appendChild(usageCell);
 
     if (isAdmin) {
       var actionCell = document.createElement('td');
-      var edit = document.createElement('button');
-      edit.className = 'action-btn edit'; edit.title = '수정'; edit.textContent = '✏️';
-      edit.addEventListener('click', function() { openEditVendorModal(v.code); });
-      var remove = document.createElement('button');
-      remove.className = 'action-btn delete'; remove.title = '삭제'; remove.textContent = '🗑️';
-      remove.addEventListener('click', function() { confirmDeleteVendor(v.code); });
-      actionCell.appendChild(edit);
-      actionCell.appendChild(document.createTextNode(' '));
-      actionCell.appendChild(remove);
+      actionCell.className = 'ctr actions';
+      actionCell.appendChild(actionButton('edit', 'pencil', '수정', function() { openEditVendorModal(v.code); }));
+      actionCell.appendChild(actionButton('delete', 'trash-2', '삭제', function() { confirmDeleteVendor(v.code); }));
       tr.appendChild(actionCell);
     }
 
@@ -124,8 +156,8 @@ function renderVendors() {
 function vendorFormHtml() {
   return '<div class="form-grid">' +
     '<div class="form-group"><label>거래처코드</label>' +
-      '<input type="text" id="vdCode" readonly style="background:#e8f0fb"></div>' +
-    '<div class="form-group"><label>거래처명 <span style="color:var(--risk-text)">*</span></label>' +
+      '<input type="text" id="vdCode" readonly></div>' +
+    '<div class="form-group"><label>거래처명 <span class="req">*</span></label>' +
       '<input type="text" id="vdName" placeholder="예: (주)덕구식자재"></div>' +
     '<div class="form-group"><label>약어명</label>' +
       '<input type="text" id="vdShortName" placeholder="예: 덕구식자재"></div>' +
@@ -147,9 +179,9 @@ function vendorFormHtml() {
     '<div class="form-group"><label>사용여부</label>' +
       '<select id="vdUsageStatus"><option value="사용">사용</option>' +
       '<option value="미사용">미사용</option></select></div>' +
-    '<div class="form-group" style="grid-column: 1 / -1"><label>주소</label>' +
+    '<div class="form-group form-group--full"><label>주소</label>' +
       '<input type="text" id="vdAddress"></div>' +
-    '<div class="form-group" style="grid-column: 1 / -1"><label>비고</label>' +
+    '<div class="form-group form-group--full"><label>비고</label>' +
       '<input type="text" id="vdNote"></div>' +
     '</div>';
 }
@@ -206,8 +238,8 @@ function collectVendorForm() {
 function openAddVendorModal() {
   vendorState.editingCode = null;
   var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
-    '<button class="btn btn-gold" onclick="submitVendor()">등록</button>';
-  openModal('➕ 거래처 등록', vendorFormHtml(), footer);
+    '<button class="btn btn-primary" onclick="submitVendor()">등록</button>';
+  openModal('거래처 등록', vendorFormHtml(), footer);
   fillVendorForm(null);
 }
 
@@ -217,8 +249,8 @@ function openEditVendorModal(code) {
 
   vendorState.editingCode = code;
   var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
-    '<button class="btn btn-gold" onclick="submitVendor()">저장</button>';
-  openModal('✏️ 거래처 수정 — ' + v.code, vendorFormHtml(), footer);
+    '<button class="btn btn-primary" onclick="submitVendor()">저장</button>';
+  openModal('거래처 수정 — ' + v.code, vendorFormHtml(), footer);
   fillVendorForm(v);
 }
 
@@ -254,13 +286,13 @@ function confirmDeleteVendor(code) {
   if (!v) return showToast('거래처를 찾을 수 없습니다', 'error');
 
   vendorState.editingCode = code;
-  var body = '<p style="text-align:center;font-size:1rem;">거래처 <strong>"' + escapeHtml(v.name) + '"</strong>' +
+  var body = '<p class="modal-msg">거래처 <strong>"' + escapeHtml(v.name) + '"</strong>' +
     ' (' + escapeHtml(v.code) + ')을(를) 삭제하시겠습니까?<br>' +
-    '<span style="color:var(--order);font-size:0.85rem;">⚠️ 품목이 사용 중인 거래처는 삭제되지 않습니다. ' +
+    '<span class="text-order text-sm">품목이 사용 중인 거래처는 삭제되지 않습니다. ' +
     '그 경우 사용여부를 \'미사용\'으로 바꿔주세요.</span></p>';
   var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
     '<button class="btn btn-danger" onclick="doDeleteVendor(vendorState.editingCode)">삭제</button>';
-  openModal('🗑️ 거래처 삭제 확인', body, footer);
+  openModal('거래처 삭제 확인', body, footer);
 }
 
 function doDeleteVendor(code) {
@@ -277,10 +309,10 @@ function doDeleteVendor(code) {
       // 사용 중이라 거절된 경우는 토스트로 흘려보내면 안 된다 — 어떤 품목이 막고 있는지,
       // 다음에 무엇을 해야 하는지(미사용 처리)를 모달에 그대로 남긴다.
       if (r.inUse) {
-        var body = '<p style="white-space:pre-wrap;font-size:0.95rem;">' + escapeHtml(r.message) + '</p>';
+        var body = '<p class="pre-wrap">' + escapeHtml(r.message) + '</p>';
         var footer = '<button class="btn btn-outline" onclick="closeModal()">닫기</button>' +
-          '<button class="btn btn-gold" onclick="markVendorUnused(vendorState.editingCode)">미사용으로 변경</button>';
-        openModal('⚠️ 삭제할 수 없습니다', body, footer);
+          '<button class="btn btn-primary" onclick="markVendorUnused(vendorState.editingCode)">미사용으로 변경</button>';
+        openModal('삭제할 수 없습니다', body, footer);
         return;
       }
       showToast(r.message, 'error');
@@ -305,7 +337,7 @@ function markVendorUnused(code) {
   google.script.run
     .withSuccessHandler(function(r) {
       hideLoading();
-      showToast(r.success ? "✅ 거래처 '" + v.name + "'을(를) 미사용으로 변경했습니다" : r.message,
+      showToast(r.success ? "거래처 '" + v.name + "'을(를) 미사용으로 변경했습니다" : r.message,
         r.success ? 'success' : 'error');
       if (r.success) { closeModal(); loadVendors(); }
     })

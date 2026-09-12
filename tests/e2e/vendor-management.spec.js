@@ -34,6 +34,13 @@ test.describe('DEV 거래처 관리', () => {
       || page.frames().find((fr) => fr.name() === "userHtmlFrame");
   }
 
+  /** [TASK-022] 목록은 25건씩 "더 보기"로 늘어난다 — 코드로 행을 찾을 때는 전부 펼친다 */
+  async function expandAllVendors(app) {
+    const more = app.locator('#vendorMoreWrap button');
+    for (let i = 0; i < 20 && (await more.count()) > 0; i++) await more.click();
+    await expect(more).toHaveCount(0);
+  }
+
   /** 거래처 탭으로 이동하고 목록 로딩이 끝날 때까지 기다린다 */
   async function openVendorTab(page, app) {
     await app.locator('#navVendor').click();
@@ -117,7 +124,9 @@ test.describe('DEV 거래처 관리', () => {
     const app = await login(page);
     await openVendorTab(page, app);
 
-    const total = await dataRows(app).count();
+    // [TASK-022] 25건씩 점진 렌더되므로 건수를 셀 때는 먼저 전부 펼친다
+    const countAll = async () => { await expandAllVendors(app); return dataRows(app).count(); };
+    const total = await countAll();
     test.skip(total === 0, 'DEV 거래처 시트가 비어 있어 필터를 확인할 수 없습니다.');
 
     // 있을 수 없는 검색어를 넣으면 빈 상태가 나와야 한다
@@ -128,13 +137,15 @@ test.describe('DEV 거래처 관리', () => {
 
     await app.locator('#vendorSearch').fill('');
     await app.locator('#vendorSearch').dispatchEvent('input');
-    await expect(dataRows(app)).toHaveCount(total);
+    // 검색어를 지우면 1페이지(최대 25건)로 돌아온다
+    expect(await dataRows(app).count()).toBe(Math.min(total, 25));
+    expect(await countAll()).toBe(total);
 
     // 사용 + 미사용 = 전체 (두 상태는 서로 배타적이다)
     await app.locator('#vendorUsageFilter').selectOption('사용');
-    const used = await dataRows(app).count();
+    const used = await countAll();
     await app.locator('#vendorUsageFilter').selectOption('미사용');
-    const unused = await dataRows(app).count();
+    const unused = await countAll();
     expect(used + unused).toBe(total);
   });
 
@@ -160,6 +171,7 @@ test.describe('DEV 거래처 관리', () => {
     test.skip(!usedCode, '품목에 거래처가 지정된 건이 없어 삭제 제약을 확인할 수 없습니다.');
 
     // 이 거래처는 반드시 거절된다 — 삭제되지 않으므로 DEV 데이터는 그대로다
+    await expandAllVendors(app);
     const row = app.locator('#vendorTableBody tr', { hasText: usedCode });
     await expect(row).toHaveCount(1);
     await row.locator('button[title="삭제"]').click();
@@ -176,6 +188,7 @@ test.describe('DEV 거래처 관리', () => {
     // 거래처가 실제로 남아 있는지 확인
     await app.locator('#vendorSearch').fill('');
     await app.locator('#vendorSearch').dispatchEvent('input');
+    await expandAllVendors(app);
     await expect(app.locator('#vendorTableBody tr', { hasText: usedCode })).toHaveCount(1);
   });
 });
