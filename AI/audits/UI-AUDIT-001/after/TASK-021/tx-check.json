@@ -1,0 +1,83 @@
+{
+  "checks": [
+    {
+      "name": "C-1 shop-chip 구조 유지 + 업장명 갱신",
+      "ok": true,
+      "detail": "{\"cls\":\"shop-chip\",\"k\":\"업장\",\"v\":\"관리팀 (관리)\",\"icon\":true}"
+    },
+    {
+      "name": "C-1 txShopSelect 값",
+      "ok": true
+    },
+    {
+      "name": "C-2 1440px 폼 4열 · wide span 2 · 인라인 grid-column 0",
+      "ok": true,
+      "detail": "{\"cols\":4,\"wideSpan\":\"span 2/auto\",\"inlineSpan\":false}"
+    },
+    {
+      "name": "C-6 세그먼트 클릭 → #txType=출고, aria-pressed 토글, select hidden",
+      "ok": true,
+      "detail": "{\"v\":\"출고\",\"pressed\":\"false,true,false\",\"hidden\":true}"
+    },
+    {
+      "name": "C-6 다른 세그먼트 클릭 시 단일 선택",
+      "ok": true,
+      "detail": "{\"v\":\"폐기\",\"pressed\":\"false,false,true\"}"
+    },
+    {
+      "name": "C-6 select change → 세그먼트 동기화",
+      "ok": true,
+      "detail": "true,false,false"
+    },
+    {
+      "name": "C-3 초기화: 품목·코드·구분·수량·비고 비움, 날짜·담당자 보존",
+      "ok": true,
+      "detail": "{\"search\":\"\",\"code\":\"\",\"type\":\"\",\"qty\":\"\",\"note\":\"\",\"date\":\"2026-09-11\",\"person\":\"배영우\",\"pressed\":\"false,false,false\"}"
+    },
+    {
+      "name": "C-3 입출고 탭 솔리드 블루 버튼 1개",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "C-4 배너 삭제 · 캡션 · count",
+      "ok": true,
+      "detail": "{\"banner\":false,\"cap\":\"최근 50건 · 최신순\",\"count\":\"count\"}"
+    },
+    {
+      "name": "C-5 셀 클래스(muted|mono||ctr|num||muted|mono) · 구분 pill · 인라인 0",
+      "ok": true,
+      "detail": "{\"cls\":\"muted|mono||ctr|num||muted|mono\",\"badge\":\"status-badge normal\",\"inline\":0}"
+    },
+    {
+      "name": "C-7 헤더 버튼 3개 (시트 동기화 · 일괄 업로드 · 관리)",
+      "ok": true,
+      "detail": "시트 동기화 / 일괄 업로드 / 관리"
+    },
+    {
+      "name": "C-7 관리 클릭 → 메뉴 열림 (취합 · 월마감 danger)",
+      "ok": true,
+      "detail": "{\"hidden\":false,\"expanded\":\"true\",\"items\":[\"신규 내역 취합\",\"수동 월마감…(danger)\"]}"
+    },
+    {
+      "name": "C-7 바깥 클릭 → 메뉴 닫힘",
+      "ok": true,
+      "detail": "{\"hidden\":true,\"expanded\":\"false\"}"
+    },
+    {
+      "name": "C-7 Esc → 메뉴 닫힘",
+      "ok": true
+    },
+    {
+      "name": "C-2 1024px 폼 2열 · 카드 밖 필드 0 · 가로 스크롤 0",
+      "ok": true,
+      "detail": "{\"cols\":2,\"scrollWidth\":1024,\"clientWidth\":1024,\"wideRight\":967,\"cardRight\":992,\"overflowGroups\":0}"
+    },
+    {
+      "name": "C-2 768px 폼 1열 · 카드 밖 필드 0 · 가로 스크롤 0",
+      "ok": true,
+      "detail": "{\"cols\":1,\"scrollWidth\":768,\"clientWidth\":768,\"wideRight\":727,\"cardRight\":752,\"overflowGroups\":0}"
+    }
+  ],
+  "consoleErrors": []
+}

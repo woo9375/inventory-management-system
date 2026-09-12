@@ -10,12 +10,14 @@
 </head>
 
 <body>
+  <!-- [TASK-020] Lucide 아이콘 스프라이트 — 모든 <use href="#i-…">의 원본 -->
+  <?!= include('Icons') ?>
 
   <!-- ═══════ [NEW] 로그인 화면 ═══════ -->
   <div id="loginContainer" class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <span class="login-icon">🏨</span>
+        <span class="login-icon"><svg class="ico"><use href="#i-building-2"/></svg></span>
         <h2>호텔덕구온천</h2>
         <p>재고 관리 시스템 v1.0.0</p>
       </div>
@@ -31,7 +33,7 @@
         </div>
         <div class="form-group login-remember">
           <input type="checkbox" id="rememberMe">
-          <label for="rememberMe">✅ 로그인 상태 유지</label>
+          <label for="rememberMe">로그인 상태 유지</label>
         </div>
         <button class="login-btn" id="loginBtn" onclick="submitLogin()">로그인</button>
         <div id="loginError" class="login-error"></div>
@@ -41,8 +43,8 @@
 
   <!-- ═══════ 모바일 헤더 ═══════ -->
   <div class="mobile-header">
-    <button class="hamburger" onclick="toggleSidebar()">☰</button>
-    <span class="brand">🏨 호텔덕구온천</span>
+    <button class="hamburger" onclick="toggleSidebar()" aria-label="메뉴"><svg class="ico"><use href="#i-menu"/></svg></button>
+    <span class="brand"><svg class="ico"><use href="#i-building-2"/></svg> 호텔덕구온천</span>
     <span></span>
   </div>
 
@@ -59,7 +61,7 @@
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-header">
         <h3 id="modalTitle">품목 등록</h3>
-        <button class="modal-close" onclick="closeModal()">✕</button>
+        <button class="modal-close" onclick="closeModal()" aria-label="닫기"><svg class="ico"><use href="#i-x"/></svg></button>
       </div>
       <div class="modal-body" id="modalBody"></div>
       <div class="modal-footer" id="modalFooter"></div>
@@ -67,51 +69,54 @@
   </div>
 
   <!-- ═══════ 메인 앱 (로그인 후 표시) ═══════ -->
-  <div id="appContainer" class="app-container" style="display:none;">
+  <!-- [TASK-022] 모바일 사이드바 백드롭 — 열림 상태에서 배경을 딤 처리하고, 클릭하면 닫힌다 -->
+  <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="closeSidebar()"></div>
+
+  <div id="appContainer" class="app-container" hidden>
 
     <!-- ═══════ 사이드바 ═══════ -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <span class="brand-icon">🏨</span>
+        <span class="brand-icon"><svg class="ico"><use href="#i-building-2"/></svg></span>
         <h1>호텔덕구온천<br>재고 관리 시스템</h1>
         <div class="brand-sub">Inventory Management v1.0.0</div>
       </div>
 
       <nav class="sidebar-nav">
         <button class="nav-item active" onclick="showTab('dashboard', this)">
-          <span class="nav-icon">📊</span> 대시보드
-          <span id="alertBadge" class="nav-badge" style="display:none">0</span>
+          <span class="nav-icon"><svg class="ico"><use href="#i-layout-dashboard"/></svg></span> 대시보드
+          <span id="alertBadge" class="nav-badge" hidden>0</span>
         </button>
         <button class="nav-item" onclick="showTab('transactions', this)">
-          <span class="nav-icon">📝</span> 입출고 기록
+          <span class="nav-icon"><svg class="ico"><use href="#i-clipboard-list"/></svg></span> 입출고 기록
         </button>
 
         <button id="navShop" class="nav-item admin-only" onclick="showTab('shop', this)">
-          <span class="nav-icon">🏪</span> 업장 관리
+          <span class="nav-icon"><svg class="ico"><use href="#i-store"/></svg></span> 업장 관리
         </button>
         <button id="navSeason" class="nav-item admin-only" onclick="showTab('season', this)">
-          <span class="nav-icon">📅</span> 시즌 설정
+          <span class="nav-icon"><svg class="ico"><use href="#i-calendar"/></svg></span> 시즌 설정
         </button>
         <button id="navUser" class="nav-item admin-only" onclick="showTab('user', this)">
-          <span class="nav-icon">👥</span> 계정 관리
+          <span class="nav-icon"><svg class="ico"><use href="#i-users"/></svg></span> 계정 관리
         </button>
         <button id="navBaseData" class="nav-item admin-only" onclick="showTab('basedata', this)">
-          <span class="nav-icon">📂</span> 기초데이터
+          <span class="nav-icon"><svg class="ico"><use href="#i-folder"/></svg></span> 기초데이터
         </button>
         <button id="navVendor" class="nav-item admin-only" onclick="showTab('vendor', this)">
-          <span class="nav-icon">🤝</span> 거래처 관리
+          <span class="nav-icon"><svg class="ico"><use href="#i-handshake"/></svg></span> 거래처 관리
         </button>
         <button id="navMySettings" class="nav-item" onclick="showTab('mysettings', this)">
-          <span class="nav-icon">⚙️</span> 내 설정
+          <span class="nav-icon"><svg class="ico"><use href="#i-settings"/></svg></span> 내 설정
         </button>
       </nav>
 
       <!-- 로그아웃 버튼 (사이드바 하단 고정) -->
       <div class="sidebar-actions">
-        <button class="logout-btn" onclick="doLogout()" title="로그아웃">🚪 로그아웃</button>
+        <button class="logout-btn" onclick="doLogout()" title="로그아웃"><svg class="ico"><use href="#i-log-out"/></svg> 로그아웃</button>
       </div>
 
-      <div class="sidebar-footer" style="padding-top: 0; padding-bottom: 20px;">
+      <div class="sidebar-footer">
         © 2026 (주)호텔덕구온천<br>재고 관리 시스템
       </div>
     </aside>
@@ -123,25 +128,25 @@
       <div id="tab-dashboard" class="tab-content active">
         <div class="page-header">
           <div class="page-title-group">
-            <h2>📊 대시보드</h2>
+            <h2><svg class="ico"><use href="#i-layout-dashboard"/></svg>대시보드</h2>
+            <span id="dashSeason" class="season-badge">-</span>
             <span class="meta-badge">
-              <span class="meta-icon">🕒</span>
+              <span class="meta-icon"><svg class="ico"><use href="#i-clock"/></svg></span>
               <span id="dashDate">-</span>
             </span>
           </div>
           <div class="header-meta">
             <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)"
-              title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
+              title="구글 시트의 최신 데이터를 가져옵니다."><svg class="ico"><use href="#i-refresh-cw"/></svg> 시트 동기화</button>
             <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('refreshDashboard')"
-              title="통합 갱신">🔄 통합갱신</button>
+              title="통합 갱신">통합갱신</button>
             <div class="dropdown">
-              <button class="btn btn-primary btn-sm dropbtn">🖨️ 인쇄/다운로드 ▼</button>
+              <button class="btn btn-primary btn-sm dropbtn"><svg class="ico"><use href="#i-printer"/></svg> 인쇄/다운로드 <svg class="ico"><use href="#i-chevron-down"/></svg></button>
               <div class="dropdown-content">
-                <button onclick="openPhysicalCheckModal('pdf')">🖨️ 실사 양식 인쇄 (PDF)</button>
-                <button onclick="openPhysicalCheckModal('excel')">📥 실사 양식 다운로드 (Excel)</button>
+                <button onclick="openPhysicalCheckModal('pdf')">실사 양식 인쇄 (PDF)</button>
+                <button onclick="openPhysicalCheckModal('excel')">실사 양식 다운로드 (Excel)</button>
               </div>
             </div>
-            <span id="dashSeason" class="season-badge">-</span>
           </div>
         </div>
 
@@ -151,41 +156,41 @@
             <div><span id="kpiTotal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
           </div>
           <div class="kpi-card risk">
-            <div class="kpi-label">🚨 위험</div>
+            <div class="kpi-label">위험</div>
             <div><span id="kpiRisk" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
           </div>
           <div class="kpi-card order">
-            <div class="kpi-label">⚠️ 발주필요</div>
+            <div class="kpi-label">발주필요</div>
             <div><span id="kpiOrder" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
           </div>
           <div class="kpi-card normal">
-            <div class="kpi-label">✅ 정상</div>
+            <div class="kpi-label">정상</div>
             <div><span id="kpiNormal" class="kpi-value">-</span><span class="kpi-unit">개</span></div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-header">
-            <h3>🔔 위험 · 발주필요 품목</h3>
+            <h3>위험 · 발주필요 품목</h3>
           </div>
           <div class="card-body">
             <div class="data-table-wrapper">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>품목코드</th>
+                    <th class="mono">품목코드</th>
                     <th>품목명</th>
                     <th>규격</th>
-                    <th>현재고</th>
-                    <th>안전재고</th>
-                    <th>발주점</th>
-                    <th>적정발주량</th>
-                    <th>상태</th>
+                    <th class="num">현재고</th>
+                    <th class="num">안전재고</th>
+                    <th class="num">발주점</th>
+                    <th class="num">적정발주량</th>
+                    <th class="ctr">상태</th>
                   </tr>
                 </thead>
                 <tbody id="alertTableBody">
                   <tr>
-                    <td colspan="8" class="empty-state"><span class="empty-icon">📋</span>
+                    <td colspan="8" class="empty-state"><span class="empty-icon"><svg class="ico"><use href="#i-inbox"/></svg></span>
                       <p>데이터를 불러오는 중...</p>
                     </td>
                   </tr>
@@ -197,58 +202,76 @@
       </div>
 
       <!-- ━━━━━━━━━ 입출고 기록 탭 ━━━━━━━━━ -->
+      <!-- [TASK-021] 승인 목업(AI/audits/UI-AUDIT-001/mockup-transactions.html) C-1~C-7. 기존 DOM ID는 전부 유지한다. -->
       <div id="tab-transactions" class="tab-content">
         <div class="page-header">
-          <h2 style="display:flex; align-items:center;">📝 입출고 기록</h2>
-          <div class="header-meta">
-            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTransactions)" style="margin-right:4px;"
-              title="구글 시트의 최신 데이터를 가져옵니다.">🔄 시트 동기화</button>
-            <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('incrementalSync')"
-              title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다.">⚡ 신규 내역 취합</button>
-            <button class="btn btn-gold btn-sm admin-only" onclick="openMonthlyClosingModal()"
-              style="border: 1px solid var(--gold); background: #fffdf5;"
-              title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다.">🗓️ 수동 월마감</button>
-            <!-- [TASK-019] 입출고 일괄 업로드 — 안내문 모달 → 파일 선택 → 사전 검증 → 청크 저장 (JS_Tx.html) -->
-            <button id="btnTxBulkUpload" class="btn btn-outline btn-sm" onclick="openBulkUploadModal()"
-              title="CSV/엑셀 파일로 입출고 기록을 한 번에 등록합니다.">📤 일괄 업로드</button>
-            <input type="file" id="txBulkFile" accept=".csv,.xlsx,.xls" style="display:none;" onchange="onBulkFileSelected(this)">
-            <button id="btnShopSelectModal" class="btn btn-outline" onclick="openShopSelectionModal()" style="font-weight:bold; font-size:1.0rem; border: 2px solid var(--navy-600); border-radius: 8px; padding: 6px 16px; color: var(--navy-800); background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-              🏪 업장 선택...
+          <div class="page-title-group">
+            <h2><svg class="ico"><use href="#i-clipboard-list"/></svg>입출고 기록</h2>
+            <!-- C-1 업장 컨텍스트 칩 — 클릭하면 기존 업장 선택 모달 -->
+            <button id="btnShopSelectModal" class="shop-chip" onclick="openShopSelectionModal()" title="작업 업장 변경">
+              <span class="k">업장</span><span class="v">선택…</span><svg class="ico"><use href="#i-chevron-down"/></svg>
             </button>
-            <select id="txShopSelect" style="display:none;" onchange="loadTransactions()">
+            <select id="txShopSelect" hidden onchange="loadTransactions()">
               <option value="">업장 선택...</option>
             </select>
+          </div>
+          <!-- C-7 헤더 액션: outline 2개 + 관리자 전용 「관리 ▾」 -->
+          <div class="header-meta">
+            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTransactions)"
+              title="구글 시트의 최신 데이터를 가져옵니다."><svg class="ico"><use href="#i-refresh-cw"/></svg> 시트 동기화</button>
+            <!-- [TASK-019] 입출고 일괄 업로드 — 안내문 모달 → 파일 선택 → 사전 검증 → 청크 저장 (JS_Tx.html) -->
+            <button id="btnTxBulkUpload" class="btn btn-outline btn-sm" onclick="openBulkUploadModal()"
+              title="CSV/엑셀 파일로 입출고 기록을 한 번에 등록합니다."><svg class="ico"><use href="#i-upload"/></svg> 일괄 업로드</button>
+            <input type="file" id="txBulkFile" accept=".csv,.xlsx,.xls" hidden onchange="onBulkFileSelected(this)">
+            <div class="dropdown admin-only">
+              <button id="btnTxAdminMenu" class="btn btn-outline btn-sm" onclick="toggleTxAdminMenu(event)" aria-haspopup="menu" aria-expanded="false"
+                aria-controls="txAdminMenu"><svg class="ico"><use href="#i-sliders-horizontal"/></svg> 관리 <svg class="ico"><use href="#i-chevron-down"/></svg></button>
+              <div id="txAdminMenu" class="dropdown-menu" role="menu" hidden>
+                <button role="menuitem" onclick="closeTxAdminMenu(); doSystemCommand('incrementalSync')"
+                  title="각 업장의 최신 입출고 내역을 통합 대시보드로 동기화합니다."><svg class="ico"><use href="#i-zap"/></svg> 신규 내역 취합</button>
+                <div class="sep"></div>
+                <button role="menuitem" class="danger" onclick="closeTxAdminMenu(); openMonthlyClosingModal()"
+                  title="현재 시점의 재고 데이터를 백업하고 새로운 월간 정산을 시작합니다."><svg class="ico"><use href="#i-lock"/></svg> 수동 월마감…</button>
+              </div>
+            </div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-header">
-            <h3>➕ 새 입출고 기록</h3>
+            <h3>새 입출고 기록</h3>
           </div>
           <div class="card-body">
+            <!-- C-2 PC 4열 고정 · 넓은 필드는 .form-group--wide (인라인 span 금지) -->
             <div class="form-grid">
               <div class="form-group">
                 <label>날짜</label>
                 <input type="date" id="txDate">
               </div>
-              <div class="form-group autocomplete-wrapper">
+              <div class="form-group form-group--wide autocomplete-wrapper">
                 <label>품목명 검색</label>
                 <input type="text" id="txItemNameSearch" placeholder="품목명 입력 후 선택..." autocomplete="off"
                   oninput="onItemNameInput(this.value)">
-                <div id="itemNameDropdown" class="autocomplete-list" style="display:none"></div>
+                <div id="itemNameDropdown" class="autocomplete-list" hidden></div>
               </div>
               <div class="form-group">
                 <label>품목코드</label>
-                <input type="text" id="txItemCode" readonly style="background:#e8f0fb" placeholder="자동 입력">
+                <input type="text" id="txItemCode" readonly placeholder="자동 입력">
               </div>
+              <!-- C-6 구분: 세그먼트가 값을 넣고, 기존 #txType select는 숨긴 채 유지 (saveTransaction 호환) -->
               <div class="form-group">
                 <label>구분</label>
-                <select id="txType">
+                <select id="txType" hidden aria-hidden="true" tabindex="-1">
                   <option value="">선택...</option>
                   <option value="입고">입고</option>
                   <option value="출고">출고</option>
                   <option value="폐기">폐기</option>
                 </select>
+                <div id="txTypeSeg" class="segmented" role="group" aria-label="구분">
+                  <button type="button" data-type="입고" aria-pressed="false">입고</button>
+                  <button type="button" data-type="출고" aria-pressed="false">출고</button>
+                  <button type="button" data-type="폐기" aria-pressed="false">폐기</button>
+                </div>
               </div>
               <div class="form-group">
                 <label>수량</label>
@@ -258,45 +281,43 @@
                 <label>담당자</label>
                 <input type="text" id="txPerson" placeholder="이름">
               </div>
-              <div class="form-group" style="grid-column: span 2">
-                <label>비고</label>
-                <input type="text" id="txNote" placeholder="메모 (선택)">
+              <div class="form-group">
+                <label>비고 <span class="hint">(선택)</span></label>
+                <input type="text" id="txNote" placeholder="메모">
               </div>
             </div>
-            <div class="mt-16">
-              <button class="btn btn-gold" onclick="saveTransaction()">💾 기록 저장</button>
-            </div>
+          </div>
+          <!-- C-3 주 액션은 카드 푸터 우측, 카드당 솔리드 블루 하나 -->
+          <div class="card-footer">
+            <button class="btn btn-outline" onclick="resetTransactionForm()">초기화</button>
+            <button class="btn btn-primary" onclick="saveTransaction()"><svg class="ico"><use href="#i-save"/></svg> 기록 저장</button>
           </div>
         </div>
 
         <div class="card">
+          <!-- C-4 상시 배너 대신 캡션 + 건수 -->
           <div class="card-header">
-            <h3>📋 최근 입출고 내역</h3>
-            <span id="txCount" style="font-size:0.8rem;color:var(--text-secondary)">0건</span>
+            <h3>최근 입출고 내역 <span class="cap">최근 50건 · 최신순</span></h3>
+            <span id="txCount" class="count">0건</span>
           </div>
           <div class="card-body">
-            <div
-              style="background:linear-gradient(135deg,#f0f4ff,#e8f0fb); border-left:4px solid var(--navy-600,#1e3a5f); border-radius:8px; padding:10px 16px; margin-bottom:12px; font-size:0.85rem; color:var(--navy-800,#0f2033); display:flex; align-items:center; gap:8px;">
-              <span>📌</span>
-              <span>표시 건수: 업장별 최대 <strong>50건</strong> / 정렬: 최신 등록일 기준 <strong>내림차순</strong></span>
-            </div>
             <div class="data-table-wrapper">
               <table class="data-table">
                 <thead>
                   <tr>
                     <th>날짜</th>
-                    <th>품목코드</th>
+                    <th class="mono">품목코드</th>
                     <th>품목명</th>
-                    <th>구분</th>
-                    <th>수량</th>
+                    <th class="ctr">구분</th>
+                    <th class="num">수량</th>
                     <th>담당자</th>
                     <th>비고</th>
-                    <th>거래ID</th>
+                    <th class="mono">거래ID</th>
                   </tr>
                 </thead>
                 <tbody id="txTableBody">
                   <tr>
-                    <td colspan="8" class="empty-state"><span class="empty-icon">📝</span>
+                    <td colspan="8" class="empty-state"><span class="empty-icon"><svg class="ico"><use href="#i-inbox"/></svg></span>
                       <p>업장을 선택하세요</p>
                     </td>
                   </tr>
@@ -308,16 +329,15 @@
       </div>
 
 
-
       <!-- ━━━━━━━━━ 업장 관리 탭 ━━━━━━━━━ -->
       <div id="tab-shop" class="tab-content">
         <div class="page-header">
-          <h2>🏪 업장 관리</h2>
+          <h2><svg class="ico"><use href="#i-store"/></svg>업장 관리</h2>
         </div>
         <div class="card">
           <div class="card-header">
             <h3>업장 목록</h3>
-            <button class="btn btn-gold btn-sm admin-only" onclick="openAddShopModal()">➕ 추가</button>
+            <button class="btn btn-primary btn-sm admin-only" onclick="openAddShopModal()"><svg class="ico"><use href="#i-plus"/></svg> 추가</button>
           </div>
           <div class="card-body">
             <div class="data-table-wrapper">
@@ -326,9 +346,9 @@
                   <tr>
                     <th>분류</th>
                     <th>업장명</th>
-                    <th>태그</th>
-                    <th>상태</th>
-                    <th class="admin-only">관리</th>
+                    <th class="mono">태그</th>
+                    <th class="ctr">상태</th>
+                    <th class="ctr admin-only">관리</th>
                   </tr>
                 </thead>
                 <tbody id="shopTableBody"></tbody>
@@ -341,16 +361,16 @@
       <!-- ━━━━━━━━━ 시즌 설정 탭 ━━━━━━━━━ -->
       <div id="tab-season" class="tab-content">
         <div class="page-header">
-          <h2>📅 시즌 설정</h2>
+          <h2><svg class="ico"><use href="#i-calendar"/></svg>시즌 설정</h2>
           <div class="header-meta">
             <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('validateSeason')"
-              title="시즌 설정이 올바른지 검증하고 누락된 설정을 확인합니다.">✅ 시즌 설정 검증</button>
+              title="시즌 설정이 올바른지 검증하고 누락된 설정을 확인합니다.">시즌 설정 검증</button>
           </div>
         </div>
         <div class="card">
           <div class="card-header">
             <h3>시즌 목록</h3>
-            <button class="btn btn-gold btn-sm admin-only" onclick="openAddSeasonModal()">➕ 추가</button>
+            <button class="btn btn-primary btn-sm admin-only" onclick="openAddSeasonModal()"><svg class="ico"><use href="#i-plus"/></svg> 추가</button>
           </div>
           <div class="card-body">
             <div class="data-table-wrapper">
@@ -360,8 +380,8 @@
                     <th>시즌명</th>
                     <th>시작일</th>
                     <th>종료일</th>
-                    <th>배수</th>
-                    <th class="admin-only">관리</th>
+                    <th class="num">배수</th>
+                    <th class="ctr admin-only">관리</th>
                   </tr>
                 </thead>
                 <tbody id="seasonTableBody"></tbody>
@@ -374,18 +394,18 @@
       <!-- ━━━━━━━━━ 계정 관리 탭 ━━━━━━━━━ -->
       <div id="tab-user" class="tab-content">
         <div class="page-header">
-          <h2>👥 계정 관리</h2>
+          <h2><svg class="ico"><use href="#i-users"/></svg>계정 관리</h2>
           <div class="header-meta">
             <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('syncPermissions')"
-              title="사용자 권한 변경 사항을 각 시트에 강제로 동기화합니다.">🔐 권한 재동기화</button>
+              title="사용자 권한 변경 사항을 각 시트에 강제로 동기화합니다.">권한 재동기화</button>
             <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('backupCSV')"
-              title="현재 데이터를 CSV 파일로 즉시 백업합니다.">💾 CSV 백업 실행</button>
+              title="현재 데이터를 CSV 파일로 즉시 백업합니다.">CSV 백업 실행</button>
           </div>
         </div>
         <div class="card">
           <div class="card-header">
             <h3>사용자 계정</h3>
-            <button class="btn btn-gold btn-sm admin-only" onclick="openCreateUserModal()">➕ 계정 생성</button>
+            <button class="btn btn-primary btn-sm admin-only" onclick="openCreateUserModal()"><svg class="ico"><use href="#i-plus"/></svg> 계정 생성</button>
           </div>
           <div class="card-body">
             <div class="data-table-wrapper">
@@ -395,8 +415,8 @@
                     <th>아이디</th>
                     <th>성함</th>
                     <th>부서</th>
-                    <th>역할</th>
-                    <th class="admin-only">관리</th>
+                    <th class="ctr">역할</th>
+                    <th class="ctr admin-only">관리</th>
                   </tr>
                 </thead>
                 <tbody id="userTableBody"></tbody>
@@ -411,7 +431,7 @@
       <!-- ━━━━━━━━━ 기초데이터 관리 탭 ━━━━━━━━━ -->
       <div id="tab-basedata" class="tab-content">
         <div class="page-header">
-          <h2>📂 기초데이터 관리</h2>
+          <h2><svg class="ico"><use href="#i-folder"/></svg>기초데이터 관리</h2>
         </div>
 
         <div class="card">
@@ -419,9 +439,9 @@
             <h3>대분류 (업장 분류)</h3>
           </div>
           <div class="card-body">
-            <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
-              <input type="text" id="newMainCat" placeholder="새 분류명" style="flex: 1; max-width: 200px;">
-              <button class="btn btn-gold" onclick="addBaseDataItem('mainCategory')">추가</button>
+            <div class="chip-input-group admin-only">
+              <input type="text" id="newMainCat" placeholder="새 분류명">
+              <button class="btn btn-primary" onclick="addBaseDataItem('mainCategory')">추가</button>
             </div>
             <div class="chip-list" id="mainCatList">
               <span class="empty-state">데이터를 불러오는 중...</span>
@@ -434,9 +454,9 @@
             <h3>단위 목록</h3>
           </div>
           <div class="card-body">
-            <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
-              <input type="text" id="newUnit" placeholder="새 단위명" style="flex: 1; max-width: 200px;">
-              <button class="btn btn-gold" onclick="addBaseDataItem('unit')">추가</button>
+            <div class="chip-input-group admin-only">
+              <input type="text" id="newUnit" placeholder="새 단위명">
+              <button class="btn btn-primary" onclick="addBaseDataItem('unit')">추가</button>
             </div>
             <div class="chip-list" id="unitList"></div>
           </div>
@@ -447,9 +467,9 @@
             <h3>품목 카테고리</h3>
           </div>
           <div class="card-body">
-            <div class="chip-input-group admin-only" style="margin-bottom: 16px; display: flex; gap: 8px;">
-              <input type="text" id="newItemCat" placeholder="새 카테고리명" style="flex: 1; max-width: 200px;">
-              <button class="btn btn-gold" onclick="addBaseDataItem('itemCategory')">추가</button>
+            <div class="chip-input-group admin-only">
+              <input type="text" id="newItemCat" placeholder="새 카테고리명">
+              <button class="btn btn-primary" onclick="addBaseDataItem('itemCategory')">추가</button>
             </div>
             <div class="chip-list" id="itemCatList"></div>
           </div>
@@ -459,7 +479,7 @@
       <!-- ━━━━━━━━━ 거래처 관리 탭 (TASK-018) ━━━━━━━━━ -->
       <div id="tab-vendor" class="tab-content">
         <div class="page-header">
-          <h2>🤝 거래처 관리</h2>
+          <h2><svg class="ico"><use href="#i-handshake"/></svg>거래처 관리</h2>
           <div class="header-meta">
             <span id="vendorCount" class="season-badge">0건</span>
           </div>
@@ -468,18 +488,18 @@
         <div class="card">
           <div class="card-header">
             <h3>거래처 목록</h3>
-            <button class="btn btn-gold btn-sm admin-only" onclick="openAddVendorModal()">➕ 추가</button>
+            <button class="btn btn-primary btn-sm admin-only" onclick="openAddVendorModal()"><svg class="ico"><use href="#i-plus"/></svg> 추가</button>
           </div>
           <div class="card-body">
-            <div class="form-grid" style="margin-bottom:16px;">
+            <div class="form-grid filter-bar">
               <div class="form-group">
                 <label>검색 (거래처명 · 약어명 · 사업자번호)</label>
                 <input type="text" id="vendorSearch" placeholder="검색어 입력..." autocomplete="off"
-                  oninput="renderVendors()">
+                  oninput="resetAndRenderVendors()">
               </div>
               <div class="form-group">
                 <label>사용여부</label>
-                <select id="vendorUsageFilter" onchange="renderVendors()">
+                <select id="vendorUsageFilter" onchange="resetAndRenderVendors()">
                   <option value="all">전체</option>
                   <option value="사용">사용</option>
                   <option value="미사용">미사용</option>
@@ -491,14 +511,14 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>거래처코드</th>
+                    <th class="mono">거래처코드</th>
                     <th>거래처명</th>
                     <th>약어명</th>
-                    <th>사업자번호</th>
+                    <th class="mono">사업자번호</th>
                     <th>대표자명</th>
                     <th>전화</th>
-                    <th>사용여부</th>
-                    <th class="admin-only">관리</th>
+                    <th class="ctr">사용여부</th>
+                    <th class="ctr admin-only">관리</th>
                   </tr>
                 </thead>
                 <tbody id="vendorTableBody"></tbody>
@@ -511,10 +531,10 @@
       <!-- ━━━━━━━━━ 내 설정 탭 ━━━━━━━━━ -->
       <div id="tab-mysettings" class="tab-content">
         <div class="page-header">
-          <h2>⚙️ 내 설정</h2>
+          <h2><svg class="ico"><use href="#i-settings"/></svg>내 설정</h2>
         </div>
 
-        <div class="card" style="max-width: 600px; margin-bottom: 24px;">
+        <div class="card card--settings">
           <div class="card-header">
             <h3>내 계정 정보</h3>
           </div>
@@ -522,39 +542,39 @@
             <div class="form-grid">
               <div class="form-group">
                 <label>아이디</label>
-                <input type="text" id="mySettingsUsername" readonly style="background:#e8f0fb">
+                <input type="text" id="mySettingsUsername" readonly>
               </div>
               <div class="form-group">
                 <label>성함</label>
-                <input type="text" id="mySettingsName" readonly style="background:#e8f0fb">
+                <input type="text" id="mySettingsName" readonly>
               </div>
               <div class="form-group">
                 <label>역할</label>
-                <input type="text" id="mySettingsRole" readonly style="background:#e8f0fb">
+                <input type="text" id="mySettingsRole" readonly>
               </div>
               <div class="form-group">
                 <label>부서</label>
-                <input type="text" id="mySettingsDept" readonly style="background:#e8f0fb">
+                <input type="text" id="mySettingsDept" readonly>
               </div>
-              <div class="form-group" style="grid-column: span 2;">
+              <!-- [TASK-022] 인라인 span 2 → .form-group--wide (768px 1열에서 암시적 2열 생성 결함 #2 해소) -->
+              <div class="form-group form-group--wide">
                 <label>배정된 업장</label>
-                <div id="mySettingsShops" class="chip-container"
-                  style="min-height: 40px; padding: 10px; border: 1px solid var(--border); border-radius: 4px; background: #f8fafc;">
+                <div id="mySettingsShops" class="chip-box">
                   <!-- 자바스크립트로 배정된 업장이 배지 형태로 표시됩니다. -->
                 </div>
-                <small class="form-text text-muted" style="margin-top:5px;">접근 가능한 업장 목록입니다. 권한 변경이 필요하면 관리자에게
+                <small class="form-help">접근 가능한 업장 목록입니다. 권한 변경이 필요하면 관리자에게
                   문의하세요.</small>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="card" style="max-width: 500px;">
+        <div class="card card--settings">
           <div class="card-header">
             <h3>비밀번호 변경</h3>
           </div>
           <div class="card-body">
-            <div class="form-grid" style="grid-template-columns: 1fr;">
+            <div class="form-grid form-grid--1col">
               <div class="form-group">
                 <label>현재 비밀번호</label>
                 <input type="password" id="myOldPw" placeholder="현재 비밀번호">
@@ -565,7 +585,7 @@
               </div>
             </div>
             <div class="mt-16 text-right">
-              <button class="btn btn-gold" onclick="submitMyPasswordChange()">저장</button>
+              <button class="btn btn-primary" onclick="submitMyPasswordChange()"><svg class="ico"><use href="#i-save"/></svg> 저장</button>
             </div>
           </div>
         </div>

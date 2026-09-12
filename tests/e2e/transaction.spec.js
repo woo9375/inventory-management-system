@@ -55,7 +55,9 @@ test.describe('DEV 입출고 등록', () => {
     const selectedCode = await app.locator('#txItemCode').inputValue();
     expect(selectedCode).toBeTruthy();
 
-    await app.locator('#txType').selectOption('입고');
+    // [TASK-021] 구분은 세그먼트 버튼 클릭 → 숨겨진 #txType select에 값이 들어간다
+    await app.locator('#txTypeSeg button[data-type="입고"]').click();
+    await expect(app.locator('#txType')).toHaveValue('입고');
     await app.locator('#txQty').fill('10');
     await app.locator('#txPerson').fill('E2E');
     await app.locator('#txNote').fill('playwright-e2e');
@@ -72,6 +74,6 @@ test.describe('DEV 입출고 등록', () => {
     await expect(dataRow).toBeVisible({ timeout: 60000 });
 
     const txIdCell = dataRow.locator('td').nth(7);
-    await expect(txIdCell).not.toHaveText('-', { timeout: 30000 });
+    await expect(txIdCell).not.toHaveText(/^[-—]$/, { timeout: 30000 });
   });
 });

@@ -10,18 +10,17 @@ function openShopSelectionModal() {
     return;
   }
   
-  openModal('작업 업장 선택', '<div id="shopSelectionList"></div>', '');
+  // 푸터 없음 — openModal이 푸터를 숨긴다 (TASK-022 #16)
+  openModal('작업 업장 선택', '<div id="shopSelectionList" class="shop-list"></div>', '');
   var list = document.getElementById('shopSelectionList');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:10px; max-height:400px; overflow-y:auto; padding-right:5px;';
   var help = document.createElement('p');
-  help.style.cssText = 'margin-bottom:12px; color:var(--text-secondary); text-align:center;';
+  help.className = 'modal-help';
   help.textContent = '입출고 기록을 조회 및 등록할 업장을 명확히 선택해주세요.';
   list.appendChild(help);
   shops.forEach(function(opt) {
     if (!opt.value) return;
     var shopButton = document.createElement('button');
     shopButton.className = 'btn btn-outline';
-    shopButton.style.cssText = 'text-align:left; padding:16px 20px; font-size:1.1rem; justify-content:flex-start; border-radius:12px;';
     shopButton.textContent = opt.textContent;
     shopButton.addEventListener('click', function() { selectShopFromModal(opt.value, opt.textContent); });
     list.appendChild(shopButton);
@@ -31,11 +30,92 @@ function openShopSelectionModal() {
 function selectShopFromModal(value, text) {
   var select = document.getElementById('txShopSelect');
   select.value = value;
+  // [TASK-021] C-1 칩 구조(.k 라벨 · .v 값 · 아이콘)는 유지하고 값만 바꾼다
   var btn = document.getElementById('btnShopSelectModal');
-  if(btn) btn.textContent = '🏪 업장 선택: ' + text + ' ▼';
+  if (btn) {
+    var v = btn.querySelector('.v');
+    if (v) v.textContent = text;
+    else btn.innerHTML = '<span class="k">업장</span><span class="v">' + escapeHtml(text) + '</span>' + iconSvg('chevron-down');
+  }
   closeModal();
   loadTransactions();
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  [TASK-021] 구분 세그먼트 (C-6) · 폼 초기화 (C-3) · 관리 드롭다운 (C-7)
+//
+//  세그먼트는 숨겨진 #txType select에 값을 넣기만 한다. saveTransaction()·E2E가
+//  select.value를 읽는 경로는 그대로다. select가 다른 경로(스크립트)로 바뀌면
+//  change 이벤트로 세그먼트 표시를 따라 맞춘다.
+// ═══════════════════════════════════════════════════════════════
+function setTxType(type) {
+  var select = document.getElementById('txType');
+  if (!select) return;
+  var value = type || '';
+  if (select.value !== value) {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  syncTxTypeSegment();
+}
+
+function syncTxTypeSegment() {
+  var select = document.getElementById('txType');
+  var seg = document.getElementById('txTypeSeg');
+  if (!select || !seg) return;
+  var value = select.value;
+  seg.querySelectorAll('button[data-type]').forEach(function(b) {
+    b.setAttribute('aria-pressed', String(b.getAttribute('data-type') === value && value !== ''));
+  });
+}
+
+function initTxTypeSegment() {
+  var seg = document.getElementById('txTypeSeg');
+  var select = document.getElementById('txType');
+  if (!seg || !select) return;
+  seg.querySelectorAll('button[data-type]').forEach(function(b) {
+    b.addEventListener('click', function() { setTxType(b.getAttribute('data-type')); });
+  });
+  select.addEventListener('change', syncTxTypeSegment);
+  syncTxTypeSegment();
+}
+
+/** 품목·구분·수량·비고를 비운다. 날짜·담당자는 연속 입력을 위해 남긴다. */
+function resetTransactionForm() {
+  ['txItemNameSearch', 'txItemCode', 'txQty', 'txNote'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  var dd = document.getElementById('itemNameDropdown');
+  if (dd) dd.hidden = true;
+  setTxType('');
+}
+
+function toggleTxAdminMenu(e) {
+  if (e) e.stopPropagation();
+  var menu = document.getElementById('txAdminMenu');
+  var btn = document.getElementById('btnTxAdminMenu');
+  if (!menu) return;
+  var open = menu.hidden;
+  menu.hidden = !open;
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+}
+
+function closeTxAdminMenu() {
+  var menu = document.getElementById('txAdminMenu');
+  var btn = document.getElementById('btnTxAdminMenu');
+  if (menu) menu.hidden = true;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initTxTypeSegment();
+  var menu = document.getElementById('txAdminMenu');
+  if (menu) menu.addEventListener('click', function(e) { e.stopPropagation(); });
+});
+// 바깥 클릭·Esc로 드롭다운 닫기
+document.addEventListener('click', function() { closeTxAdminMenu(); });
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeTxAdminMenu(); });
 
 // ═══════════════════════════════════════════════════════════════
 //  업장 목록 & 품목코드 로드
@@ -98,9 +178,9 @@ function onItemNameInput(value) {
   var codeField = document.getElementById('txItemCode');
   
   if (!value || value.trim().length < 1) { 
-    dropdown.style.display = 'none'; 
-    codeField.value = ''; 
-    return; 
+    dropdown.hidden = true;
+    codeField.value = '';
+    return;
   }
 
   txSearchTimeout = setTimeout(function() {
@@ -108,13 +188,13 @@ function onItemNameInput(value) {
     google.script.run
       .withSuccessHandler(function(matches) {
         if (!matches || matches.length === 0) { 
-          dropdown.style.display = 'none'; 
-          codeField.value = ''; 
-          return; 
+          dropdown.hidden = true;
+          codeField.value = '';
+          return;
         }
 
         renderItemMatches(dropdown, matches);
-        dropdown.style.display = 'block';
+        dropdown.hidden = false;
 
         // 정확히 일치하는 이름이 있으면 자동으로 코드 기입
         var inputVal = document.getElementById('txItemNameSearch').value.trim();
@@ -130,9 +210,9 @@ function onItemNameInput(value) {
           return item.name.toLowerCase().indexOf(query) > -1 || item.code.toLowerCase().indexOf(query) > -1;
         }).slice(0, 10);
         
-        if (fallbackMatches.length === 0) { dropdown.style.display = 'none'; codeField.value = ''; return; }
+        if (fallbackMatches.length === 0) { dropdown.hidden = true; codeField.value = ''; return; }
         renderItemMatches(dropdown, fallbackMatches);
-        dropdown.style.display = 'block';
+        dropdown.hidden = false;
       })
       .searchItemCodes(getToken(), value.trim());
   }, 300); // 300ms 디바운스
@@ -148,7 +228,6 @@ function renderItemMatches(dropdown, matches) {
     name.textContent = item.name;
     var code = document.createElement('span');
     code.className = 'item-code';
-    code.style.cssText = 'color:#888; font-size:0.85em;';
     code.textContent = ' (' + item.code + ')';
     row.appendChild(name);
     row.appendChild(code);
@@ -161,13 +240,13 @@ function renderItemMatches(dropdown, matches) {
 function selectItemName(code, name) {
   document.getElementById('txItemNameSearch').value = name;
   document.getElementById('txItemCode').value = code;
-  document.getElementById('itemNameDropdown').style.display = 'none';
+  document.getElementById('itemNameDropdown').hidden = true;
 }
 
 document.addEventListener('click', function(e) {
   if (!e.target.closest('.autocomplete-wrapper')) {
     var dd = document.getElementById('itemNameDropdown');
-    if (dd) dd.style.display = 'none';
+    if (dd) dd.hidden = true;
   }
 });
 
@@ -189,23 +268,35 @@ function renderTransactions(records) {
   var tbody = document.getElementById('txTableBody');
   document.getElementById('txCount').textContent = records.length + '건';
   if (records.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">📝</span><p>입출고 기록이 없습니다</p></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">' + iconSvg('inbox') + '</span><p>입출고 기록이 없습니다</p></td></tr>';
     return;
   }
+  // [TASK-020] 열 정렬 — 날짜 muted · 코드/ID mono · 구분 ctr(배지) · 수량 num (UIGuidelines §5)
+  var TX_CELL_CLASS = ['muted', 'mono', '', 'ctr', 'num', '', 'muted', 'mono'];
   var fragment = document.createDocumentFragment();
   records.forEach(function(r) {
     var tr = document.createElement('tr');
-    [r.date, r.code, r.name, r.type, r.qty, r.person || '-', r.note || '-', r.txId || '-'].forEach(function(value, index) {
+    [r.date, r.code, r.name, r.type, r.qty, r.person || '—', r.note || '—', r.txId || '—'].forEach(function(value, index) {
       var td = document.createElement('td');
-      td.textContent = value == null ? '' : String(value);
-      if (index === 1) td.style.fontWeight = '600';
-      if (index === 3) { td.style.fontWeight = '600'; td.style.color = r.type === '입고' ? 'var(--normal)' : (r.type === '폐기' ? 'var(--risk)' : 'var(--order)'); }
-      if (index === 7) td.style.cssText = 'font-size:0.75rem;color:var(--text-secondary)';
+      if (TX_CELL_CLASS[index]) td.className = TX_CELL_CLASS[index];
+      if (index === 3) {
+        td.appendChild(txTypeBadge(r.type));
+      } else {
+        td.textContent = value == null ? '' : String(value);
+      }
       tr.appendChild(td);
     });
     fragment.appendChild(tr);
   });
   tbody.replaceChildren(fragment);
+}
+
+/** 입출고 구분 pill — 입고 normal · 출고 primary · 폐기 risk (UIGuidelines §5) */
+function txTypeBadge(type) {
+  var badge = document.createElement('span');
+  badge.className = 'status-badge ' + (type === '입고' ? 'normal' : (type === '폐기' ? 'risk' : 'primary'));
+  badge.textContent = type == null ? '' : String(type);
+  return badge;
 }
 
 function saveTransaction() {
@@ -225,7 +316,7 @@ function saveTransaction() {
   if (Number(txData.qty) <= 0) return showToast('수량은 1 이상이어야 합니다', 'warning');
   // [TASK-010] 마감된 기간은 서버에서도 거부되지만, 왕복 전에 즉시 안내한다
   if (closedCutoffDate && txData.date <= closedCutoffDate) {
-    return showToast('❌ ' + closedCutoffDate + ' 이전은 이미 월마감된 기간입니다. 당월 재고조정으로 등록하세요', 'error');
+    return showToast(closedCutoffDate + ' 이전은 이미 월마감된 기간입니다. 당월 재고조정으로 등록하세요', 'error');
   }
 
   showLoading();
@@ -234,11 +325,7 @@ function saveTransaction() {
       hideLoading();
       if (result.success) {
         showToast(result.message, 'success');
-        document.getElementById('txItemNameSearch').value = '';
-        document.getElementById('txItemCode').value = '';
-        document.getElementById('txType').selectedIndex = 0;
-        document.getElementById('txQty').value = '';
-        document.getElementById('txNote').value = '';
+        resetTransactionForm(); // [TASK-021] 날짜·담당자는 남기고 나머지 초기화
         loadTransactions();
       } else { showToast(result.message, 'error'); }
     })
@@ -279,35 +366,35 @@ function openBulkUploadModal() {
   bulkUploadState.fileName = '';
 
   var body =
-    '<div id="bulkGuide" style="font-size:0.92rem; line-height:1.6;">' +
-      '<p style="margin-bottom:12px;">대상 업장: <strong>' + escapeHtml(shopName) + '</strong></p>' +
-      '<div style="background:linear-gradient(135deg,#f0f4ff,#e8f0fb); border-left:4px solid var(--navy-600,#1e3a5f); border-radius:8px; padding:10px 14px; margin-bottom:14px;">' +
-        '<strong>📄 파일 형식</strong> — CSV 또는 엑셀(XLSX) 파일, 첫 번째 시트만 읽습니다.<br>' +
+    '<div id="bulkGuide" class="bulk-guide">' +
+      '<p class="mb-12">대상 업장: <strong>' + escapeHtml(shopName) + '</strong></p>' +
+      '<div class="callout">' +
+        '<strong>파일 형식</strong> — CSV 또는 엑셀(XLSX) 파일, 첫 번째 시트만 읽습니다.<br>' +
         '첫 행은 제목 행으로 두고 아래 열을 채워 주세요. (제목이 있으면 열 순서가 달라도 이름으로 찾습니다)' +
       '</div>' +
-      '<div class="data-table-wrapper" style="margin-bottom:14px;">' +
-        '<table class="data-table"><thead><tr><th>열</th><th>필수</th><th>규칙</th></tr></thead><tbody>' +
-          '<tr><td><strong>날짜</strong></td><td>✔</td><td>YYYY-MM-DD (엑셀 날짜 셀도 가능). 마감된 기간의 날짜는 거부됩니다.</td></tr>' +
-          '<tr><td><strong>품목코드</strong></td><td>✔</td><td>품목 마스터에 등록된 코드 (품목명이 아닙니다)</td></tr>' +
-          '<tr><td><strong>구분</strong></td><td>✔</td><td>입고 / 출고 / 폐기 중 하나</td></tr>' +
-          '<tr><td><strong>수량</strong></td><td>✔</td><td>0보다 큰 숫자</td></tr>' +
+      '<div class="data-table-wrapper mb-12">' +
+        '<table class="data-table"><thead><tr><th>열</th><th class="ctr">필수</th><th>규칙</th></tr></thead><tbody>' +
+          '<tr><td><strong>날짜</strong></td><td class="ctr">필수</td><td>YYYY-MM-DD (엑셀 날짜 셀도 가능). 마감된 기간의 날짜는 거부됩니다.</td></tr>' +
+          '<tr><td><strong>품목코드</strong></td><td class="ctr">필수</td><td>품목 마스터에 등록된 코드 (품목명이 아닙니다)</td></tr>' +
+          '<tr><td><strong>구분</strong></td><td class="ctr">필수</td><td>입고 / 출고 / 폐기 중 하나</td></tr>' +
+          '<tr><td><strong>수량</strong></td><td class="ctr">필수</td><td>0보다 큰 숫자</td></tr>' +
           '<tr><td><strong>비고</strong></td><td></td><td>선택, 500자 이내</td></tr>' +
         '</tbody></table>' +
       '</div>' +
-      '<ul style="padding-left:18px; margin-bottom:12px; color:var(--text-secondary);">' +
+      '<ul>' +
         '<li>담당자는 <strong>로그인한 사용자</strong>로 기록됩니다 (파일의 담당자 열은 무시).</li>' +
         '<li>저장 전에 <strong>파일 전체를 먼저 검증</strong>합니다. 오류가 하나라도 있으면 <strong>아무것도 저장하지 않고</strong> 오류 행을 보여 드립니다.</li>' +
         '<li>출고·폐기는 단건 등록과 똑같이 <strong>FIFO 로트별로 분할</strong> 저장됩니다. 파일 안의 앞선 입고가 뒤의 출고에 반영됩니다.</li>' +
         '<li>한 번에 최대 <strong>' + bulkMaxRows().toLocaleString('ko-KR') + '건</strong>. ' + bulkChunkSize() + '건씩 나누어 저장되므로 완료될 때까지 <strong>창을 닫거나 새로고침하지 마세요</strong>.</li>' +
       '</ul>' +
-      '<p style="color:var(--risk); font-weight:600;">⚠️ 저장된 기록은 웹앱에서 되돌릴 수 없습니다(시트에서 직접 삭제). 업로드 전 파일을 한 번 더 확인하세요.</p>' +
+      '<p class="warn-text">저장된 기록은 웹앱에서 되돌릴 수 없습니다(시트에서 직접 삭제). 업로드 전 파일을 한 번 더 확인하세요.</p>' +
     '</div>';
 
   var footer =
     '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
-    '<button class="btn btn-outline" onclick="downloadBulkTemplate()">📥 양식 다운로드</button>' +
-    '<button class="btn btn-gold" id="btnBulkStart" onclick="startBulkFileSelect()">📂 파일 선택 후 시작</button>';
-  openModal('📤 입출고 일괄 업로드', body, footer);
+    '<button class="btn btn-outline" onclick="downloadBulkTemplate()">' + iconSvg('download') + ' 양식 다운로드</button>' +
+    '<button class="btn btn-primary" id="btnBulkStart" onclick="startBulkFileSelect()">' + iconSvg('upload') + ' 파일 선택 후 시작</button>';
+  openModal('입출고 일괄 업로드', body, footer);
 }
 
 /** 제목 행 + 예시 1행짜리 XLSX 양식. 예시 행은 지우고 쓰라고 비고에 적어 둔다. */
@@ -342,14 +429,14 @@ function onBulkFileSelected(input) {
 
   showLoading();
   readBulkFile(file, function(err, aoa) {
-    if (err) { hideLoading(); return showToast('❌ ' + err.message, 'error'); }
+    if (err) { hideLoading(); return showToast(err.message, 'error'); }
 
     var parsed = parseBulkRows(aoa);
     var totalRows = parsed.rows.length + parsed.errors.length;
     if (totalRows === 0) { hideLoading(); return showToast('데이터 행이 없습니다. 제목 행 아래에 내용을 입력했는지 확인하세요.', 'warning'); }
     if (totalRows > bulkMaxRows()) {
       hideLoading();
-      return showToast('❌ 한 번에 최대 ' + bulkMaxRows().toLocaleString('ko-KR') + '건까지 업로드할 수 있습니다. (파일: ' + totalRows + '건)', 'error');
+      return showToast('한 번에 최대 ' + bulkMaxRows().toLocaleString('ko-KR') + '건까지 업로드할 수 있습니다. (파일: ' + totalRows + '건)', 'error');
     }
     if (parsed.errors.length > 0) { hideLoading(); return showBulkErrors(totalRows, parsed.errors, '파일 형식 검사에서 오류가 발견되었습니다.'); }
 
@@ -492,26 +579,25 @@ function parseBulkRows(aoa) {
 // ── 3) 결과 · 확인 모달 ──
 function showBulkErrors(total, errors, headline) {
   var body =
-    '<p style="margin-bottom:10px;">' + escapeHtml(headline || '') + '</p>' +
-    '<p style="margin-bottom:12px; color:var(--text-secondary);">파일 <strong>' + escapeHtml(bulkUploadState.fileName) + '</strong> · 전체 ' + total + '건 중 오류 <strong style="color:var(--risk)">' + errors.length + '건</strong>. <strong>아무것도 저장하지 않았습니다.</strong></p>' +
-    '<div class="data-table-wrapper" style="max-height:320px; overflow-y:auto;"><table class="data-table"><thead><tr><th style="width:70px">행</th><th>오류</th></tr></thead><tbody id="bulkErrorBody"></tbody></table></div>';
+    '<p class="mb-8">' + escapeHtml(headline || '') + '</p>' +
+    '<p class="mb-12 text-secondary">파일 <strong>' + escapeHtml(bulkUploadState.fileName) + '</strong> · 전체 ' + total + '건 중 오류 <strong class="text-risk">' + errors.length + '건</strong>. <strong>아무것도 저장하지 않았습니다.</strong></p>' +
+    '<div class="data-table-wrapper scroll-box"><table class="data-table"><thead><tr><th class="num w-70">행</th><th>오류</th></tr></thead><tbody id="bulkErrorBody"></tbody></table></div>';
   var footer =
     '<button class="btn btn-outline" onclick="closeModal()">닫기</button>' +
-    '<button class="btn btn-gold" onclick="startBulkFileSelect()">📂 다른 파일 선택</button>';
-  openModal('❌ 검증 실패 — 저장하지 않았습니다', body, footer);
+    '<button class="btn btn-primary" onclick="startBulkFileSelect()">다른 파일 선택</button>';
+  openModal('검증 실패 — 저장하지 않았습니다', body, footer);
 
   var tbody = document.getElementById('bulkErrorBody');
   var MAX = 50;
   errors.slice(0, MAX).forEach(function(e) {
     var tr = document.createElement('tr');
-    var tdRow = document.createElement('td'); tdRow.textContent = e.row + '행'; tdRow.style.fontWeight = '600';
-    var tdMsg = document.createElement('td'); tdMsg.textContent = e.message; tdMsg.style.textAlign = 'left';
+    var tdRow = document.createElement('td'); tdRow.className = 'num text-bold'; tdRow.textContent = e.row + '행';
+    var tdMsg = document.createElement('td'); tdMsg.textContent = e.message;
     tr.appendChild(tdRow); tr.appendChild(tdMsg); tbody.appendChild(tr);
   });
   if (errors.length > MAX) {
     var tr = document.createElement('tr');
-    var td = document.createElement('td'); td.colSpan = 2; td.textContent = '… 외 ' + (errors.length - MAX) + '건';
-    td.style.color = 'var(--text-secondary)';
+    var td = document.createElement('td'); td.colSpan = 2; td.className = 'muted'; td.textContent = '… 외 ' + (errors.length - MAX) + '건';
     tr.appendChild(td); tbody.appendChild(tr);
   }
 }
@@ -521,33 +607,34 @@ function showBulkConfirm(rows, hasHeader) {
   rows.forEach(function(r) { counts[r.type]++; });
 
   var body =
-    '<p style="margin-bottom:6px;">파일 <strong>' + escapeHtml(bulkUploadState.fileName) + '</strong> → 업장 <strong>' + escapeHtml(bulkUploadState.shopName) + '</strong></p>' +
-    '<p style="margin-bottom:12px;">✅ 검증 통과 <strong>' + rows.length + '건</strong> — 입고 ' + counts['입고'] + ' · 출고 ' + counts['출고'] + ' · 폐기 ' + counts['폐기'] +
-      (hasHeader ? '' : ' <span style="color:var(--text-secondary)">(제목 행 없음 — 고정 열 순서로 읽음)</span>') + '</p>' +
-    '<div class="data-table-wrapper" style="max-height:280px; overflow-y:auto; margin-bottom:12px;"><table class="data-table"><thead><tr>' +
-      '<th>행</th><th>날짜</th><th>품목코드</th><th>구분</th><th>수량</th><th>비고</th></tr></thead><tbody id="bulkPreviewBody"></tbody></table></div>' +
-    '<p style="color:var(--risk); font-weight:600;">⚠️ 저장을 시작하면 되돌릴 수 없습니다. ' + bulkChunkSize() + '건씩 나누어 저장되며, 완료될 때까지 창을 닫지 마세요.</p>';
+    '<p class="mb-8">파일 <strong>' + escapeHtml(bulkUploadState.fileName) + '</strong> → 업장 <strong>' + escapeHtml(bulkUploadState.shopName) + '</strong></p>' +
+    '<p class="mb-12">검증 통과 <strong>' + rows.length + '건</strong> — 입고 ' + counts['입고'] + ' · 출고 ' + counts['출고'] + ' · 폐기 ' + counts['폐기'] +
+      (hasHeader ? '' : ' <span class="text-secondary">(제목 행 없음 — 고정 열 순서로 읽음)</span>') + '</p>' +
+    '<div class="data-table-wrapper scroll-box scroll-box--sm mb-12"><table class="data-table"><thead><tr>' +
+      '<th class="num">행</th><th>날짜</th><th class="mono">품목코드</th><th class="ctr">구분</th><th class="num">수량</th><th>비고</th></tr></thead><tbody id="bulkPreviewBody"></tbody></table></div>' +
+    '<p class="warn-text">저장을 시작하면 되돌릴 수 없습니다. ' + bulkChunkSize() + '건씩 나누어 저장되며, 완료될 때까지 창을 닫지 마세요.</p>';
   var footer =
     '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
-    '<button class="btn btn-gold" id="btnBulkRun" onclick="runBulkUpload()">🚀 ' + rows.length + '건 저장 시작</button>';
-  openModal('📋 업로드 확인', body, footer);
+    '<button class="btn btn-primary" id="btnBulkRun" onclick="runBulkUpload()">' + rows.length + '건 저장 시작</button>';
+  openModal('업로드 확인', body, footer);
 
   var tbody = document.getElementById('bulkPreviewBody');
   var MAX = 20;
   rows.slice(0, MAX).forEach(function(r) {
     var tr = document.createElement('tr');
-    [r.rowNo, r.date, r.code, r.type, r.qty, r.note || '-'].forEach(function(v, idx) {
+    var PREVIEW_CELL_CLASS = ['num', 'muted', 'mono', 'ctr', 'num', 'muted'];
+    [r.rowNo, r.date, r.code, r.type, r.qty, r.note || '—'].forEach(function(v, idx) {
       var td = document.createElement('td');
-      td.textContent = String(v);
-      if (idx === 3) td.style.color = r.type === '입고' ? 'var(--normal)' : (r.type === '폐기' ? 'var(--risk)' : 'var(--order)');
+      if (PREVIEW_CELL_CLASS[idx]) td.className = PREVIEW_CELL_CLASS[idx];
+      if (idx === 3) td.appendChild(txTypeBadge(r.type));
+      else td.textContent = String(v);
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
   if (rows.length > MAX) {
     var tr = document.createElement('tr');
-    var td = document.createElement('td'); td.colSpan = 6; td.textContent = '… 외 ' + (rows.length - MAX) + '건';
-    td.style.color = 'var(--text-secondary)';
+    var td = document.createElement('td'); td.colSpan = 6; td.className = 'muted'; td.textContent = '… 외 ' + (rows.length - MAX) + '건';
     tr.appendChild(td); tbody.appendChild(tr);
   }
 }
@@ -565,13 +652,12 @@ function runBulkUpload() {
 
   bulkUploadState.running = true;
   var closeBtn = document.querySelector('#modalOverlay .modal-close');
-  if (closeBtn) closeBtn.style.visibility = 'hidden'; // 진행 중 닫기 방지
+  if (closeBtn) closeBtn.hidden = true; // 진행 중 닫기 방지
 
-  openModal('⏳ 저장 중…',
-    '<p id="bulkProgressText" style="margin-bottom:10px; font-weight:600;">0 / ' + rows.length + '건</p>' +
-    '<div style="background:#e8f0fb; border-radius:8px; height:14px; overflow:hidden; margin-bottom:12px;">' +
-      '<div id="bulkProgressBar" style="height:100%; width:0%; background:var(--gold,#d4af37); transition:width 0.3s;"></div></div>' +
-    '<p style="color:var(--risk); font-weight:600;">⚠️ 완료될 때까지 이 창을 닫거나 새로고침하지 마세요.</p>',
+  openModal('저장 중…',
+    '<p id="bulkProgressText" class="mb-8 text-bold">0 / ' + rows.length + '건</p>' +
+    '<div class="progress"><div id="bulkProgressBar" class="progress-bar"></div></div>' +
+    '<p class="warn-text">완료될 때까지 이 창을 닫거나 새로고침하지 마세요.</p>',
     '');
 
   var done = 0, saved = 0, written = 0, overdraft = 0;
@@ -586,31 +672,31 @@ function runBulkUpload() {
 
   function finish(failure) {
     bulkUploadState.running = false;
-    if (closeBtn) closeBtn.style.visibility = '';
+    if (closeBtn) closeBtn.hidden = false;
     bulkUploadState.rows = [];
     loadTransactions();
 
     if (!failure) {
-      var msg = '✅ ' + saved + '건 저장 완료 (시트 ' + written + '행' + (written > saved ? ', FIFO 분할 포함' : '') + ')' +
-        (overdraft > 0 ? ' · ⚠️ 초과출고 ' + overdraft + '건은 마스터 단가로 기록' : '');
+      var msg = saved + '건 저장 완료 (시트 ' + written + '행' + (written > saved ? ', FIFO 분할 포함' : '') + ')' +
+        (overdraft > 0 ? ' · 초과출고 ' + overdraft + '건은 마스터 단가로 기록' : '');
       showToast(msg, 'success');
-      openModal('✅ 업로드 완료',
-        '<p style="font-size:1.05rem; margin-bottom:8px;">' + escapeHtml(msg) + '</p>' +
-        '<p style="color:var(--text-secondary);">최근 입출고 내역이 갱신되었습니다. 재고 수치는 다음 통합 갱신 때 반영됩니다.</p>',
-        '<button class="btn btn-gold" onclick="closeModal()">확인</button>');
+      openModal('업로드 완료',
+        '<p class="text-lg mb-8">' + escapeHtml(msg) + '</p>' +
+        '<p class="text-secondary">최근 입출고 내역이 갱신되었습니다. 재고 수치는 다음 통합 갱신 때 반영됩니다.</p>',
+        '<button class="btn btn-primary" onclick="closeModal()">확인</button>');
       return;
     }
 
     var firstUnsaved = failure.chunk[0].rowNo;
     var reason = failure.error ? ('통신 오류: ' + failure.error.message) : ((failure.result && failure.result.message) || '알 수 없는 오류');
-    showToast('⚠️ 업로드가 중단되었습니다 (' + done + '/' + rows.length + '건 저장)', 'error');
-    openModal('⚠️ 업로드 중단',
-      '<p style="margin-bottom:8px;">' + done + '건은 저장되었고, 파일의 <strong>' + firstUnsaved + '행부터</strong>는 저장되지 않았습니다.</p>' +
-      '<p style="margin-bottom:12px; color:var(--risk);">' + escapeHtml(reason) + '</p>' +
+    showToast('업로드가 중단되었습니다 (' + done + '/' + rows.length + '건 저장)', 'error');
+    openModal('업로드 중단',
+      '<p class="mb-8">' + done + '건은 저장되었고, 파일의 <strong>' + firstUnsaved + '행부터</strong>는 저장되지 않았습니다.</p>' +
+      '<p class="mb-12 text-risk">' + escapeHtml(reason) + '</p>' +
       (failure.error
-        ? '<p style="color:var(--text-secondary);">통신 오류는 서버가 저장을 끝냈는데 응답만 유실됐을 수도 있습니다. 최근 입출고 내역에서 ' + firstUnsaved + '행 내용이 있는지 확인한 뒤, 없는 행부터 다시 업로드하세요.</p>'
-        : '<p style="color:var(--text-secondary);">파일에서 ' + firstUnsaved + '행 이전을 지우고 나머지만 다시 업로드하세요.</p>'),
-      '<button class="btn btn-gold" onclick="closeModal()">확인</button>');
+        ? '<p class="text-secondary">통신 오류는 서버가 저장을 끝냈는데 응답만 유실됐을 수도 있습니다. 최근 입출고 내역에서 ' + firstUnsaved + '행 내용이 있는지 확인한 뒤, 없는 행부터 다시 업로드하세요.</p>'
+        : '<p class="text-secondary">파일에서 ' + firstUnsaved + '행 이전을 지우고 나머지만 다시 업로드하세요.</p>'),
+      '<button class="btn btn-primary" onclick="closeModal()">확인</button>');
   }
 
   function sendChunk(idx, attempt) {

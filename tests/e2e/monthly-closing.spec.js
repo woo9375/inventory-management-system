@@ -15,12 +15,20 @@ const { hasCredentials, missingEnvReason, login, waitForIdle } = require('./fixt
  *
  *   E2E_ALLOW_MONTHLY_CLOSING=1   # DEV 시트가 마감돼도 무방함을 명시적으로 승인
  *
- * 참고: 월마감 버튼에는 별도 id가 없다(`Index.html` 입출고 기록 탭 헤더의 `.admin-only` 버튼).
+ * 참고: 월마감 버튼은 입출고 기록 탭 헤더의 「관리 ▾」 드롭다운(`#btnTxAdminMenu` → `#txAdminMenu`, `.admin-only`) 안에 있다 (TASK-021 C-7).
+ *       메뉴는 [hidden]으로 닫혀 있으므로 먼저 열어야 항목이 보인다.
  *       또한 모달/로딩 오버레이는 `display`가 아니라 `opacity`로만 숨겨지므로
  *       Playwright의 visible 판정이 아니라 `.active` 클래스 유무로 열림/닫힘을 판정한다.
  */
 
 const CLOSING_BUTTON = /수동 월마감/;
+
+/** [TASK-021] 「관리 ▾」 드롭다운을 열고 월마감 항목 locator를 돌려준다 */
+async function openClosingMenu(app) {
+  await app.locator('#btnTxAdminMenu').click();
+  await expect(app.locator('#txAdminMenu')).toBeVisible();
+  return app.locator('#txAdminMenu').getByRole('menuitem', { name: CLOSING_BUTTON });
+}
 const ALLOW_REAL_CLOSING = process.env.E2E_ALLOW_MONTHLY_CLOSING === '1';
 
 /** 입출고 기록 탭으로 이동하고, 자동으로 뜨는 업장 선택 모달을 닫는다 */
@@ -56,8 +64,11 @@ test.describe('DEV 수동 월마감 UI', () => {
     const app = await login(page);
     await gotoTransactionTab(page, app);
 
-    const closingButton = app.getByRole('button', { name: CLOSING_BUTTON });
-    await expect(closingButton, 'admin에게는 월마감 버튼이 보여야 한다').toBeVisible();
+    const adminMenuButton = app.locator('#btnTxAdminMenu');
+    await expect(adminMenuButton, 'admin에게는 「관리」 드롭다운이 보여야 한다').toBeVisible();
+    const closingButton = await openClosingMenu(app);
+    await expect(closingButton, 'admin에게는 월마감 항목이 보여야 한다').toBeVisible();
+    await app.locator('body').evaluate(() => closeTxAdminMenu());
 
     // staff 계정 자격증명 없이 클라이언트 가드를 검증한다.
     // (staff로 실제 로그인하면 .admin-only가 display:none이 되어 클릭 자체가 불가능하다)
@@ -67,7 +78,8 @@ test.describe('DEV 수동 월마감 UI', () => {
       currentUser.role = 'staff';
       applyRolePermissions();
     });
-    await expect(closingButton, 'staff에게는 버튼이 숨겨져야 한다').toBeHidden();
+    await expect(adminMenuButton, 'staff에게는 「관리」 드롭다운이 숨겨져야 한다').toBeHidden();
+    await expect(closingButton, 'staff에게는 월마감 항목이 숨겨져야 한다').toBeHidden();
 
     await app.locator('body').evaluate(() => openMonthlyClosingModal());
 
@@ -80,10 +92,10 @@ test.describe('DEV 수동 월마감 UI', () => {
     await gotoTransactionTab(page, app);
 
     // ── 1차 모달: 연/월 선택 ──
-    await app.getByRole('button', { name: CLOSING_BUTTON }).click();
+    await (await openClosingMenu(app)).click();
     await expect(app.locator('#modalOverlay')).toHaveClass(/active/);
     await expect(app.locator('#modalTitle')).toContainText('월마감 및 재고 이월 실행');
-    await expect(app.locator('#modalBody')).toContainText('⚠️ 경고');
+    await expect(app.locator('#modalBody')).toContainText('경고');
 
     const lastYear = String(new Date().getFullYear() - 1);
     await app.locator('#closingYear').selectOption(lastYear);
@@ -131,7 +143,7 @@ test.describe('DEV 수동 월마감 UI', () => {
     const app = await login(page);
     await gotoTransactionTab(page, app);
 
-    await app.getByRole('button', { name: CLOSING_BUTTON }).click();
+    await (await openClosingMenu(app)).click();
     const lastYear = String(new Date().getFullYear() - 1);
     await app.locator('#closingYear').selectOption(lastYear);
     await app.locator('#closingMonth').selectOption('1');

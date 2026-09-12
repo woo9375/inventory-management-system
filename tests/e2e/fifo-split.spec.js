@@ -68,7 +68,7 @@ test.describe('DEV FIFO 분할 출고', () => {
         await dropdown.waitFor({ state: 'visible', timeout: 20000 });
         await dropdown.locator('.autocomplete-item').first().click();
       }
-      await app.locator('#txType').selectOption(type);
+      await app.locator('#txTypeSeg button[data-type="' + type + '"]').click(); // [TASK-021] 세그먼트 → #txType
       await app.locator('#txQty').fill(String(qty));
       await app.locator('#txPerson').fill('E2E');
       await app.locator('#txNote').fill(note);
