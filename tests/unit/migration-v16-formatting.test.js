@@ -319,12 +319,15 @@ check('repairAllSheetFormatting 실행 시 서식이 재적용되고 완료 알�
   assert.ok(run6.alerts[0].indexOf('복구 완료') >= 0, '완료 알림이 아님: ' + run6.alerts[0]);
 });
 check('onOpen 메뉴에 서식 복구 항목이 등록되어 있다', () => {
-  // [TASK-019] 메뉴는 확인창 래퍼(menuRepairAllSheetFormatting)에 묶이고, 래퍼가 본체를 부른다.
+  // [TASK-019 → TASK-023] 메뉴는 래퍼(menuRepairAllSheetFormatting)에 묶이고, 래퍼는 안내 대화상자를 연다.
+  // 본체는 대화상자의 [실행]이 부르는 runAdminAction('repairFormatting')이 isSilent로 호출한다.
   const src = fs.readFileSync(path.join(SRC, 'Code.gs'), 'utf8');
   assert.ok(src.indexOf('"menuRepairAllSheetFormatting"') > 0, '메뉴 등록 누락');
-  const wrapper = /function menuRepairAllSheetFormatting\(\)\s*\{[\s\S]*?\n\}/.exec(src);
+  const wrapper = /function menuRepairAllSheetFormatting\(\)\s*\{[^}]*\}/.exec(src);
   assert.ok(wrapper, '메뉴 래퍼 함수 누락');
-  assert.ok(wrapper[0].indexOf('repairAllSheetFormatting();') > 0, '래퍼가 본체를 부르지 않음');
+  assert.ok(wrapper[0].indexOf('openAdminActionDialog("repairFormatting")') > 0, '래퍼가 안내 대화상자를 열지 않음');
+  const runner = /function runAdminAction\([\s\S]*?\n\}/.exec(src);
+  assert.ok(runner && runner[0].indexOf('repairAllSheetFormatting(true)') > 0, 'runAdminAction이 본체를 조용히 부르지 않음');
 });
 
 // ── CSV 업로드: 행 부족 시 쓰기 실패 방지 + 신규 행 서식 ──────────────

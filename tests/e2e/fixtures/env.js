@@ -81,7 +81,14 @@ async function gotoApp(page) {
   return app;
 }
 
-async function login(page) {
+/**
+ * @param {import('@playwright/test').Page} page
+ * @param {{username?: string, password?: string}} [creds] 생략하면 .env의 DEV 테스트 계정(admin).
+ *   [TASK-023] 권한별 동작을 볼 때 테스트가 만든 임시 계정(manager 등)으로 들어갈 수 있게 한다.
+ */
+async function login(page, creds) {
+  const username = (creds && creds.username) || USERNAME;
+  const password = (creds && creds.password) || PASSWORD;
   const app = await gotoApp(page);
 
   // Google 로그인 화면으로 리다이렉트된 경우를 명확한 메시지로 구분한다
@@ -93,8 +100,8 @@ async function login(page) {
     );
   }
 
-  await app.locator('#loginUsername').fill(USERNAME);
-  await app.locator('#loginPassword').fill(PASSWORD);
+  await app.locator('#loginUsername').fill(username);
+  await app.locator('#loginPassword').fill(password);
   await app.locator('#loginBtn').click();
 
   // 로그인 성공 시 앱 컨테이너가 표시된다

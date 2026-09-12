@@ -123,7 +123,7 @@ Web App: JS_Tx.html openBulkUploadModal() → 안내문 → 파일 선택 → Sh
 
 ### 대시보드 갱신 흐름
 ```
-refreshDashboard()   // 시트 메뉴에서는 menuRefreshDashboard()가 YES/NO 확인 후 호출 (TASK-019)
+refreshDashboard()   // 시트 메뉴에서는 menuRefreshDashboard() → 안내 대화상자(AdminActionDialog.html) → runAdminAction()이 isSilent=true로 호출 (TASK-019/023)
   → consolidateAllSheets() (업장 데이터 통합)
   → recalcStockAndUsage() (재고/일평균 재계산)
   → runDashboardSync() (대시보드 시트 업데이트)

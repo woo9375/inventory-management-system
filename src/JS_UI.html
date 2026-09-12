@@ -58,14 +58,55 @@ function closeSidebar() {
   if (backdrop) backdrop.classList.remove('active');
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  [TASK-023] 시스템 작업 안내 모달
+//  문구는 Index.html이 주입한 SYSTEM_ACTIONS(Config.gs SSOT)에서만 온다 — 시트 대화상자와 같은 문장.
+// ═══════════════════════════════════════════════════════════════
+function getSystemActionConfig(id) {
+  return (typeof SYSTEM_ACTIONS === 'object' && SYSTEM_ACTIONS && SYSTEM_ACTIONS[id]) || null;
+}
+
+/** 안내 모달 본문 — 설명 한 단락 + 주의사항 목록 (.action-guide, 시트 대화상자와 같은 마크업) */
+function systemActionGuideHtml(action) {
+  var items = (action.bullets || []).map(function(b) { return '<li>' + escapeHtml(b) + '</li>'; }).join('');
+  return '<div class="action-guide"><p class="desc">' + escapeHtml(action.desc) + '</p>' +
+         (items ? '<ul>' + items + '</ul>' : '') + '</div>';
+}
+
+/** 안내 모달 푸터 — [취소] + 실행 버튼(작업 정의의 btnClass/btnText). onclick은 호출부가 넘긴다 */
+function systemActionFooterHtml(action, submitOnclick, submitId) {
+  return '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+         '<button class="btn ' + escapeHtml(action.btnClass || 'btn-primary') + '"' + (submitId ? ' id="' + submitId + '"' : '') +
+         ' onclick="' + submitOnclick + '">' + escapeHtml(action.btnText) + '</button>';
+}
+
+// 시트 동기화 — 대시보드·입출고 헤더의 「시트 동기화」 버튼. staff/manager도 누르므로 admin 게이트가 없다.
+var _forceRefreshCallback = null;
+
+function openForceRefreshModal(callback) {
+  var action = getSystemActionConfig('forceRefresh');
+  if (!action) return doForceRefresh(callback); // 정의가 없으면(주입 실패) 예전처럼 바로 실행
+  _forceRefreshCallback = callback;
+  openModal(action.title, systemActionGuideHtml(action), systemActionFooterHtml(action, 'submitForceRefresh()', 'btnForceRefreshSubmit'));
+}
+
+function submitForceRefresh() {
+  var callback = _forceRefreshCallback;
+  _forceRefreshCallback = null;
+  closeModal();
+  doForceRefresh(callback);
+}
+
 function doForceRefresh(callback) {
   showLoading();
   google.script.run
-    .withSuccessHandler(function(r) { 
+    .withSuccessHandler(function(r) {
       if (r.success) {
+        showToast('구글 시트 동기화가 완료되었습니다.', 'success');
         if(typeof callback === 'function') callback();
+        else hideLoading();
       } else {
-        hideLoading(); 
+        hideLoading();
         showToast(r.message, 'error');
       }
     })

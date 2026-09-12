@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <!--
-  품목마스터 CSV 업로드 — 스프레드시트 「🏨 관리자 도구」에서 Code.gs openCsvUploadModal()이 띄운다.
-  [TASK-023] 안내(SYSTEM_ACTIONS.uploadItemCsv) · 파일 선택 · 실행 · 결과가 한 창에 있고,
-  웹앱 Stylesheet/Icons를 include해 AdminActionDialog.html과 같은 모양을 낸다.
-  서버 처리는 그대로 ItemService.gs processCsvUploadFromSheet(csvString).
+  [TASK-023] 스프레드시트 「🏨 관리자 도구」 공통 대화상자
+  Code.gs openAdminActionDialog(id)가 템플릿 변수 `action`(Config.gs SYSTEM_ACTIONS 항목)을 넣어 띄운다.
+  흐름: 안내 → [실행] → runAdminAction(id) → 같은 창에 결과 → [닫기]
+  웹앱 Stylesheet/Icons를 그대로 include해 모달과 같은 모양을 낸다 (Docs/UIGuidelines.md).
 -->
 <html>
 <head>
@@ -22,12 +22,11 @@
           <li><?= action.bullets[i] ?></li>
         <? } ?>
       </ul>
-      <input type="file" id="csvFile" class="file-drop" accept=".csv" aria-label="CSV 파일 선택">
     </div>
 
     <div id="status" class="sheet-dialog-status" hidden>
       <span class="spinner--inline" aria-hidden="true"></span>
-      <span>업로드하여 품목 마스터에 반영하는 중입니다. 창을 닫지 마세요.</span>
+      <span>작업 처리 중입니다. 창을 닫지 마세요.</span>
     </div>
 
     <div id="result" class="sheet-dialog-result" role="status" hidden>
@@ -38,13 +37,15 @@
 
   <div id="footerConfirm" class="sheet-dialog-footer">
     <button type="button" class="btn btn-outline" onclick="google.script.host.close()">취소</button>
-    <button type="button" id="btnRun" class="btn <?= action.btnClass ?>" onclick="uploadFile()"><?= action.btnText ?></button>
+    <button type="button" id="btnRun" class="btn <?= action.btnClass ?>" onclick="runAction()"><?= action.btnText ?></button>
   </div>
   <div id="footerDone" class="sheet-dialog-footer" hidden>
     <button type="button" class="btn btn-outline" onclick="google.script.host.close()">닫기</button>
   </div>
 
   <script>
+    var ACTION_ID = '<?= action.id ?>';
+
     function stripLeadingEmoji(message) {
       return String(message == null ? '' : message).replace(/^[☀-➿\u{1F300}-\u{1FAFF}️]+\s*/u, '');
     }
@@ -55,31 +56,23 @@
       try { google.script.host.setHeight(Math.max(140, Math.min(h, 640))); } catch (e) {}
     }
 
-    function uploadFile() {
-      var fileInput = document.getElementById('csvFile');
-      if (fileInput.files.length === 0) {
-        showResult(false, '업로드할 CSV 파일을 먼저 선택해 주세요.', true);
-        return;
-      }
-
+    function runAction() {
       document.getElementById('btnRun').disabled = true;
       document.getElementById('guide').hidden = true;
       document.getElementById('footerConfirm').hidden = true;
-      document.getElementById('result').hidden = true;
       document.getElementById('status').hidden = false;
 
-      var reader = new FileReader();
-      reader.onload = function (e) {
-        google.script.run
-          .withSuccessHandler(function (res) { showResult(true, String(res || '업로드가 완료되었습니다.')); })
-          .withFailureHandler(function (err) { showResult(false, '오류: ' + ((err && err.message) || err)); })
-          .processCsvUploadFromSheet(e.target.result);
-      };
-      reader.readAsText(fileInput.files[0], 'UTF-8');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          showResult(!!(res && res.success), (res && res.message) || (res && res.success ? '완료되었습니다.' : '작업에 실패했습니다.'));
+        })
+        .withFailureHandler(function (err) {
+          showResult(false, '서버 오류: ' + ((err && err.message) || err));
+        })
+        .runAdminAction(ACTION_ID);
     }
 
-    // retry=true: 파일 미선택 같은 입력 오류 — 안내와 [실행] 버튼을 그대로 두고 결과만 보여 준다
-    function showResult(ok, message, retry) {
+    function showResult(ok, message) {
       document.getElementById('status').hidden = true;
       var box = document.getElementById('result');
       box.className = 'sheet-dialog-result ' + (ok ? 'success' : 'error');
@@ -87,10 +80,7 @@
       // 서버 문구 앞의 이모지(❌ 등 기존 메시지)는 떼어 낸다 — 대화상자 안에는 이모지를 쓰지 않는다 (UIGuidelines §3)
       document.getElementById('resultText').textContent = stripLeadingEmoji(message);
       box.hidden = false;
-      if (!retry) {
-        document.getElementById('footerConfirm').hidden = true;
-        document.getElementById('footerDone').hidden = false;
-      }
+      document.getElementById('footerDone').hidden = false;
       fitDialog();
     }
 

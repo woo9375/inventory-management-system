@@ -1,0 +1,8 @@
+custom menu visible
+H2 include: font="Pretendard, -apple-system, BlinkMacSyste" btnRun bg=rgb(37, 99, 235) icons-symbol=1 desc="시즌설정 시트의 날짜 형식, 시작일/종료일 역전 여부, 기간 중복, 가중치 배수 값을 검사합니다." bullets=2
+H1 result: class="sheet-dialog-result success" text="시즌 설정에 오류가 없습니다." native-alert-overlap=0
+close ok
+vendor codes: btnRun class="btn btn-danger" bg=rgb(239, 68, 68)
+cancel ok
+csv upload: file-input=1 no-file-msg="업로드할 CSV 파일을 먼저 선택해 주세요." confirm-footer-still=true
+refresh: class="sheet-dialog-result success" text="통합 갱신이 완료되었습니다. 현재고와 대시보드가 최신 상태입니다." native-alert-overlap=0

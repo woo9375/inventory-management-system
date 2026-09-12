@@ -433,28 +433,32 @@ function _backfillVendorCodes(sheet) {
  * 마이그레이션(v18)도 같은 일을 하지만 그건 한 번만 돈다. 거래처를 나중에 또
  * 한꺼번에 붙여넣는 일이 있으므로(Production 초기 입력이 그렇다) 손으로 부를 길을 남긴다.
  */
-function assignMissingVendorCodes() {
-  const ui = SpreadsheetApp.getUi();
+// [TASK-023] isSilent=true면 알림창 대신 { success, message }를 돌려준다 (시트 대화상자용). 채번 로직은 그대로다.
+function assignMissingVendorCodes(isSilent = false) {
+  const notify = (result, icon) => {
+    if (!isSilent) SpreadsheetApp.getUi().alert(icon + " " + result.message);
+    return result;
+  };
   const sheet = _getVendorSheet();
   if (!sheet) {
-    ui.alert("❌ '" + SHEET_VENDORS + "' 시트가 없습니다.\n스프레드시트 메뉴에서 스키마 마이그레이션을 먼저 실행해주세요.");
-    return;
+    return notify({ success: false, message: "'" + SHEET_VENDORS + "' 시트가 없습니다.\n스프레드시트 메뉴에서 스키마 마이그레이션을 먼저 실행해주세요." }, "❌");
   }
   try {
     const r = _backfillVendorCodes(sheet);
     SpreadsheetApp.flush();
     if (r.assigned === 0) {
-      ui.alert("✅ 거래처코드가 비어 있는 행이 없습니다.\n(검사한 행: " + r.total + "행)");
-      return;
+      return notify({ success: true, message: "거래처코드가 비어 있는 행이 없습니다.\n(검사한 행: " + r.total + "행)" }, "✅");
     }
-    ui.alert(
-      "✅ 거래처코드 " + r.assigned + "건 부여 완료\n\n" +
-      "부여한 코드: " + r.firstCode + " ~ " + r.lastCode + "\n" +
-      "검사한 행: " + r.total + "행\n\n" +
-      "⚠️ 한 번 부여한 코드는 바꾸지 마세요 — 품목 마스터가 거래처명이 아니라 이 코드로 거래처를 참조합니다."
-    );
+    return notify({
+      success: true,
+      message:
+        "거래처코드 " + r.assigned + "건 부여 완료\n\n" +
+        "부여한 코드: " + r.firstCode + " ~ " + r.lastCode + "\n" +
+        "검사한 행: " + r.total + "행\n\n" +
+        "한 번 부여한 코드는 바꾸지 마세요 — 품목 마스터가 거래처명이 아니라 이 코드로 거래처를 참조합니다."
+    }, "✅");
   } catch (err) {
     console.error("[v18] 거래처코드 부여 실패: " + err.message + "\n" + err.stack);
-    ui.alert("❌ 거래처코드 부여 중 오류가 발생했습니다:\n" + err.message);
+    return notify({ success: false, message: "거래처코드 부여 중 오류가 발생했습니다:\n" + err.message }, "❌");
   }
 }

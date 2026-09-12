@@ -62,14 +62,17 @@ function consolidateAllSheets(ss) {
   }
 }
 
+// [TASK-023] 반환값 { success, message } — 시트 대화상자(Code.gs runAdminAction)가 isSilent=true로 부른 뒤
+//   결과를 모달 안에 표시한다. 기존 호출부(트리거·웹앱·마이그레이션)는 반환값을 쓰지 않으므로 영향 없다.
 function refreshDashboard(isSilent = false) {
   const lock = LockService.getScriptLock();
   
   try {
     lock.waitLock(30000); 
   } catch (e) {
-    if (!isSilent) SpreadsheetApp.getUi().alert("⏳ 다른 프로세스가 실행 중입니다. 잠시 후 재시도해 주세요.");
-    return;
+    const busyMsg = "다른 프로세스가 실행 중입니다. 잠시 후 재시도해 주세요.";
+    if (!isSilent) SpreadsheetApp.getUi().alert("⏳ " + busyMsg);
+    return { success: false, message: busyMsg };
   }
   
   try {
@@ -100,16 +103,19 @@ function refreshDashboard(isSilent = false) {
     PropertiesService.getScriptProperties().setProperty("LAST_SYNC_TIMESTAMP", new Date().toISOString());
     
     if (!isSilent) SpreadsheetApp.getUi().alert("🔄 [동기화 완료] 정적 재고 집계 및 최신화가 완료되었습니다.");
-    
+    return { success: true, message: "통합 갱신이 완료되었습니다. 현재고와 대시보드가 최신 상태입니다." };
+
   } catch (err) {
     const msg = `[대시보드 동기화 실패]\n${err.message}\n${err.stack}`;
     console.log(msg);
     if (!isSilent) SpreadsheetApp.getUi().alert("❌ 동기화 중 오류 발생:\n" + err.message);
+    const failResult = { success: false, message: "동기화 중 오류가 발생했습니다: " + err.message };
     if (SEND_EMAIL_ALERT) {
       try {
         MailApp.sendEmail({ to: ALERT_EMAIL, subject: "[호텔덕구온천] 동기화 오류", body: msg });
       } catch(mailErr) { _logError(mailErr, "sendAlertEmail"); }
     }
+    return failResult;
   } finally {
     lock.releaseLock();
   }

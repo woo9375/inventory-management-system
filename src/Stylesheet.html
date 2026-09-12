@@ -1359,6 +1359,63 @@ input:disabled, select:disabled, textarea:disabled {
   display: none;
 }
 
+
+/* ═══════════════ [TASK-023] 시스템 작업 안내 (웹앱 모달 · 시트 대화상자 공용) ═══════════════ */
+/* 안내문 본문 — 설명 한 단락 + 주의사항 목록. 제목은 모달/대화상자 헤더가 맡는다. */
+.action-guide .desc { font-size: 1rem; line-height: 1.6; color: var(--text-primary); }
+.action-guide ul { margin: 14px 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 0.92rem; line-height: 1.6; }
+.action-guide li + li { margin-top: 4px; }
+
+/* 시트 대화상자(HtmlService showModalDialog) 페이지 — 웹앱 .modal과 같은 구성이지만 창 자체가 모달이므로 오버레이 없이 채운다 */
+/* 높이는 내용에 맞춰 스크립트가 창을 조절한다(google.script.host.setHeight) — 빈 여백을 남기지 않도록 자연 흐름으로 둔다 */
+body.sheet-dialog { background: var(--bg-card); min-height: 0; overflow-x: hidden; overflow-y: auto; }
+.sheet-dialog-body { padding: 20px 24px 16px; }
+.sheet-dialog-body h3 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 10px; }
+.sheet-dialog-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sheet-dialog-footer[hidden], .sheet-dialog-status[hidden], .sheet-dialog-result[hidden], .action-guide[hidden] { display: none; }
+
+/* 실행 중 — 작은 스피너 + 상태 문구 */
+.sheet-dialog-status { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 0.95rem; padding: 6px 0; }
+.spinner--inline {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* 결과 — 성공은 초록, 오류는 빨강 톤. 여러 줄 결과(검증 오류 목록 등)는 줄바꿈 그대로 */
+.sheet-dialog-result {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 0.95rem; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+}
+.sheet-dialog-result .ico { width: 1.15rem; height: 1.15rem; flex-shrink: 0; margin-top: 3px; }
+.sheet-dialog-result.success { background: var(--normal-light); border-color: #a7f3d0; color: var(--normal-text); }
+.sheet-dialog-result.error { background: var(--risk-light); border-color: #fecaca; color: var(--risk-text); }
+
+/* CSV 업로드 — 파일 선택 영역 */
+.file-drop {
+  display: block; width: 100%;
+  margin-top: 16px; padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  font-size: 0.9rem; color: var(--text-primary);
+}
+.file-drop:focus { outline: none; box-shadow: var(--focus-ring); }
+
 @media print {
   /* 불필요한 UI 숨김 */
   .sidebar, .mobile-header, .page-header, .card, .kpi-grid, .btn, .modal-overlay, .login-container {

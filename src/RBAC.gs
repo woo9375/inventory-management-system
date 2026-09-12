@@ -462,11 +462,15 @@ function refreshSheetStatus() {
   SpreadsheetApp.getUi().alert(missingCount > 0 ? `⚠️ ${missingCount}개의 삭제된 시트가 '대기' 상태로 초기화되었습니다.` : "✅ 모든 시트가 정상 존재합니다.");
 }
 
-function syncPermissions() {
+// [TASK-023] isSilent=true면 알림창을 띄우지 않고 결과만 돌려준다 — 시트 대화상자가 모달 안에 결과를 그린다.
+//   기본값(false)은 기존과 같으므로 다른 호출부는 그대로다.
+function syncPermissions(isSilent = false) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   _refreshPermissionDropdown(ss);
   _protectSystemSheets(ss);
-  SpreadsheetApp.getUi().alert("✅ 권한 동기화가 완료되었습니다. (웹앱 인증은 별도 관리됩니다)");
+  const result = { success: true, message: "권한 동기화가 완료되었습니다. (웹앱 로그인 권한은 계정 관리에서 별도 관리됩니다.)" };
+  if (!isSilent) SpreadsheetApp.getUi().alert("✅ " + result.message);
+  return result;
 }
 
 function _protectSystemSheets(ss) {
@@ -488,7 +492,8 @@ function _protectSystemSheets(ss) {
   applyInitStockProtection(ss);
 }
 
-function validateSeasonSettings() {
+// [TASK-023] isSilent=true면 알림창 대신 { success, message, errors }를 돌려준다 (시트 대화상자용). 검사 규칙은 그대로다.
+function validateSeasonSettings(isSilent = false) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const seasonSheet = ss.getSheetByName(SHEET_SEASONS);
   const lastRow = Math.max(seasonSheet.getLastRow(), 5);
@@ -523,9 +528,11 @@ function validateSeasonSettings() {
     }
   }
 
-  if (errors.length > 0) {
-    SpreadsheetApp.getUi().alert("⚠️ 시즌 설정 오류 발견:\n\n" + errors.join("\n"));
-  } else {
-    SpreadsheetApp.getUi().alert("✅ 시즌 테이블 규격 완벽 검증 완료.");
+  const result = errors.length > 0
+    ? { success: false, errors: errors, message: "시즌 설정에서 오류 " + errors.length + "건을 찾았습니다.\n\n" + errors.join("\n") }
+    : { success: true, errors: [], message: "시즌 설정에 오류가 없습니다." };
+  if (!isSilent) {
+    SpreadsheetApp.getUi().alert((result.success ? "✅ " : "⚠️ ") + result.message);
   }
+  return result;
 }

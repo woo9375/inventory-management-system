@@ -136,7 +136,7 @@
             </span>
           </div>
           <div class="header-meta">
-            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadDashboard)"
+            <button class="btn btn-outline btn-sm" onclick="openForceRefreshModal(loadDashboard)"
               title="구글 시트의 최신 데이터를 가져옵니다."><svg class="ico"><use href="#i-refresh-cw"/></svg> 시트 동기화</button>
             <button class="btn btn-outline btn-sm admin-only" onclick="doSystemCommand('refreshDashboard')"
               title="통합 갱신">통합갱신</button>
@@ -217,7 +217,7 @@
           </div>
           <!-- C-7 헤더 액션: outline 2개 + 관리자 전용 「관리 ▾」 -->
           <div class="header-meta">
-            <button class="btn btn-outline btn-sm" onclick="doForceRefresh(loadTransactions)"
+            <button class="btn btn-outline btn-sm" onclick="openForceRefreshModal(loadTransactions)"
               title="구글 시트의 최신 데이터를 가져옵니다."><svg class="ico"><use href="#i-refresh-cw"/></svg> 시트 동기화</button>
             <!-- [TASK-019] 입출고 일괄 업로드 — 안내문 모달 → 파일 선택 → 사전 검증 → 청크 저장 (JS_Tx.html) -->
             <button id="btnTxBulkUpload" class="btn btn-outline btn-sm" onclick="openBulkUploadModal()"
@@ -601,6 +601,8 @@
   <script>
     var BULK_TX_CHUNK_SIZE = Number('<?= BULK_TX_CHUNK_SIZE ?>') || 100;
     var BULK_TX_MAX_ROWS = Number('<?= BULK_TX_MAX_ROWS ?>') || 2000;
+    // [TASK-023] 시스템 작업 안내문 SSOT — Config.gs SYSTEM_ACTIONS를 그대로 주입 (시트 대화상자와 같은 문구)
+    var SYSTEM_ACTIONS = <?!= getSystemActionsJson() ?>;
   </script>
 
   <?!= include('JS_Auth') ?>

@@ -10,7 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 function onOpen() {
-  // [TASK-019] 모든 항목이 menu* 래퍼를 거친다 — 실행 전 안내문 + YES/NO 확인 (아래 "관리자 도구 실행 전 확인" 참고)
+  // [TASK-019] 모든 항목이 menu* 래퍼를 거친다 — 실행 전 안내 대화상자를 거쳐야 본체가 돈다 (아래 "관리자 도구 대화상자" 참고)
   SpreadsheetApp.getUi()
     .createMenu("🏨 관리자 도구")
     .addItem("🔄 통합 갱신",                     "menuRefreshDashboard")
@@ -24,92 +24,79 @@ function onOpen() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  [TASK-019] 관리자 도구 실행 전 확인
+//  [TASK-019 → TASK-023] 관리자 도구 대화상자
 //
-//  메뉴를 누르면 즉시 실행되던 것을, 무엇을 하는지 안내하고 YES를 받은 뒤에만 실행한다.
-//  실수 클릭 한 번이 통합 갱신 같은 무거운 스크립트를 돌려 쿼터를 소진하던 문제의 방지책이다.
+//  메뉴를 누르면 즉시 실행되던 것을 TASK-019가 ui.alert(YES/NO)로 막았고, TASK-023이 그 확인창을
+//  웹앱과 같은 모양의 HtmlService 모달(AdminActionDialog.html)로 바꿨다. 흐름은
+//    메뉴 → menu*() → openAdminActionDialog(id) → [실행] → google.script.run runAdminAction(id) → 본체(isSilent)
+//  이고 결과는 같은 모달 안에 그려진다. 안내 문구는 Config.gs SYSTEM_ACTIONS 한 곳에서 온다(웹앱과 공유).
 //
-//  확인창은 이 래퍼(menu*)에만 둔다. refreshDashboard(true)·backupToCSV()처럼 트리거·웹앱·
+//  대화상자는 이 래퍼(menu*)에만 둔다. refreshDashboard(true)·backupToCSV()처럼 트리거·웹앱·
 //  createAll·마이그레이션이 부르는 프로그램 경로에 대화상자가 끼어들면 안 되기 때문이다.
-//  본체 함수(refreshDashboard, syncPermissions, …)의 시그니처와 동작은 그대로다.
+//  본체 함수(refreshDashboard, syncPermissions, …)의 시그니처와 동작은 그대로다 — isSilent=true로 부르면
+//  알림창을 띄우지 않고 { success, message }만 돌려준다.
 // ═══════════════════════════════════════════════════════════════════
 
+/** 시트 대화상자 초기 크기 — 열린 뒤 대화상자 스크립트(fitDialog)가 내용 높이에 맞춰 다시 조절한다. */
+const ADMIN_DIALOG_WIDTH = 480;
+const ADMIN_DIALOG_HEIGHT = 300;
+
 /**
- * 안내문을 YES/NO 대화상자로 띄우고 사용자의 선택을 돌려준다.
- * @param {string} title 메뉴 항목 이름 그대로 (사용자가 방금 누른 것과 같은 문구여야 헷갈리지 않는다)
- * @param {string} guide 무엇을 하는지 · 데이터를 바꾸는지 · 얼마나 걸리는지
- * @return {boolean} YES를 눌렀으면 true
+ * SYSTEM_ACTIONS[id]의 안내문으로 관리자 도구 대화상자를 띄운다. 실행은 대화상자 안의 [실행] 버튼이 runAdminAction으로 한다.
+ * @param {string} actionId Config.gs SYSTEM_ACTIONS 키 (scope가 'sheet' 또는 'both'인 것만)
  */
-function _confirmAdminAction(title, guide) {
-  const ui = SpreadsheetApp.getUi();
-  const res = ui.alert(title, guide + "\n\n계속하시겠습니까?", ui.ButtonSet.YES_NO);
-  if (res !== ui.Button.YES) {
-    try { SpreadsheetApp.getActiveSpreadsheet().toast("실행하지 않았습니다.", title, 3); } catch (e) { /* UI 없는 환경 */ }
-    return false;
+function openAdminActionDialog(actionId) {
+  const action = getSystemAction(actionId);
+  if (!action || action.scope === "webapp") throw new Error("알 수 없는 관리자 도구입니다: " + actionId);
+  const t = HtmlService.createTemplateFromFile("AdminActionDialog");
+  t.action = action;
+  const html = t.evaluate().setWidth(ADMIN_DIALOG_WIDTH).setHeight(ADMIN_DIALOG_HEIGHT);
+  SpreadsheetApp.getUi().showModalDialog(html, action.title);
+}
+
+/**
+ * 대화상자의 [실행]이 부른다. 본체를 조용히(isSilent) 돌리고 결과를 돌려준다 — 본체의 ui.alert가 모달 위에 겹쳐 뜨지 않게.
+ * 시트 대화상자는 메뉴를 누른 편집자 권한으로 돌므로 별도 토큰 검사가 없다(메뉴 본체와 같은 경계).
+ * @return {{success: boolean, message: string}}
+ */
+function runAdminAction(actionId) {
+  const action = getSystemAction(actionId);
+  if (!action || action.scope === "webapp") return { success: false, message: "알 수 없는 작업입니다: " + actionId };
+  try {
+    switch (actionId) {
+      case "refreshDashboard": {
+        const r = refreshDashboard(true);
+        return r || { success: true, message: "통합 갱신이 완료되었습니다." };
+      }
+      case "syncPermissions":
+        return syncPermissions(true);
+      case "validateSeason":
+        return validateSeasonSettings(true);
+      case "backupCSV":
+        backupToCSV();
+        return { success: true, message: "CSV 백업이 완료되었습니다.\n구글 드라이브 '시스템_데이터_백업' 폴더에 저장했습니다." };
+      case "repairFormatting":
+        return repairAllSheetFormatting(true);
+      case "assignVendorCodes":
+        return assignMissingVendorCodes(true);
+      default:
+        // uploadItemCsv는 UploadCsv.html이 processCsvUploadFromSheet를 직접 부른다
+        return { success: false, message: "이 작업은 대화상자에서 실행할 수 없습니다: " + actionId };
+    }
+  } catch (err) {
+    console.error("[TASK-023] 관리자 도구 실행 실패(" + actionId + "): " + err.message + "\n" + err.stack);
+    return { success: false, message: "작업 중 오류가 발생했습니다: " + err.message };
   }
-  return true;
 }
 
-function menuRefreshDashboard() {
-  if (!_confirmAdminAction("🔄 통합 갱신",
-    "모든 업장 시트의 입출고를 통합 기록장으로 다시 취합하고, 전 품목의 현재고·일평균·FIFO 평가액을 " +
-    "재계산한 뒤 대시보드를 갱신합니다.\n\n" +
-    "• 품목·거래가 많으면 수 분이 걸리며, 실행 중에는 다른 저장 작업이 잠시 대기합니다.\n" +
-    "• 매일 자동으로도 실행됩니다. 방금 입력한 내역을 지금 바로 반영해야 할 때만 사용하세요.")) return;
-  refreshDashboard();
-}
-
-function menuSyncPermissions() {
-  if (!_confirmAdminAction("🔐 권한 재동기화",
-    "시스템 시트(품목 마스터·통합 기록장·대시보드·설정 시트 등)에 경고 전용 보호를 다시 걸고, " +
-    "품목 마스터 초기재고(G열) 보호를 동기화합니다.\n\n" +
-    "• 셀 값은 바꾸지 않습니다.\n" +
-    "• 웹앱 로그인 권한은 여기서 바뀌지 않습니다(웹앱 '계정 관리'에서 관리).")) return;
-  syncPermissions();
-}
-
-function menuValidateSeasonSettings() {
-  if (!_confirmAdminAction("✅ 시즌 설정 검증",
-    "📅 시즌설정 시트의 날짜 형식, 시작일/종료일 역전, 기간 중복, 배수 값을 검사해 결과를 알려 줍니다.\n\n" +
-    "• 검사만 하며 아무것도 수정하지 않습니다.")) return;
-  validateSeasonSettings();
-}
-
-function menuBackupCSV() {
-  if (!_confirmAdminAction("💾 CSV 백업 실행",
-    "통합 입출고 기록장과 품목 마스터를 CSV 파일로 내보내 이 스프레드시트가 있는 폴더의 " +
-    "'시스템_데이터_백업' 폴더에 저장합니다.\n\n" +
-    "• 시트 데이터는 바꾸지 않습니다.\n" +
-    "• 실행할 때마다 새 파일이 생기므로 드라이브 용량을 사용합니다.")) return;
-  backupCSV();
-}
-
-function menuOpenCsvUploadModal() {
-  if (!_confirmAdminAction("📤 품목마스터 CSV 업로드",
-    "CSV 파일로 품목 마스터에 품목을 일괄 등록하는 창을 엽니다.\n\n" +
-    "• 다음 창에서 파일을 고르고 '업로드 실행'을 눌러야 실제로 반영됩니다.\n" +
-    "• 이미 있는 품목코드는 건너뛰고 새 코드만 추가합니다.\n" +
-    "• 추가된 품목은 되돌리려면 직접 지워야 하므로, 먼저 'CSV 백업 실행'을 권장합니다.")) return;
-  openCsvUploadModal();
-}
-
-function menuRepairAllSheetFormatting() {
-  if (!_confirmAdminAction("🎨 시트 서식/검증 복구",
-    "품목 마스터·통합 기록장·템플릿·업장·거래처 시트의 서식, 드롭다운(데이터 검증), 보호 범위를 " +
-    "현재 행 수 기준으로 다시 적용합니다.\n\n" +
-    "• 셀 값은 건드리지 않으므로 데이터 유실이 없고, 여러 번 눌러도 결과가 같습니다.\n" +
-    "• 품목 마스터 거래처코드(S열)의 엄격 검증(목록 외 입력 차단)도 이때 전체 행에 적용됩니다.\n" +
-    "• 시트가 크면 1~2분 걸릴 수 있습니다.")) return;
-  repairAllSheetFormatting();
-}
-
-function menuAssignMissingVendorCodes() {
-  if (!_confirmAdminAction("🤝 거래처코드 일괄 부여",
-    "🤝 거래처관리 시트에서 거래처코드(A열)가 빈 행에 VND-### 코드를 순서대로 부여합니다.\n\n" +
-    "• 이미 코드가 있는 행은 건드리지 않습니다.\n" +
-    "• 부여된 코드는 품목 마스터가 참조하므로 이후에 바꾸면 안 됩니다.")) return;
-  assignMissingVendorCodes();
-}
+function menuRefreshDashboard()        { openAdminActionDialog("refreshDashboard"); }
+function menuSyncPermissions()         { openAdminActionDialog("syncPermissions"); }
+function menuValidateSeasonSettings()  { openAdminActionDialog("validateSeason"); }
+function menuBackupCSV()               { openAdminActionDialog("backupCSV"); }
+function menuRepairAllSheetFormatting(){ openAdminActionDialog("repairFormatting"); }
+function menuAssignMissingVendorCodes(){ openAdminActionDialog("assignVendorCodes"); }
+// CSV 업로드는 안내·파일 선택·실행이 한 창(UploadCsv.html)에 있다 — 확인창을 따로 거치지 않는다
+function menuOpenCsvUploadModal()      { openCsvUploadModal(); }
 
 /**
  * [TASK-016] 마스터·통합기록장·템플릿·업장 시트의 서식/드롭다운/보호 범위를
@@ -118,25 +105,32 @@ function menuAssignMissingVendorCodes() {
  * 서식은 적용 시점의 스냅샷이라 시트 행이 늘어나면 초과분이 맨살로 남는다.
  * 통합 갱신이 이를 자동 감지·복구하지만, 관리자가 즉시 되돌리고 싶을 때를 위한 수동 진입점이다.
  * 값(setValues/setFormula)은 건드리지 않으므로 데이터 유실 위험이 없고, 여러 번 눌러도 결과가 같다.
+ *
+ * [TASK-023] isSilent=true면 알림창 대신 { success, message }를 돌려준다 (시트 대화상자용).
  */
-function repairAllSheetFormatting() {
-  const ui = SpreadsheetApp.getUi();
+function repairAllSheetFormatting(isSilent = false) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   try {
     const r = reapplyAllSheetFormatting(ss);
     SpreadsheetApp.flush();
-    ui.alert(
-      "🎨 시트 서식/검증 복구 완료\n\n" +
-      "대상 시트: " + r.sheets + "개\n" +
-      "확충한 행: " + r.addedRows + "행\n" +
-      // [v18] 열 확충을 조용히 하지 않는다 — 거래처 시트의 숨김 소스 열이 여기서 되살아난다
-      (r.addedCols ? "확충한 열: " + r.addedCols + "열 (드롭다운 소스 등 숨김 보조 열)\n" : "") +
-      "적용 범위: 3행 ~ 각 시트 마지막 행" +
-      (r.missing.length ? "\n\n⚠️ 찾지 못한 시트: " + r.missing.join(", ") : "")
-    );
+    const result = {
+      success: true,
+      message:
+        "시트 서식/검증 복구 완료\n\n" +
+        "대상 시트: " + r.sheets + "개\n" +
+        "확충한 행: " + r.addedRows + "행\n" +
+        // [v18] 열 확충을 조용히 하지 않는다 — 거래처 시트의 숨김 소스 열이 여기서 되살아난다
+        (r.addedCols ? "확충한 열: " + r.addedCols + "열 (드롭다운 소스 등 숨김 보조 열)\n" : "") +
+        "적용 범위: 3행 ~ 각 시트 마지막 행" +
+        (r.missing.length ? "\n\n찾지 못한 시트: " + r.missing.join(", ") : "")
+    };
+    if (!isSilent) SpreadsheetApp.getUi().alert("🎨 " + result.message);
+    return result;
   } catch (err) {
     console.error("[TASK-016] 서식 복구 실패: " + err.message + "\n" + err.stack);
-    ui.alert("❌ 서식 복구 중 오류가 발생했습니다:\n" + err.message);
+    const result = { success: false, message: "서식 복구 중 오류가 발생했습니다:\n" + err.message };
+    if (!isSilent) SpreadsheetApp.getUi().alert("❌ " + result.message);
+    return result;
   }
 }
 
@@ -150,13 +144,14 @@ function backupCSV() {
 }
 
 /**
- * 시트 관리자 도구 탭 등에서 버튼 클릭으로 CSV 업로드 모달을 띄우는 함수
+ * 시트 관리자 도구 메뉴에서 품목마스터 CSV 업로드 창을 띄운다.
+ * [TASK-023] 안내문(SYSTEM_ACTIONS.uploadItemCsv)·파일 선택·실행·결과가 한 창에 있다. 템플릿이라 Stylesheet를 include한다.
  */
 function openCsvUploadModal() {
-  const html = HtmlService.createHtmlOutputFromFile('UploadCsv')
-    .setWidth(400)
-    .setHeight(300);
-  SpreadsheetApp.getUi().showModalDialog(html, '📤 품목마스터 CSV 업로드');
+  const t = HtmlService.createTemplateFromFile("UploadCsv");
+  t.action = getSystemAction("uploadItemCsv");
+  const html = t.evaluate().setWidth(ADMIN_DIALOG_WIDTH).setHeight(ADMIN_DIALOG_HEIGHT);
+  SpreadsheetApp.getUi().showModalDialog(html, t.action.title);
 }
 
 // ═══════════════════════════════════════════════════════════════════

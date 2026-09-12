@@ -138,6 +138,154 @@ const MAX_TRANSACTION_NOTE_LENGTH = 500;
 const BULK_TX_CHUNK_SIZE = 100;
 const BULK_TX_MAX_ROWS = 2000;
 
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-023] 시스템 작업 안내문 SSOT
+//
+//  스프레드시트 「🏨 관리자 도구」 대화상자(AdminActionDialog.html / UploadCsv.html)와
+//  웹앱 안내 모달(JS_UI.html openForceRefreshModal · JS_Config.html doSystemCommand)이
+//  같은 제목·설명·주의사항을 쓰도록 여기 한 곳에만 둔다. 문구를 고칠 때 다른 파일을 손대지 않는다.
+//
+//    scope        'both' | 'webapp' | 'sheet' — 어느 화면에서 노출되는가 (sheet 전용은 웹앱 버튼을 만들지 않는다)
+//    requiresAdmin 웹앱에서 admin만 실행 가능한가 (forceRefresh는 staff/manager도 누른다)
+//    btnClass     'btn-primary' | 'btn-danger' — 되돌릴 수 없는 작업만 danger (Docs/UIGuidelines.md §2)
+//  본문에 이모지를 넣지 않는다 (§3). 실행 결과 문구는 각 본체 함수가 돌려준다.
+// ═══════════════════════════════════════════════════════════════════
+const SYSTEM_ACTIONS = {
+  forceRefresh: {
+    id: "forceRefresh",
+    title: "시트 동기화",
+    desc: "서버 캐시를 비우고 구글 시트에서 최신 데이터를 다시 읽어옵니다.",
+    bullets: [
+      "구글 시트의 원본 데이터는 변경되지 않습니다.",
+      "최신 데이터를 다시 불러오므로 수 초 정도 소요될 수 있습니다."
+    ],
+    btnText: "동기화",
+    btnClass: "btn-primary",
+    requiresAdmin: false,
+    scope: "webapp"
+  },
+  refreshDashboard: {
+    id: "refreshDashboard",
+    title: "통합 갱신",
+    desc: "모든 업장 시트의 입출고를 통합 기록장으로 취합하고, 전 품목의 현재고·일평균·FIFO 평가액 재계산 및 대시보드를 갱신합니다.",
+    bullets: [
+      "품목 및 거래 내역 수에 따라 최대 수 분이 소요될 수 있습니다.",
+      "실행 중에는 다른 사용자의 저장 작업이 잠시 대기할 수 있습니다.",
+      "방금 입력한 내역을 즉시 반영해야 할 때만 사용하세요."
+    ],
+    btnText: "갱신",
+    btnClass: "btn-primary",
+    requiresAdmin: true,
+    scope: "both"
+  },
+  incrementalSync: {
+    id: "incrementalSync",
+    title: "신규 내역 취합",
+    desc: "각 업장 시트에 새롭게 입력된 최신 거래 내역만 메인으로 빠르게 취합합니다.",
+    bullets: [
+      "전체 재계산 대신 최신 변동 내역 위주로 신속하게 동기화합니다.",
+      "수 초 내외로 빠르게 완료됩니다."
+    ],
+    btnText: "취합 시작",
+    btnClass: "btn-primary",
+    requiresAdmin: true,
+    scope: "webapp"
+  },
+  syncPermissions: {
+    id: "syncPermissions",
+    title: "권한 재동기화",
+    desc: "시스템 시트(품목 마스터, 통합 기록장 등)의 보호 규칙과 초기재고 보호 범위를 재설정합니다.",
+    bullets: [
+      "시트 데이터의 셀 값은 변경되지 않습니다.",
+      "웹앱 로그인 계정 권한은 변경되지 않습니다(계정 관리 화면에서 관리)."
+    ],
+    btnText: "동기화",
+    btnClass: "btn-primary",
+    requiresAdmin: true,
+    scope: "both"
+  },
+  validateSeason: {
+    id: "validateSeason",
+    title: "시즌 설정 검증",
+    desc: "시즌설정 시트의 날짜 형식, 시작일/종료일 역전 여부, 기간 중복, 가중치 배수 값을 검사합니다.",
+    bullets: [
+      "설정값 검사만 수행하며 시트 데이터를 수정하지 않습니다.",
+      "검증 결과와 오류 상세 내역을 즉시 표시합니다."
+    ],
+    btnText: "검증",
+    btnClass: "btn-primary",
+    requiresAdmin: true,
+    scope: "both"
+  },
+  backupCSV: {
+    id: "backupCSV",
+    title: "CSV 백업 실행",
+    desc: "통합 입출고 기록장과 품목 마스터 데이터를 CSV 파일로 추출하여 백업 폴더에 저장합니다.",
+    bullets: [
+      "현재 시트의 데이터는 변경되지 않습니다.",
+      "실행할 때마다 구글 드라이브 '시스템_데이터_백업' 폴더에 새 파일이 생성됩니다."
+    ],
+    btnText: "백업 시작",
+    btnClass: "btn-primary",
+    requiresAdmin: true,
+    scope: "both"
+  },
+  repairFormatting: {
+    id: "repairFormatting",
+    title: "시트 서식/검증 복구",
+    desc: "마스터·기록장·템플릿·업장 시트의 서식, 드롭다운 데이터 검증, 시트 보호 범위를 현재 행 수에 맞춰 복구합니다.",
+    bullets: [
+      "셀의 데이터 값은 건드리지 않으므로 데이터 유실 위험이 없습니다.",
+      "품목 마스터 거래처코드 엄격 검증 및 숨김 보조 열도 함께 재적용됩니다.",
+      "시트 크기에 따라 1~2분 정도 소요될 수 있습니다."
+    ],
+    btnText: "복구 실행",
+    btnClass: "btn-primary",
+    requiresAdmin: true,
+    scope: "sheet"
+  },
+  assignVendorCodes: {
+    id: "assignVendorCodes",
+    title: "거래처코드 일괄 부여",
+    desc: "거래처관리 시트에서 거래처코드(A열)가 비어 있는 행을 찾아 VND-### 형태의 고유 코드를 순차 부여합니다.",
+    bullets: [
+      "이미 코드가 있는 행은 건드리지 않습니다.",
+      "부여된 코드는 품목 마스터가 영구 참조하므로 이후 변경하거나 삭제할 수 없습니다."
+    ],
+    btnText: "코드 부여",
+    btnClass: "btn-danger",
+    requiresAdmin: true,
+    scope: "sheet"
+  },
+  uploadItemCsv: {
+    id: "uploadItemCsv",
+    title: "품목마스터 CSV 업로드",
+    desc: "CSV 파일을 업로드하여 품목 마스터에 새로운 품목을 일괄 등록합니다.",
+    bullets: [
+      "이미 존재하는 품목코드는 건너뛰고 신규 코드만 추가 등록합니다.",
+      "등록된 품목은 자동 삭제되지 않으므로, 실행 전 'CSV 백업 실행'을 권장합니다.",
+      "업로드할 CSV 파일을 선택한 후 실행 버튼을 눌러주세요."
+    ],
+    btnText: "업로드 실행",
+    btnClass: "btn-primary",
+    requiresAdmin: true,
+    scope: "sheet"
+  }
+};
+
+/** 작업 정의 1건. 모르는 id면 null — 호출부가 "알 수 없는 작업"으로 처리한다. */
+function getSystemAction(id) {
+  return Object.prototype.hasOwnProperty.call(SYSTEM_ACTIONS, id) ? SYSTEM_ACTIONS[id] : null;
+}
+
+/**
+ * 웹앱 Index.html 템플릿이 `var SYSTEM_ACTIONS = <?!= getSystemActionsJson() ?>;`로 주입한다.
+ * `<` 를 이스케이프해 문구에 "</script>"가 들어가도 스크립트 블록이 깨지지 않게 한다.
+ */
+function getSystemActionsJson() {
+  return JSON.stringify(SYSTEM_ACTIONS).replace(/</g, "\u003c");
+}
+
 // [v7.0] 사용자 데이터 열 매핑 (👤 사용자관리 시트 A~E열)
 const USER_COLS = {
   USERNAME: 1,   // A열: 아이디 (다우오피스 이메일)
