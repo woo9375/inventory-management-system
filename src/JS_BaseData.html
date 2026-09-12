@@ -122,35 +122,36 @@ function openPhysicalCheckModal(defaultAction) {
   var action = defaultAction === 'excel' ? 'excel' : 'pdf';
 
   function option(value, title, desc, checked) {
-    return '<label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card);">' +
-           '<input type="radio" name="checkFilterOption" value="' + value + '"' + (checked ? ' checked' : '') + ' style="margin-top:3px;">' +
+    return '<label class="option-card">' +
+           '<input type="radio" name="checkFilterOption" value="' + value + '"' + (checked ? ' checked' : '') + '>' +
            '<div>' +
-           '<div style="font-weight:600; color:var(--navy-800);">' + title + '</div>' +
-           '<div style="font-size:0.82rem; color:var(--text-secondary); margin-top:2px;">' + desc + '</div>' +
+           '<div class="t">' + title + '</div>' +
+           '<div class="d">' + desc + '</div>' +
            '</div></label>';
   }
 
   var body =
-    '<div style="padding:4px 0;">' +
-    '<p style="margin-bottom:16px; color:var(--text-secondary); font-size:0.95rem;">출력할 품목의 재고 상태를 선택해 주세요.</p>' +
-    '<div style="display:flex; flex-direction:column; gap:12px;">' +
+    '<div>' +
+    '<p class="mb-16 text-secondary">출력할 품목의 재고 상태를 선택해 주세요.</p>' +
+    '<div class="option-list">' +
     option('exist', "재고 '유' (재고 있는 품목만)",
-           '현재고가 0이 아닌 품목만 출력 (<strong style="color:var(--risk);">음수 결손 재고 포함</strong>)', true) +
+           '현재고가 0이 아닌 품목만 출력 (<strong class="text-risk">음수 결손 재고 포함</strong>)', true) +
     option('zero', "재고 '무' (재고 0 품목만)", '현재고가 0인 품목만 출력') +
     option('all', '전체 품목', '재고 유·무와 관계없이 관리 대상 전체 품목 출력') +
     '</div>' +
-    '<p style="margin-top:14px; font-size:0.82rem; color:var(--text-secondary);">' +
+    '<p class="mt-16 text-sm text-secondary">' +
     '※ 음수(마이너스) 재고는 선출고 및 실사 결손 품목으로 <strong>재고 \'유\'</strong> 옵션에 포함됩니다.</p>' +
     '</div>';
 
+  // [TASK-020] 사용자가 고른 출력 방식만 솔리드 블루, 나머지는 outline (한 화면에 주 액션 하나)
   var pdfClass = action === 'pdf' ? 'btn btn-primary' : 'btn btn-outline';
-  var excelClass = action === 'excel' ? 'btn btn-primary' : 'btn btn-gold';
+  var excelClass = action === 'excel' ? 'btn btn-primary' : 'btn btn-outline';
   var footer =
     '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
-    '<button class="' + pdfClass + '" onclick="submitPhysicalCheckExport(\'pdf\')">🖨️ PDF 인쇄</button>' +
-    '<button class="' + excelClass + '" onclick="submitPhysicalCheckExport(\'excel\')">📥 Excel 다운로드</button>';
+    '<button class="' + pdfClass + '" onclick="submitPhysicalCheckExport(\'pdf\')">' + iconSvg('printer') + ' PDF 인쇄</button>' +
+    '<button class="' + excelClass + '" onclick="submitPhysicalCheckExport(\'excel\')">' + iconSvg('download') + ' Excel 다운로드</button>';
 
-  openModal('📋 재고 실사 양식 출력', body, footer);
+  openModal('재고 실사 양식 출력', body, footer);
 }
 
 /** [TASK-013] 모달에서 고른 필터로 인쇄 또는 다운로드를 실행한다 */
@@ -191,7 +192,7 @@ function printPhysicalCheckList(filterOption) {
       var dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
       var html = '<div class="print-header">' +
-                 '<h1>📋 재고 실사 조사표</h1>' +
+                 '<h1>재고 실사 조사표</h1>' +
                  '<p>출력일자: ' + dateStr +
                  ' | 구분: ' + escapeHtml(physicalCheckFilterLabel(opt)) +
                  ' (' + targets.length + '건)</p>' +
@@ -199,19 +200,18 @@ function printPhysicalCheckList(filterOption) {
                  '<table class="print-table">' +
                  '<thead><tr>' +
                  '<th>품목코드</th><th>품목명</th><th>카테고리</th><th>단위</th>' +
-                 '<th>전산재고</th><th style="width: 15%">실사재고</th><th style="width: 20%">비고</th>' +
+                 '<th>전산재고</th><th class="w-15">실사재고</th><th class="w-20">비고</th>' +
                  '</tr></thead><tbody>';
 
       targets.forEach(function(item) {
         // 음수 재고는 실사에서 가장 먼저 확인해야 할 결손 후보이므로 붉게 강조한다
         var stock = parseStockValue(item.currentStock);
-        var stockStyle = 'font-weight: bold;' + (stock < 0 ? ' color: #dc2626;' : '');
         html += '<tr>' +
                 '<td>' + escapeHtml(item.code) + '</td>' +
-                '<td style="text-align: left">' + escapeHtml(item.name) + '</td>' +
+                '<td class="tl">' + escapeHtml(item.name) + '</td>' +
                 '<td>' + escapeHtml(item.category) + '</td>' +
                 '<td>' + escapeHtml(item.unit) + '</td>' +
-                '<td style="' + stockStyle + '">' + stock + '</td>' +
+                '<td class="stock' + (stock < 0 ? ' neg' : '') + '">' + stock + '</td>' +
                 '<td></td><td></td>' +
                 '</tr>';
       });

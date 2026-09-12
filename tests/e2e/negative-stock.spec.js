@@ -8,7 +8,7 @@ const { hasCredentials, missingEnvReason, login, waitForIdle } = require('./fixt
  *   1. 가용 재고를 넘는 출고를 등록하면 현재고가 **음수로 표시**된다 (0으로 클램핑되지 않는다)
  *   2. 음수 재고여도 재고 합계금액(totalValue)은 **0원**이다 (마이너스 자산 차단)
  *   3. 일평균 사용량이 0인 품목은 음수 재고가 되어도 **적정발주량이 0**이다 (P3의 `I<=0` 방어)
- *   4. 대시보드 알림 목록이 음수 수량을 **🚨 붉은 배지**로 렌더링한다
+ *   4. 대시보드 알림 목록이 음수 수량을 **붉은 pill**로 렌더링한다
  *   5. (승인 게이트) 음수 재고 상태에서 월마감이 **차단**된다
  *
  * ## 전제조건
@@ -184,7 +184,7 @@ async function saveTx(page, app, { code, type, qty, note }) {
     await selectItem(app, code);
   }
 
-  await app.locator('#txType').selectOption(type);
+  await app.locator('#txTypeSeg button[data-type="' + type + '"]').click(); // [TASK-021] 세그먼트 → #txType
   await app.locator('#txQty').fill(String(qty));
   await app.locator('#txPerson').fill('E2E');
   await app.locator('#txNote').fill(note);
@@ -331,7 +331,7 @@ test.describe('DEV 음수 재고 표시', () => {
     }
   });
 
-  test('대시보드 알림 목록이 음수 수량을 🚨 붉은 배지로 렌더링한다', async ({ page }) => {
+  test('대시보드 알림 목록이 음수 수량을 붉은 pill로 렌더링한다', async ({ page }) => {
     const app = await login(page);
 
     // 서버 데이터가 아니라 **배포된 렌더링 코드**(JS_UI.html의 renderDashboard)를 직접 호출한다.
@@ -351,11 +351,12 @@ test.describe('DEV 음수 재고 표시', () => {
     });
 
     const negCell = app.locator('#alertTableBody tr').filter({ hasText: 'E2E-NEG' }).first().locator('td').nth(3);
-    await expect(negCell, '음수 수량에 🚨 경고 배지가 붙어야 한다').toContainText('🚨');
+    // [TASK-020] 이모지 대신 .stock-neg pill(붉은 텍스트 --risk-text #dc2626)로 강조한다
+    await expect(negCell.locator('span').first(), '음수 수량에 경고 pill이 붙어야 한다').toHaveClass(/stock-neg/);
     await expect(negCell).toContainText('-5');
 
     const negColor = await negCell.locator('span').first().evaluate((el) => getComputedStyle(el).color);
-    expect(negColor, `붉은색 강조가 적용되어야 한다 (실제: ${negColor})`).toBe('rgb(197, 57, 41)');
+    expect(negColor, `붉은색 강조가 적용되어야 한다 (실제: ${negColor})`).toBe('rgb(220, 38, 38)');
 
     // 양수 재고는 기존 표기 그대로 — 배지가 붙지 않아야 한다 (회귀 방지)
     const posCell = app.locator('#alertTableBody tr').filter({ hasText: 'E2E-POS' }).first().locator('td').nth(3);

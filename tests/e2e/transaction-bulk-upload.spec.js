@@ -109,6 +109,6 @@ test.describe('DEV 입출고 일괄 업로드', () => {
     const row = app.locator('#txTableBody tr').filter({ hasText: note }).first();
     await expect(row).toBeVisible({ timeout: 60000 });
     await expect(row.locator('td').nth(1)).toHaveText(code);
-    await expect(row.locator('td').nth(7)).not.toHaveText('-');
+    await expect(row.locator('td').nth(7)).not.toHaveText(/^[-—]$/);
   });
 });

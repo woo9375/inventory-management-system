@@ -1,0 +1,84 @@
+{
+  "consoleErrors": [
+    "pageerror: Tr",
+    "pageerror: Tr"
+  ],
+  "probe": {
+    "iconUses": 36,
+    "missingSymbols": [],
+    "renderedIconZero": 18,
+    "btnGold": 0,
+    "btnPrimary": 10,
+    "roleBadge": 0,
+    "inlineStyle": 45,
+    "emojiHeadings": 0,
+    "btnPrimaryH": {
+      "h": 32,
+      "bg": "rgb(37, 99, 235)",
+      "color": "rgb(255, 255, 255)",
+      "align": "center"
+    },
+    "btnSmH": {
+      "h": 32,
+      "bg": "rgb(255, 255, 255)",
+      "color": "rgb(71, 85, 105)",
+      "align": "center"
+    },
+    "inputH": {
+      "h": 0,
+      "bg": "rgb(255, 255, 255)",
+      "color": "rgb(15, 23, 42)",
+      "align": "start"
+    },
+    "selectH": {
+      "h": 0,
+      "bg": "rgb(255, 255, 255)",
+      "color": "rgb(15, 23, 42)",
+      "align": "start"
+    },
+    "thAlign": {
+      "h": 43.8125,
+      "bg": "rgb(248, 250, 252)",
+      "color": "rgb(71, 85, 105)",
+      "align": "left"
+    },
+    "toastIconOk": 4
+  },
+  "overflow": {
+    "dashboard": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflow": []
+    },
+    "transactions": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflow": []
+    },
+    "shop": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflow": []
+    },
+    "user": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflow": []
+    },
+    "basedata": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflow": []
+    },
+    "vendor": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflow": []
+    },
+    "mysettings": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "overflow": []
+    }
+  }
+}

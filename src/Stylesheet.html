@@ -50,18 +50,24 @@
   --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.15);
 
-  /* — 레거시 토큰 별칭 —
-     기존 마크업/스크립트의 인라인 스타일(var(--navy-*), var(--gold*))이
-     깨지지 않도록 신규 팔레트로 재매핑한다. 신규 코드는 위 토큰을 사용할 것. */
-  --navy-900: #0f172a;
-  --navy-800: #1e293b;
-  --navy-700: #334155;
-  --navy-600: #2563eb;
-  --navy-500: #3b82f6;
-  --gold: #f59e0b;
-  --gold-400: #f59e0b;
-  --gold-300: #fbbf24;
-  --gold-200: #fcd34d;
+  /* — 컨트롤 높이 / 코드 서체 — [TASK-020] */
+  --control-h: 40px;
+  --control-h-sm: 32px;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+/* ═══════════════ [TASK-020] Lucide 아이콘 (src/Icons.html 스프라이트) ═══════════════ */
+.ico {
+  width: 1.15em;
+  height: 1.15em;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  display: inline-block;
+  vertical-align: -0.18em;
+  flex-shrink: 0;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -109,10 +115,12 @@ body {
 }
 
 .sidebar-header .brand-icon {
-  font-size: 2rem;
   margin-bottom: 8px;
-  display: block;
+  display: flex;
+  justify-content: center;
+  color: var(--primary);
 }
+.sidebar-header .brand-icon .ico { width: 2rem; height: 2rem; stroke-width: 1.75; }
 
 .sidebar-header h1 {
   font-size: 1rem;
@@ -168,7 +176,10 @@ body {
   font-weight: 600;
 }
 
-.nav-item .nav-icon { font-size: 1.15rem; width: 24px; text-align: center; }
+.nav-item .nav-icon { width: 24px; display: inline-flex; justify-content: center; color: var(--text-muted); }
+.nav-item .nav-icon .ico { width: 1.25rem; height: 1.25rem; }
+.nav-item:hover .nav-icon { color: var(--text-secondary); }
+.nav-item.active .nav-icon { color: var(--primary); }
 .nav-item .nav-badge {
   margin-left: auto;
   background: var(--risk);
@@ -195,7 +206,7 @@ body {
   border-top: 1px solid var(--border);
 }
 .sidebar-actions .logout-btn { width: 100%; }
-.sidebar-actions + .sidebar-footer { border-top: none; }
+.sidebar-actions + .sidebar-footer { border-top: none; padding-top: 0; padding-bottom: 20px; }
 
 .logout-btn {
   display: flex;
@@ -242,7 +253,11 @@ body {
   letter-spacing: -0.02em;
   color: var(--text-primary);
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
+.page-header h2 .ico { width: 1.3rem; height: 1.3rem; color: var(--text-secondary); }
 
 /* 페이지 타이틀 + 메타 배지 그룹 */
 .page-title-group {
@@ -265,7 +280,8 @@ body {
   color: var(--text-primary);
   white-space: nowrap;
 }
-.meta-badge .meta-icon { font-size: 0.9rem; }
+.meta-badge .meta-icon { display: inline-flex; color: var(--text-muted); }
+.meta-badge .meta-icon .ico { width: 0.95rem; height: 0.95rem; }
 
 .page-header .header-meta {
   display: flex;
@@ -286,6 +302,101 @@ body {
   font-weight: 600;
   font-size: 0.8rem;
 }
+
+/* ═══════════════ [TASK-021] 입출고 화면 리디자인 (Task C) ═══════════════ */
+/* C-1 업장 컨텍스트 칩 — 제목 옆 pill, 버튼 위계에서 뺀다 */
+.shop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition);
+  max-width: 100%;
+}
+.shop-chip:hover { background: var(--bg-muted); border-color: #cbd5e1; }
+.shop-chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.shop-chip .k { color: var(--text-muted); font-weight: 500; }
+.shop-chip .v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shop-chip .ico { color: var(--text-muted); }
+
+/* C-6 구분 세그먼트 — select 대신 한 번 클릭. #txType select는 숨긴 채 값만 받는다 */
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  height: var(--control-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.segmented button {
+  border: 0;
+  background: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+.segmented button:last-child { border-right: 0; }
+.segmented button[aria-pressed="true"] {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+.segmented button:hover:not([aria-pressed="true"]) { background: var(--bg-muted); }
+.segmented button:focus-visible { outline: none; box-shadow: var(--focus-ring); z-index: 1; }
+
+/* C-7 「관리 ▾」 드롭다운 — 클릭 토글, [hidden]으로 닫힘 (대시보드의 :hover .dropdown-content와 별개) */
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 200px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+  z-index: 20;
+}
+.dropdown-menu[hidden] { display: none; }
+.dropdown-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  font-size: 0.86rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.dropdown-menu button:hover { background: var(--bg-muted); }
+.dropdown-menu button.danger { color: var(--risk-text); }
+.dropdown-menu button.danger:hover { background: var(--risk-light); }
+.dropdown-menu .sep { height: 1px; background: var(--border); margin: 4px 2px; }
+.dropdown-menu .ico { color: var(--text-muted); }
+.dropdown-menu button.danger .ico { color: inherit; }
 
 /* ═══════════════ KPI 카드 ═══════════════ */
 .kpi-grid {
@@ -380,6 +491,32 @@ body {
 
 .card-body { padding: 20px 24px; }
 
+/* [TASK-021] 카드 푸터 — 주 액션 우측 정렬, 카드당 솔리드 블루 하나 (C-3) */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: #fbfcfd;
+}
+
+/* [TASK-021] 카드 헤더 캡션 · 건수 — 상시 배너 대체 (C-4) */
+.card-footer--center { justify-content: center; }
+
+.card-header .cap {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 10px;
+}
+.card-header .count {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ═══════════════ 테이블 ═══════════════ */
 .data-table-wrapper {
   overflow-x: auto;
@@ -401,7 +538,7 @@ body {
   font-size: 0.82rem;
   letter-spacing: 0.01em;
   white-space: nowrap;
-  text-align: center;
+  text-align: left;
   border-bottom: 1px solid var(--border);
 }
 
@@ -413,7 +550,7 @@ body {
   border-bottom: 1px solid var(--border);
   font-size: 0.87rem;
   color: var(--text-primary);
-  text-align: center;
+  text-align: left;
   vertical-align: middle;
   transition: background 0.15s;
   font-variant-numeric: tabular-nums;
@@ -423,6 +560,23 @@ body {
 
 .data-table tbody tr:hover td { background: var(--bg-muted); }
 .data-table tbody tr:last-child td { border-bottom: none; }
+
+/* [TASK-020] 정렬 규칙 — 텍스트 좌측(기본) · 숫자 우측 · 상태/액션 가운데 · 코드/ID 모노 (UIGuidelines §5) */
+.data-table th.num, .data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table th.ctr, .data-table td.ctr { text-align: center; }
+.data-table th.mono, .data-table td.mono { font-family: var(--font-mono); font-size: 0.84rem; color: var(--text-secondary); }
+.data-table td.muted { color: var(--text-secondary); }
+.data-table td.ctr .action-btn + .action-btn { margin-left: 4px; }
+.data-table td.actions { white-space: nowrap; } /* 좁은 폭에서 액션 버튼이 세로로 쌓이지 않게 */
+
+/* 음수 현재고 강조 (TASK-011) — 이모지 대신 색 pill */
+.stock-neg {
+  color: var(--risk-text);
+  font-weight: 700;
+  background: var(--risk-light);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
 
 .status-badge {
   display: inline-flex;
@@ -439,13 +593,20 @@ body {
 .status-badge.risk { background: var(--risk-light); color: var(--risk-text); border-color: var(--risk-border); }
 .status-badge.order { background: var(--order-light); color: var(--order-text); border-color: var(--order-border); }
 .status-badge.normal { background: var(--normal-light); color: var(--normal-text); border-color: var(--normal-border); }
+.status-badge.primary { background: var(--primary-light); color: var(--primary-hover); border-color: #bfdbfe; }
+.status-badge.muted { background: var(--bg-muted); color: var(--text-secondary); border-color: var(--border); }
 
 /* ═══════════════ 폼 ═══════════════ */
+/* [TASK-021] PC 4열 고정 — 넓은 필드는 .form-group--wide (인라인 grid-column 금지, UIGuidelines §4).
+   모달은 폭이 640px이라 2열. 1024px 이하 2열, 768px 이하 1열은 아래 미디어쿼리. */
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px 20px;
 }
+.modal .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-group--wide { grid-column: span 2; }
+.form-group .hint { font-size: 0.76rem; color: var(--text-muted); font-weight: 400; }
 
 .form-group {
   display: flex;
@@ -472,6 +633,16 @@ textarea {
   color: var(--text-primary);
 }
 
+/* [TASK-020] 컨트롤 높이 통일 — input · select · .btn = 40px (UIGuidelines §4) */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select {
+  height: var(--control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+input[readonly]:not([type="checkbox"]):not([type="radio"]) { background: var(--bg-muted); color: var(--text-secondary); }
+
 input::placeholder, textarea::placeholder { color: var(--text-muted); }
 
 input:not([type="checkbox"]):not([type="radio"]):focus,
@@ -494,7 +665,9 @@ input:disabled, select:disabled, textarea:disabled {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 18px;
+  height: var(--control-h);
+  padding: 0 18px;
+  box-sizing: border-box;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   font-size: 0.88rem;
@@ -505,6 +678,7 @@ input:disabled, select:disabled, textarea:disabled {
   text-decoration: none;
   white-space: nowrap;
 }
+.btn .ico { width: 1.05rem; height: 1.05rem; }
 
 .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
@@ -514,15 +688,6 @@ input:disabled, select:disabled, textarea:disabled {
 }
 .btn-primary:hover {
   background: var(--primary-hover);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-gold {
-  background: var(--order);
-  color: #78350f;
-}
-.btn-gold:hover {
-  background: #fbbf24;
   box-shadow: var(--shadow-md);
 }
 
@@ -540,7 +705,8 @@ input:disabled, select:disabled, textarea:disabled {
 .btn-danger { background: var(--risk); color: #fff; }
 .btn-danger:hover { background: var(--risk-text); box-shadow: var(--shadow-md); }
 
-.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+.btn-sm { height: var(--control-h-sm); padding: 0 12px; font-size: 0.8rem; }
+.btn-sm .ico { width: 0.95rem; height: 0.95rem; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
 
 .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -605,10 +771,20 @@ input:disabled, select:disabled, textarea:disabled {
 .toast.warning { background: var(--order-light); border-color: var(--order-border); border-left-color: var(--order); }
 .toast.info { background: var(--primary-light); border-color: #bfdbfe; border-left-color: var(--primary); }
 
+/* [TASK-020] 토스트 아이콘 — 종류별 색 */
+.toast .toast-icon { display: inline-flex; flex-shrink: 0; }
+.toast .toast-icon .ico { width: 1.15rem; height: 1.15rem; }
+.toast.success .toast-icon { color: var(--normal-text); }
+.toast.error .toast-icon { color: var(--risk-text); }
+.toast.warning .toast-icon { color: var(--order-text); }
+.toast.info .toast-icon { color: var(--primary); }
+
 @keyframes slideIn {
   from { transform: translateX(100px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+/* [TASK-022] 사라질 때 — JS는 클래스만 붙인다 */
+.toast.is-leaving { opacity: 0; transform: translateX(100px); transition: all 0.3s; }
 
 /* ═══════════════ 모달 ═══════════════ */
 .modal-overlay {
@@ -662,6 +838,7 @@ input:disabled, select:disabled, textarea:disabled {
   font-size: 1rem;
   transition: var(--transition);
 }
+.modal-close .ico { width: 1rem; height: 1rem; }
 .modal-close:hover { background: var(--risk-light); color: var(--risk-text); }
 
 .modal-body { padding: 24px; }
@@ -685,9 +862,11 @@ input:disabled, select:disabled, textarea:disabled {
   padding: 52px 24px;
   color: var(--text-secondary);
 }
-.empty-state .empty-icon { font-size: 2.6rem; margin-bottom: 10px; display: block; line-height: 1; }
+.empty-state .empty-icon { margin-bottom: 10px; display: flex; justify-content: center; line-height: 1; color: var(--text-muted); }
+.empty-state .empty-icon .ico { width: 2.4rem; height: 2.4rem; stroke-width: 1.5; }
 .empty-state p { font-size: 0.92rem; font-weight: 500; }
-/* 빈 상태 행은 hover 하이라이트 제외 */
+/* 빈 상태 행은 hover 하이라이트 제외, 셀 기본 좌측 정렬보다 우선해 가운데 정렬 */
+.data-table tbody td.empty-state { text-align: center; }
 .data-table tbody tr:hover td.empty-state { background: transparent; }
 
 /* ═══════════════ 설정 카드 그리드 ═══════════════ */
@@ -753,8 +932,8 @@ input:disabled, select:disabled, textarea:disabled {
 }
 
 .autocomplete-item:hover { background: var(--primary-light); }
-.autocomplete-item .item-code { font-weight: 600; color: var(--primary); }
-.autocomplete-item .item-name { color: var(--text-secondary); }
+.autocomplete-item .item-code { font-size: 0.85em; color: var(--text-muted); }
+.autocomplete-item .item-name { color: var(--text-primary); }
 
 /* ═══════════════ 모바일 반응형 ═══════════════ */
 .mobile-header {
@@ -778,12 +957,19 @@ input:disabled, select:disabled, textarea:disabled {
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 1.4rem;
   cursor: pointer;
   padding: 8px;
+  display: inline-flex;
 }
+.mobile-header .hamburger .ico { width: 1.4rem; height: 1.4rem; }
 
-.mobile-header .brand { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); }
+.mobile-header .brand { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: inline-flex; align-items: center; gap: 6px; }
+.mobile-header .brand .ico { color: var(--primary); }
+
+/* [TASK-021] 태블릿: 폼 2열 (UIGuidelines §4) */
+@media (max-width: 1024px) {
+  .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 @media (max-width: 1000px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
@@ -794,6 +980,7 @@ input:disabled, select:disabled, textarea:disabled {
   .sidebar {
     transform: translateX(-100%);
     width: 280px;
+    z-index: 200; /* [TASK-022] mobile-header(101) 위로 — 열린 사이드바 상단이 헤더에 가려지던 결함(#3) */
   }
   .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
   .main-content {
@@ -801,8 +988,13 @@ input:disabled, select:disabled, textarea:disabled {
     padding: 72px 16px 24px;
   }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  /* [TASK-021] 1열 — wide 필드는 전체 폭. 인라인 span이 암시적 2열을 만들던 P0 #1 해소 */
   .form-grid { grid-template-columns: 1fr; }
-  .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .form-group--wide { grid-column: 1 / -1; }
+  /* [TASK-022] 헤더 컴팩트 — 제목 줄(제목·시즌·갱신일) + 버튼 줄, 2줄 안에 (#14) */
+  .page-header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
+  .page-title-group { gap: 8px; }
+  .page-header .header-meta { width: 100%; justify-content: flex-start; gap: 6px; }
   .settings-grid { grid-template-columns: 1fr; }
   .cmd-grid { grid-template-columns: 1fr; }
 
@@ -816,6 +1008,7 @@ input:disabled, select:disabled, textarea:disabled {
   .kpi-label { font-size: 0.78rem; margin-bottom: 6px; }
   .page-header .header-meta { justify-content: flex-start; }
   .data-table tbody td { padding: 12px 12px; }
+  .modal .form-grid { grid-template-columns: 1fr; } /* [TASK-022] 폰에서는 모달 폼도 1열 */
 }
 
 /* ═══════════════ 스크롤바 ═══════════════ */
@@ -829,13 +1022,112 @@ input:disabled, select:disabled, textarea:disabled {
 .text-center { text-align: center; }
 .text-bold { font-weight: 600; }
 .text-muted { color: var(--text-muted); }
+.text-secondary { color: var(--text-secondary); }
+.text-risk { color: var(--risk-text); }
+.text-order { color: var(--order-text); }
+.text-normal { color: var(--normal-text); }
+.text-sm { font-size: 0.85rem; }
+.text-lg { font-size: 1.05rem; }
+.pre-wrap { white-space: pre-wrap; }
+.mt-8 { margin-top: 8px; }
+.mt-10 { margin-top: 10px; }
 .mt-16 { margin-top: 16px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
 .mb-16 { margin-bottom: 16px; }
 .gap-8 { gap: 8px; }
 .flex { display: flex; }
 .items-center { align-items: center; }
 .justify-between { justify-content: space-between; }
 .w-full { width: 100%; }
+
+/* ═══════════════ [TASK-022] 인라인 style 이관 컴포넌트 (UIGuidelines §4 인라인 금지) ═══════════════ */
+/* JS가 토글하는 표시 상태는 [hidden] 속성으로 — display 규칙이 있는 요소는 명시적으로 덮는다 */
+.app-container[hidden], .nav-badge[hidden], .autocomplete-list[hidden], .modal-close[hidden], .modal-footer[hidden] { display: none; }
+.admin-only[hidden] { display: none !important; } /* 역할 가드(JS_Auth applyRolePermissions) — 어떤 display 규칙보다 우선 */
+
+/* 폼 보조 */
+.form-group--full { grid-column: 1 / -1; }
+.form-group .req { color: var(--risk-text); }
+.form-help { display: block; margin-top: 5px; font-size: 0.8rem; color: var(--text-muted); }
+.form-help.is-privileged { color: var(--order-text); font-weight: 600; }
+.chip-box {
+  min-height: 40px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chip-input-group { display: flex; gap: 8px; margin-bottom: 16px; }
+.chip-input-group input { flex: 1; max-width: 200px; }
+.filter-bar { margin-bottom: 16px; }
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.checkbox-group label { display: inline-flex; align-items: center; gap: 4px; font-size: 0.9rem; cursor: pointer; }
+
+/* 내 설정 — 두 카드 폭 통일 (감사 #10), 600px 카드라 폼은 2열 */
+.card--settings { max-width: 600px; width: 100%; margin-bottom: 24px; }
+.card--settings .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-grid.form-grid--1col { grid-template-columns: 1fr; } /* 비밀번호 변경처럼 세로 1열 폼 — 카드 규칙보다 뒤에 두어 이긴다 */
+@media (max-width: 768px) {
+  .card--settings .form-grid { grid-template-columns: 1fr; } /* (#2) 위 2열 규칙과 같은 특이도이므로 뒤에 둔다 */
+}
+
+/* 모달 본문 */
+.modal-msg { text-align: center; font-size: 1rem; }
+.modal-msg--lg { font-size: 1.05rem; margin-bottom: 15px; }
+.modal-title-danger { text-align: center; margin-bottom: 15px; color: var(--risk-text); font-size: 1.1rem; font-weight: 700; }
+.modal-help { margin-bottom: 12px; color: var(--text-secondary); text-align: center; }
+.warn-text { color: var(--risk-text); font-weight: 600; }
+.callout {
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.scroll-box { max-height: 320px; overflow-y: auto; }
+.scroll-box--sm { max-height: 280px; }
+.bulk-guide { font-size: 0.92rem; line-height: 1.6; }
+.bulk-guide ul { padding-left: 18px; margin-bottom: 12px; color: var(--text-secondary); }
+.progress { background: var(--bg-muted); border-radius: 8px; height: 14px; overflow: hidden; margin-bottom: 12px; }
+.progress-bar { height: 100%; width: 0; background: var(--primary); transition: width 0.3s; }
+.shop-list { display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; padding-right: 5px; }
+.shop-list .btn { height: auto; padding: 16px 20px; font-size: 1.1rem; justify-content: flex-start; text-align: left; border-radius: var(--radius); }
+.option-list { display: flex; flex-direction: column; gap: 12px; }
+.option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+.option-card input[type="radio"] { margin-top: 3px; }
+.option-card .t { font-weight: 600; color: var(--text-primary); }
+.option-card .d { font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px; }
+.data-table th.w-70 { width: 70px; }
+
+/* 모달 푸터 — 내용이 없으면 회색 띠를 그리지 않는다 (감사 #16) */
+.modal-footer:empty { display: none; border-top: none; padding: 0; }
+
+/* 모바일 사이드바 백드롭 (감사 #3) — .sidebar(200) 아래, .modal-overlay(5000) 훨씬 아래 */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 150;
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.sidebar-backdrop.active { display: block; opacity: 1; }
 
 /* ═══════════════ [NEW] 로그인 화면 ═══════════════ */
 .login-container {
@@ -874,7 +1166,8 @@ input:disabled, select:disabled, textarea:disabled {
   border-bottom: 1px solid var(--border);
 }
 
-.login-header .login-icon { font-size: 2.5rem; margin-bottom: 12px; display: block; }
+.login-header .login-icon { margin-bottom: 12px; display: flex; justify-content: center; color: var(--primary); }
+.login-header .login-icon .ico { width: 2.5rem; height: 2.5rem; stroke-width: 1.75; }
 .login-header h2 {
   font-size: 1.4rem;
   font-weight: 700;
@@ -900,7 +1193,7 @@ input:disabled, select:disabled, textarea:disabled {
 }
 .login-body .form-group input {
   width: 100%;
-  padding: 12px 16px;
+  padding: 0 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 0.95rem;
@@ -1009,21 +1302,8 @@ input:disabled, select:disabled, textarea:disabled {
   background: var(--risk-light);
 }
 
-/* ═══════════════ [NEW] 역할 배지 ═══════════════ */
-.role-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 9999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  border: 1px solid transparent;
-}
-.role-badge.admin { background: var(--primary-light); color: var(--primary); border-color: #bfdbfe; }
-.role-badge.manager { background: var(--order-light); color: var(--order-text); border-color: var(--order-border); }
-.role-badge.staff { background: var(--bg-muted); color: var(--text-secondary); border-color: var(--border); }
-
 /* ═══════════════ [NEW] 테이블 내 액션 버튼 ═══════════════ */
+/* [TASK-020] 역할 배지(.role-badge)는 .status-badge primary/order/muted 로 통합됨 */
 .action-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px;
@@ -1031,11 +1311,13 @@ input:disabled, select:disabled, textarea:disabled {
   cursor: pointer; font-size: 0.8rem;
   transition: var(--transition);
   background: var(--bg-card);
+  color: var(--text-secondary);
 }
+.action-btn .ico { width: 0.95rem; height: 0.95rem; }
 .action-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
-.action-btn.edit:hover { background: var(--primary-light); border-color: #bfdbfe; }
+.action-btn.edit:hover { background: var(--primary-light); border-color: #bfdbfe; color: var(--primary); }
 .action-btn.delete:hover { background: var(--risk-light); border-color: var(--risk-border); color: var(--risk-text); }
-.action-btn.key:hover { background: var(--order-light); border-color: var(--order-border); }
+.action-btn.key:hover { background: var(--order-light); border-color: var(--order-border); color: var(--order-text); }
 
 /* ═══════════════ [NEW] Chip 컴포넌트 ═══════════════ */
 .chip-list {
@@ -1129,6 +1411,12 @@ input:disabled, select:disabled, textarea:disabled {
   .print-table td.empty-box {
     width: 15%;
   }
+  /* [TASK-022] 인쇄 셀 클래스 (JS_BaseData printPhysicalCheckList) */
+  .print-table th.w-15 { width: 15%; }
+  .print-table th.w-20 { width: 20%; }
+  .print-table td.tl { text-align: left; }
+  .print-table td.stock { font-weight: bold; }
+  .print-table td.stock.neg { color: #dc2626; }
 }
 
 /* — Dropdown (엑셀 다운로드 등) — */

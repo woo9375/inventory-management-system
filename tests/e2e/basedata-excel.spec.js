@@ -212,13 +212,13 @@ test.describe('DEV 기초데이터 · 실사 Excel', () => {
     expect(html).toContain('PR-POS');
     expect(html, "0 재고가 '유' 인쇄물에 섞이면 안 된다").not.toContain('PR-ZERO');
 
-    // 음수 재고 셀만 붉은색 강조
-    const negCell = html.match(/<td style="([^"]*)">-5<\/td>/);
+    // 음수 재고 셀만 붉은색 강조 — [TASK-022] 인라인 style 대신 .print-table td.stock.neg (Stylesheet @media print, #dc2626)
+    const negCell = html.match(/<td class="([^"]*)">-5<\/td>/);
     expect(negCell, '음수 재고(-5) 셀을 찾지 못했습니다').not.toBeNull();
-    expect(negCell[1], '음수 재고는 붉게 강조되어야 한다').toContain('#dc2626');
+    expect(negCell[1].split(' '), '음수 재고는 붉게 강조되어야 한다').toEqual(expect.arrayContaining(['stock', 'neg']));
 
-    const posCell = html.match(/<td style="([^"]*)">12<\/td>/);
+    const posCell = html.match(/<td class="([^"]*)">12<\/td>/);
     expect(posCell, '양수 재고(12) 셀을 찾지 못했습니다').not.toBeNull();
-    expect(posCell[1], '양수 재고에는 붉은 강조가 붙으면 안 된다').not.toContain('#dc2626');
+    expect(posCell[1].split(' '), '양수 재고에는 붉은 강조가 붙으면 안 된다').not.toContain('neg');
   });
 });

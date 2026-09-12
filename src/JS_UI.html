@@ -20,7 +20,7 @@ function showTab(tabId, navEl) {
   if (tabId === 'basedata') loadBaseData();
   if (tabId === 'vendor') loadVendors(); // [TASK-018]
 
-  document.getElementById('sidebar').classList.remove('open');
+  closeSidebar();
 }
 
 function submitMyPasswordChange() {
@@ -43,8 +43,19 @@ function submitMyPasswordChange() {
     .changePassword(getToken(), oldPw, newPw);
 }
 
+// [TASK-022] 모바일 사이드바 — 열릴 때 백드롭(#sidebarBackdrop)도 함께, 백드롭 클릭·탭 이동 시 닫힘
 function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
+  var sidebar = document.getElementById('sidebar');
+  var isOpen = sidebar.classList.toggle('open');
+  var backdrop = document.getElementById('sidebarBackdrop');
+  if (backdrop) backdrop.classList.toggle('active', isOpen);
+}
+
+function closeSidebar() {
+  var sidebar = document.getElementById('sidebar');
+  if (sidebar) sidebar.classList.remove('open');
+  var backdrop = document.getElementById('sidebarBackdrop');
+  if (backdrop) backdrop.classList.remove('active');
 }
 
 function doForceRefresh(callback) {
@@ -68,23 +79,27 @@ function doForceRefresh(callback) {
 function showLoading() { document.getElementById('loadingOverlay').classList.add('active'); }
 function hideLoading() { document.getElementById('loadingOverlay').classList.remove('active'); }
 
+// [TASK-020] Lucide 스프라이트(src/Icons.html) 심볼을 참조하는 <svg class="ico"> 마크업
+function iconSvg(name) {
+  return '<svg class="ico" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+}
+
 function showToast(message, type) {
   type = type || 'info';
   var container = document.getElementById('toastContainer');
-  var icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+  var icons = { success: 'check-circle-2', error: 'x-circle', warning: 'alert-triangle', info: 'info' };
   var toast = document.createElement('div');
   toast.className = 'toast ' + type;
   var icon = document.createElement('span');
-  icon.textContent = icons[type] || '';
+  icon.className = 'toast-icon';
+  icon.innerHTML = iconSvg(icons[type] || 'info');
   var text = document.createElement('span');
   text.textContent = String(message || '');
   toast.appendChild(icon);
   toast.appendChild(text);
   container.appendChild(toast);
   setTimeout(function() {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100px)';
-    toast.style.transition = 'all 0.3s';
+    toast.classList.add('is-leaving');
     setTimeout(function() { toast.remove(); }, 300);
   }, 4000);
 }
@@ -95,7 +110,11 @@ function showToast(message, type) {
 function openModal(title, bodyHtml, footerHtml) {
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = bodyHtml;
-  document.getElementById('modalFooter').innerHTML = footerHtml;
+  // [TASK-022] 푸터 내용이 없으면(업장 선택 모달 등) 회색 띠를 그리지 않는다 (감사 #16)
+  var footer = document.getElementById('modalFooter');
+  var hasFooter = !!(footerHtml && String(footerHtml).trim());
+  footer.innerHTML = hasFooter ? footerHtml : '';
+  footer.hidden = !hasFooter;
   document.getElementById('modalOverlay').classList.add('active');
 }
 
@@ -129,33 +148,36 @@ function renderDashboard(data) {
 
   var alertCount = data.kpi.risk + data.kpi.order;
   var badge = document.getElementById('alertBadge');
-  if (alertCount > 0) { badge.textContent = alertCount; badge.style.display = 'inline'; }
-  else { badge.style.display = 'none'; }
+  badge.textContent = alertCount;
+  badge.hidden = !(alertCount > 0);
 
   var tbody = document.getElementById('alertTableBody');
   if (data.alertItems.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">🎉</span><p>발주 필요 품목이 없습니다</p></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">' + iconSvg('party-popper') + '</span><p>발주 필요 품목이 없습니다</p></td></tr>';
     return;
   }
+  // [TASK-020] 열 정렬 — 품목코드 mono · 수치 num · 상태 ctr (UIGuidelines §5)
+  var ALERT_CELL_CLASS = ['mono', '', '', 'num', 'num', 'num', 'num'];
   var fragment = document.createDocumentFragment();
   data.alertItems.forEach(function(item) {
     var statusClass = item.status === 'risk' ? 'risk' : 'order';
-    var statusText = item.status === 'risk' ? '🚨 위험' : '⚠️ 발주필요';
+    var statusText = item.status === 'risk' ? '위험' : '발주필요';
     var tr = document.createElement('tr');
     [item.code, item.name, item.grade, item.currentStock, item.safetyStock, item.rop, item.orderQty].forEach(function(value, index) {
       var td = document.createElement('td');
-      var node = (index === 0 || index === 6) ? document.createElement('strong') : document.createElement('span');
+      if (ALERT_CELL_CLASS[index]) td.className = ALERT_CELL_CLASS[index];
+      var node = index === 6 ? document.createElement('strong') : document.createElement('span');
       node.textContent = value == null ? '' : String(value);
-      // [TASK-011] 현재고(index 3)가 음수면 초과출고/실사 결손이므로 붉은 배지로 강조
+      // [TASK-011] 현재고(index 3)가 음수면 초과출고/실사 결손이므로 붉은 pill로 강조
       if (index === 3 && Number(value) < 0) {
-        node.textContent = '🚨 ' + node.textContent;
-        node.style.cssText = 'color:#c53929; font-weight:700; background:#fce8e6; padding:2px 6px; border-radius:4px;';
+        node.className = 'stock-neg';
         node.title = '초과출고 — 재고 실사 조정 필요';
       }
       td.appendChild(node);
       tr.appendChild(td);
     });
     var statusCell = document.createElement('td');
+    statusCell.className = 'ctr';
     var badge = document.createElement('span');
     badge.className = 'status-badge ' + statusClass;
     badge.textContent = statusText;
