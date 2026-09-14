@@ -116,14 +116,17 @@ Local edit → git commit → git push origin main → GitHub Actions
 `main` 브랜치 push를 트리거로 다음 순서를 수행한다.
 
 1. checkout → Node 20 설치
-2. `clasp@2.5.0` 설치 — **버전 고정 필수**. clasp 3.x는 `.clasprc.json` 인증 형식이 달라 `CLASPRC_JSON`(v2 형식)과 호환되지 않는다
-3. `CLASPRC_JSON` 시크릿을 `~/.clasprc.json`으로 기록
+2. `clasp@3.4.1` 설치 — **시크릿 형식과 같은 계열(3.x)로 고정**. `CLASPRC_JSON`은 3.x 형식(`tokens.default`)이라 2.x를 쓰면
+   `Error retrieving access token: … reading 'access_token'`로 실패한다 (2026-09-01 2.5.0 고정 → run #45~#50 연속 실패, 2026-09-14 복구).
+   버전을 올릴 때는 `push --force`·`deploy -i -d` 플래그가 살아 있는지 먼저 확인한다
+3. `CLASPRC_JSON` 시크릿을 `~/.clasprc.json`으로 기록하고, 키 이름만 로그에 찍어 형식을 확인한다(값은 출력하지 않는다)
 4. `clasp push --force` — HEAD 코드 갱신
 5. `clasp deploy -i <Production 배포 ID>` — 새 버전 생성 + 상시 URL 연결
 
 ### GitHub Secrets
 - `CLASPRC_JSON`: Google OAuth refresh token (clasp 인증용)
-- 만료 시 로컬에서 `clasp login` → `.clasprc.json` 재생성 → Secrets 업데이트
+- 만료 시 로컬에서 `clasp login` → `.clasprc.json` 재생성 → Secrets 업데이트.
+  **워크플로의 clasp 메이저 버전과 같은 clasp로 로그인한 파일**이어야 한다 (2.x: `token` 키 / 3.x: `tokens.default` 키)
 
 ---
 
