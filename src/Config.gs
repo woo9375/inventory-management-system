@@ -169,7 +169,7 @@ const ITEM_CSV_MAX_ROWS = 1000;       // CSV 일괄 등록 1회 상한 — 검�
 // ═══════════════════════════════════════════════════════════════════
 //  [TASK-023] 시스템 작업 안내문 SSOT
 //
-//  스프레드시트 「🏨 관리자 도구」 대화상자(AdminActionDialog.html / UploadCsv.html)와
+//  스프레드시트 「🏨 관리자 도구」 대화상자(AdminActionDialog.html)와
 //  웹앱 안내 모달(JS_UI.html openForceRefreshModal · JS_Config.html doSystemCommand)이
 //  같은 제목·설명·주의사항을 쓰도록 여기 한 곳에만 둔다. 문구를 고칠 때 다른 파일을 손대지 않는다.
 //
@@ -285,9 +285,9 @@ const SYSTEM_ACTIONS = {
     requiresAdmin: true,
     scope: "sheet"
   },
-  // [TASK-025] 시트 대화상자(UploadCsv.html)와 웹앱 품목 관리 탭이 같은 안내문을 쓴다 — scope both.
-  //   웹앱에서는 구매팀(manager)도 실행하므로 requiresAdmin=false. 실행은 runSystemCommand가 아니라
-  //   uploadItemMasterCSV를 직접 부른다(사전 검증 dryRun → 확인 → 등록).
+  // [TASK-025/026] 웹앱 품목 관리 탭(JS_Items.html)의 CSV 업로드 안내문. 시트 메뉴 경로(시트 전용 업로드 창)는 TASK-026에서
+  //   제거돼 scope webapp — 시트 관리자 도구에는 뜨지 않는다. 구매팀(manager)도 실행하므로 requiresAdmin=false.
+  //   실행은 runSystemCommand가 아니라 uploadItemMasterCSV를 직접 부른다(사전 검증 dryRun → 확인 → 등록).
   uploadItemCsv: {
     id: "uploadItemCsv",
     title: "품목마스터 CSV 업로드",
@@ -300,7 +300,7 @@ const SYSTEM_ACTIONS = {
     btnText: "업로드 실행",
     btnClass: "btn-primary",
     requiresAdmin: false,
-    scope: "both"
+    scope: "webapp"
   }
 };
 

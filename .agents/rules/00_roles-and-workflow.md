@@ -36,16 +36,17 @@
 
 | 도메인 | 웹앱 화면 | 스프레드시트 | 비고 |
 |--------|-----------|--------------|------|
-| **품목 마스터** | **없음** | `🗂️ 품목 마스터` 시트에서 **100% 직접 관리** | `src/JS_Master.html`은 **사장된 파일** — `Index.html`에 include되지 않음. 수정 금지 |
+| **품목 마스터** | `품목 관리` 탭 (`showTab('items')`, `JS_Items.html`, admin·manager) | `🗂️ 품목 마스터` 시트 — 소유자 비상 유지보수만 | 등록·수정(diff 확인·사유 필수)·미사용/재사용·이력·CSV 일괄 등록이 전부 웹앱(TASK-025). 구매팀은 시트를 편집하지 않는다(뷰어/미공유) |
 | **입출고** | `입출고 기록` 탭 (`showTab('transactions')`) | `📝 통합 입출고 기록장` + 업장별 시트 | 통합 시트는 업장 시트로부터 재구성되는 파생 뷰 |
 | **대시보드** | `대시보드` 탭 (`showTab('dashboard')`) | `📊 대시보드` 시트 | 웹앱에서 품목 현재고가 보이는 **유일한 화면**이 이 탭의 '위험·발주필요 품목' 테이블(`JS_UI.html`)이다 |
 | **업장 / 시즌 / 계정 / 기초데이터** | 각 탭 (`shop` / `season` / `user` / `basedata`) | `🏢 업장관리` / `📅 시즌설정` / `👤 사용자관리` / `📂 기초데이터` | — |
-| **품목 CSV 업로드** | 없음 (SPA 아님) | 스프레드시트 메뉴 → 모달 | `Code.gs:36`이 `UploadCsv.html`을 직접 띄운다 |
+| **품목 CSV 업로드** | `품목 관리` 탭 「CSV 업로드」(사전 검증 dryRun → 확인 → `uploadItemMasterCSV`) | 없음 — 시트 메뉴 항목·대화상자는 TASK-026에서 제거 | `SYSTEM_ACTIONS.uploadItemCsv`는 scope `webapp` |
+| **거래처** | `거래처 관리` 탭 (`showTab('vendor')`, `JS_Vendor.html`) | `🤝 거래처관리` 시트 | TASK-017/018 |
 
-**웹앱 SPA의 실제 구성 (근거: `src/Index.html`)**
-- 사이드바 탭 7개: `dashboard` / `transactions` / `shop` / `season` / `user` / `basedata` / `mysettings` (Index.html:81-101)
-- include되는 스크립트 5개: `JS_Auth` / `JS_UI` / `JS_Tx` / `JS_Config` / `JS_BaseData` (Index.html:522-527)
-- **`JS_Master`는 포함되어 있지 않다.**
+**웹앱 SPA의 실제 구성 (근거: `src/Index.html` — 라인은 바뀌므로 매번 실제 파일로 확인)**
+- 사이드바 탭 9개: `dashboard` / `transactions` / `shop` / `season` / `user` / `basedata` / `vendor` / `items` / `mysettings`
+- include되는 스크립트 7개: `JS_Auth` / `JS_UI` / `JS_Tx` / `JS_Config` / `JS_BaseData` / `JS_Vendor` / `JS_Items`
+- 사장 파일은 없다 (옛 품목 마스터 스크립트는 TASK-026에서 삭제). SPA 밖의 활성 HTML은 `AdminActionDialog.html`(시트 관리자 도구 대화상자)뿐이다.
 
 > 이 경계를 어기고 작성된 대표 사고: TASK-011이 "웹앱 품목 마스터 테이블에 음수 배지 추가"를 요구사항에 넣어
 > 사장된 파일을 수정하게 만들었다. 라인 번호 증빙 없이 화면 존재를 단정한 것이 원인이다.

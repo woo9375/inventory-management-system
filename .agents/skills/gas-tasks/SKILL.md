@@ -36,7 +36,7 @@ description: >-
 
 ### Step 2.5: 아키텍처 진입점 역추적 게이트 (필수 · 통과 못하면 진행 금지)
 
-> **왜 있는가**: TASK-011에서 이미 사장된 `JS_Master.html`을 "웹앱 품목 마스터 화면"으로 오인해
+> **왜 있는가**: TASK-011에서 이미 사장돼 있던 옛 품목 마스터 스크립트(TASK-026에서 삭제)를 "웹앱 품목 마스터 화면"으로 오인해
 > 명세에 넣었고, 실제로 구현까지 이루어져 리소스가 낭비됐다. 파일이 `src/`에 존재한다는 사실은
 > **그 코드가 실행된다는 증거가 아니다.** 아래 역추적으로 실행 경로를 입증하지 못한 대상은
 > 요구사항에 포함하지 않는다.
@@ -71,14 +71,14 @@ description: >-
    → src/JS_UI.html:120 renderDashboard() → #alertTableBody]
 ```
 
-#### (4) 확인된 사장(Dead) 파일 — 요구사항 대상 금지
+#### (4) SPA 밖의 HTML — 진입점을 따로 증명한다
 
 | 파일 | 상태 |
 |------|------|
-| `src/JS_Master.html` | **사장.** `Index.html`에 include되지 않고 `tab-master`도 없다. 품목 마스터는 스프레드시트 `🗂️ 품목 마스터` 시트 전용이며 웹앱 화면이 없다 |
-| `src/UploadCsv.html` | 사장 아님. SPA에는 없지만 `Code.gs:36`이 스프레드시트 메뉴에서 모달로 띄운다 |
+| `src/AdminActionDialog.html` | 활성(SPA 아님). `Code.gs` `openAdminActionDialog()`가 스프레드시트 관리자 도구 메뉴에서 모달로 띄운다 |
 
-> 이 표는 스냅샷이다. 라인 번호와 include 목록은 바뀔 수 있으므로 **매번 실제 파일로 재확인**한다.
+> 사장 파일은 현재 없다 — 옛 품목 마스터 스크립트와 시트 전용 CSV 업로드 창은 TASK-026에서 삭제했다. 품목 관리 화면은
+> `src/JS_Items.html`(`showTab('items')`, TASK-025)이다. 이 표는 스냅샷이므로 **매번 실제 파일로 재확인**한다.
 
 ---
 
@@ -241,7 +241,7 @@ Task 읽기 → 관련 Rule/Docs 확인 → 현재 코드 확인
 - **소스 코드 직접 구현 및 수정 절대 금지**: Antigravity는 `/gas-tasks` 실행 시 어떤 `.gs`, `.html`, 설정 파일도 직접 수정하지 않는다. (사용자가 "작업 실행해", "구현해" 등을 덧붙여도 Task 생성까지만 수행한다)
 - **실행 단계(Execution Plan) 진입 금지**: implementation plan을 세워 스스로 코드를 변경하는 단계로 넘어가지 않는다.
 - **태스크 상태 임의 전이 금지**: `AI/tasks/review/` 또는 `done/`으로 이동하거나 `Final Report`를 임의로 작성하지 않는다.
-- **진입점 증빙 없이 UI/API 요구사항 작성**: Step 2.5의 역추적을 통과하지 못한 파일을 활성 화면·활성 API로 간주하지 않는다. 사장된 파일(`JS_Master.html` 등)을 `Files to Modify`에 넣지 않는다.
+- **진입점 증빙 없이 UI/API 요구사항 작성**: Step 2.5의 역추적을 통과하지 못한 파일을 활성 화면·활성 API로 간주하지 않는다. include되지 않는 파일을 `Files to Modify`에 넣지 않는다.
 - 업무 규칙 임의 결정
 - 확인되지 않은 사실을 Confirmed Facts에 기록
 - 기존 API 시그니처 임의 변경 설계

@@ -101,8 +101,8 @@ console.log('\n[0] 상수');
     eq(ui.numericDefaults, run(t.ctx, 'ITEM_NUMERIC_DEFAULTS'));
     eq(ui.taxTypes, ['과세', '비과세']); eq(ui.usageStatuses, ['사용', '미사용']);
   });
-  check('SYSTEM_ACTIONS.uploadItemCsv: scope both · requiresAdmin false (구매팀 manager가 웹앱에서 실행)', () => {
-    eq(run(t.ctx, 'SYSTEM_ACTIONS.uploadItemCsv.scope'), 'both');
+  check('SYSTEM_ACTIONS.uploadItemCsv: scope webapp · requiresAdmin false (구매팀 manager가 웹앱에서 실행, 시트 메뉴 없음 — TASK-026)', () => {
+    eq(run(t.ctx, 'SYSTEM_ACTIONS.uploadItemCsv.scope'), 'webapp');
     eq(run(t.ctx, 'SYSTEM_ACTIONS.uploadItemCsv.requiresAdmin'), false);
   });
 }

@@ -24,7 +24,7 @@ const EXPECTED_IDS = [
 const EXPECTED_SCOPE = {
   forceRefresh: 'webapp', refreshDashboard: 'both', incrementalSync: 'webapp', syncPermissions: 'both',
   validateSeason: 'both', backupCSV: 'both', repairFormatting: 'sheet', assignVendorCodes: 'sheet',
-  uploadItemCsv: 'both' // [TASK-025] 웹앱 품목 관리 탭도 같은 안내문을 쓴다
+  uploadItemCsv: 'webapp' // [TASK-025/026] 웹앱 품목 관리 탭 전용 — 시트 메뉴 경로는 TASK-026에서 제거
 };
 const REQUIRED_KEYS = ['id', 'title', 'desc', 'bullets', 'btnText', 'btnClass', 'requiresAdmin', 'scope'];
 const EMOJI = /[☀-➿\u{1F300}-\u{1FAFF}️]/u;

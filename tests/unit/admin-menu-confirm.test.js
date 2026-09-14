@@ -21,8 +21,8 @@ const EXPECTED = {
   menuValidateSeasonSettings:  { id: 'validateSeason',    body: 'validateSeasonSettings' },
   menuBackupCSV:               { id: 'backupCSV',         body: 'backupToCSV' },            // runAdminAction → backupToCSV(Archive.gs)
   menuRepairAllSheetFormatting:{ id: 'repairFormatting',  body: 'reapplyAllSheetFormatting' }, // repairAllSheetFormatting(Code.gs) → SheetBuilder
-  menuAssignMissingVendorCodes:{ id: 'assignVendorCodes', body: 'assignMissingVendorCodes' },
-  menuOpenCsvUploadModal:      { id: 'uploadItemCsv',     body: null }                      // 업로드 창이 스스로 processCsvUploadFromSheet를 부른다
+  menuAssignMissingVendorCodes:{ id: 'assignVendorCodes', body: 'assignMissingVendorCodes' }
+  // [TASK-026] 「📤 품목마스터 CSV 업로드」는 시트 메뉴에서 빠졌다 — 웹앱 품목 관리 탭 전용(scope webapp)
 };
 
 function buildContext() {
@@ -88,8 +88,9 @@ console.log('[TASK-023] 관리자 도구 메뉴 안내 대화상자');
 {
   const t = buildContext();
   t.ctx.onOpen();
-  check('onOpen이 7개 항목을 모두 래퍼(menu*)에 묶는다', () => {
-    assert.strictEqual(t.menuItems.length, 7, '항목 수=' + t.menuItems.length);
+  check('onOpen이 6개 항목을 모두 래퍼(menu*)에 묶는다 (품목 CSV 업로드는 웹앱 전용 — TASK-026)', () => {
+    assert.strictEqual(t.menuItems.length, 6, '항목 수=' + t.menuItems.length);
+    assert.ok(!t.menuItems.some(i => /CSV 업로드/.test(i.label)), '품목 CSV 업로드 메뉴가 남아 있다');
     t.menuItems.forEach(item => {
       assert.ok(/^menu[A-Z]/.test(item.fn), item.label + ' → ' + item.fn + ' (래퍼가 아님)');
       assert.strictEqual(typeof t.ctx[item.fn], 'function', item.fn + ' 함수 없음');
@@ -112,7 +113,7 @@ Object.keys(EXPECTED).forEach(wrapper => {
     assert.ok(action, 'SYSTEM_ACTIONS.' + id + ' 정의 없음');
     assert.strictEqual(t.templates[0].action, action, '대화상자에 SSOT 정의가 그대로 들어가야 한다');
     assert.strictEqual(t.dialogs[0].title, action.title, '창 제목=' + t.dialogs[0].title);
-    assert.strictEqual(t.templates[0].file, id === 'uploadItemCsv' ? 'UploadCsv' : 'AdminActionDialog');
+    assert.strictEqual(t.templates[0].file, 'AdminActionDialog');
     if (body) assert.strictEqual((t.calls[body] || []).length, 0, body + ' 호출됨');
   });
 });

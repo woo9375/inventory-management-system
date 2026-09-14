@@ -660,12 +660,10 @@ function _classifyCsvRows(ss, masterSheet, dataRows) {
  *   행 수 상한 ITEM_CSV_MAX_ROWS.
  */
 function uploadItemMasterCSV(token, dataRows, options) {
-  let actor = "시트 CSV";
-  if (token !== 'SHEET_UI') {
-    const session = validateSession(token);
-    if (!session || session.role === 'staff') return { success: false, message: "권한이 없습니다." };
-    actor = session.name;
-  }
+  // [TASK-026] 시트 대화상자용 우회 토큰은 제거됐다 — 이제 웹앱 세션(admin·manager)만 이 함수를 부른다
+  const session = validateSession(token);
+  if (!session || session.role === 'staff') return { success: false, message: "권한이 없습니다." };
+  const actor = session.name;
   if (!Array.isArray(dataRows) || dataRows.length === 0) return { success: false, message: "❌ 업로드할 데이터가 없습니다." };
   if (dataRows.length > ITEM_CSV_MAX_ROWS) {
     return { success: false, message: "❌ 한 번에 최대 " + ITEM_CSV_MAX_ROWS + "건까지 업로드할 수 있습니다. (파일: " + dataRows.length + "건)" };
@@ -1014,54 +1012,4 @@ function _sortMasterByUsageStatus(masterSheet) {
     applyItemMasterFormatting(ss, masterSheet); // 드롭다운 검증·서식 복원
   }
   return true;
-}
-
-/**
- * 구글 시트 UI(모달)에서 CSV 문자열을 받아 처리하는 함수
- */
-function processCsvUploadFromSheet(csvString) {
-  try {
-    const lines = csvString.split('\n');
-    const dataRows = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const cols = [];
-      let current = '';
-      let inQuotes = false;
-
-      for (let j = 0; j < line.length; j++) {
-        const char = line[j];
-        if (char === '"' && line[j+1] === '"') {
-          current += '"';
-          j++; // 이스케이프된 따옴표 건너뛰기
-        } else if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          cols.push(current.trim());
-          current = '';
-        } else {
-          current += char;
-        }
-      }
-      cols.push(current.trim());
-
-      if (cols.length >= 2) {
-        dataRows.push(cols);
-      }
-    }
-
-    if (dataRows.length === 0) {
-      throw new Error("유효한 데이터가 없습니다.");
-    }
-
-    const result = uploadItemMasterCSV("SHEET_UI", dataRows);
-    if (result.success) {
-      return result.message;
-    } else {
-      throw new Error(result.message);
-    }
-  } catch (err) {
-    throw new Error(err.message);
-  }
 }

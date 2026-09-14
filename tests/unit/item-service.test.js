@@ -356,11 +356,14 @@ console.log('\n[5] uploadItemMasterCSV');
     eq(r.success, false);
     eq(masterRow(u.master, 3)[0], ''); eq(masterRow(u.master, 4)[0], '');
   });
-  check('시트 모달 토큰(SHEET_UI)은 변경자를 "시트 CSV"로 남긴다', () => {
+  check('[TASK-026] 옛 시트 대화상자 우회 토큰(SHEET_UI)은 더 이상 통하지 않는다 — 세션만 받는다', () => {
     const u = makeCtx({});
+    u.ctx.validateSession = function (token) { return token === 'GOOD' ? { name: '테스터', username: 'tester', role: 'admin' } : null; };
     u.ctx.csv = [['CSV-1', '품목A', '소모품', '', '개']];
-    eq(run(u.ctx, 'uploadItemMasterCSV("SHEET_UI", csv)').success, true);
-    eq(changelogRows(u.changelog)[0][1], '시트 CSV');
+    eq(run(u.ctx, 'uploadItemMasterCSV("SHEET_UI", csv)').success, false);
+    eq(changelogRows(u.changelog).length, 0);
+    eq(run(u.ctx, 'uploadItemMasterCSV(TOKEN, csv)').success, true);
+    eq(changelogRows(u.changelog)[0][1], '테스터');
   });
   check('staff·빈 배열은 거절', () => {
     const s = makeCtx({ role: 'staff' });

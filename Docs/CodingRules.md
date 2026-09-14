@@ -38,13 +38,10 @@
 - All CSS is centralized in `Stylesheet.html`.
 - These files are included into `Index.html` via `HtmlService.createHtmlOutputFromFile()`.
 
-### ⚠️ 현재 include되지 않는 파일
-- **`JS_Master.html`**: `Index.html`에 include되어 있지 않다(커밋 `e4a6d6e`에서 제거).
-  사이드바에 품목 관리 탭이 없고 `tab-master` 영역도 없으므로 **웹 UI로 제공되지 않는다.**
-  품목 마스터는 현재 **스프레드시트에서 직접 관리**한다.
-  파일은 향후 웹 UI 복원 가능성을 위해 보존 중이며, 관련 기능 Task를 설계할 때
-  "이미 동작하는 화면"으로 전제하지 말 것. (`JS_UI.html`의 `showTab('master')` 분기도 도달 불가 잔재)
-- `UploadCsv.html`은 `Index.html`이 아니라 `Code.gs`가 스프레드시트 메뉴에서 직접 띄운다.
+### SPA 밖의 HTML
+- `AdminActionDialog.html`은 `Index.html`이 아니라 `Code.gs`가 스프레드시트 관리자 도구 메뉴에서 직접 띄운다(템플릿).
+- 사장 파일은 두지 않는다 — 옛 품목 마스터 스크립트와 시트 전용 CSV 업로드 창은 TASK-026에서 삭제했다. 새 `JS_*.html`은
+  반드시 `Index.html`에 include하고 `showTab`에 연결한다. 품목 관리는 `JS_Items.html`(TASK-025)이다.
 
 ## 5. Logging & Error Handling
 - **진행 로그**: `console.log()` 또는 `Logger.log()` 사용. 마이그레이션·아카이브·배치 작업의

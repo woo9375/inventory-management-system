@@ -16,10 +16,9 @@ const { hasCredentials, missingEnvReason, login, waitForIdle } = require('./fixt
  * v14가 P3(적정발주량)·W3(재고 합계금액) 수식을 재적용하므로, 실행 전에는 3번을 확인할 수 없다.
  *
  * ## 품목 마스터 화면을 검증하지 않는 이유
- * Task 명세는 "웹앱 품목 마스터 테이블"의 배지를 요구하지만, 현재 `Index.html`은
- * `JS_Master.html`을 include하지 않고 `tab-master` / `masterTableBody` 엘리먼트도 없다
- * (커밋 `e4a6d6e`에서 include와 마크업이 함께 제거됐다).
- * 즉 품목 마스터 화면은 배포된 웹앱에 존재하지 않으므로 E2E로 확인할 대상이 없다.
+ * Task 명세는 "웹앱 품목 마스터 테이블"의 배지를 요구했지만, 그 화면(옛 품목 마스터 스크립트)은 커밋 `e4a6d6e`에서
+ * include와 마크업이 제거됐고 TASK-026에서 파일까지 삭제됐다. TASK-025의 품목 관리 탭(`JS_Items.html`)은
+ * 사람이 고치는 필드만 보이고 현재고를 싣지 않는다.
  * 실제 사용자 노출 경로는 **대시보드 알림 목록**(`JS_UI.html`)이며 이 스펙이 그것을 본다.
  *
  * ## 데이터 원복

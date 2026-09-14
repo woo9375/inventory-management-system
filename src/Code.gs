@@ -17,7 +17,6 @@ function onOpen() {
     .addItem("🔐 권한 재동기화",                 "menuSyncPermissions")
     .addItem("✅ 시즌 설정 검증",                 "menuValidateSeasonSettings")
     .addItem("💾 CSV 백업 실행",                 "menuBackupCSV")
-    .addItem("📤 품목마스터 CSV 업로드",           "menuOpenCsvUploadModal")
     .addItem("🎨 시트 서식/검증 복구",             "menuRepairAllSheetFormatting")
     .addItem("🤝 거래처코드 일괄 부여",            "menuAssignMissingVendorCodes")
     .addToUi();
@@ -80,7 +79,7 @@ function runAdminAction(actionId) {
       case "assignVendorCodes":
         return assignMissingVendorCodes(true);
       default:
-        // uploadItemCsv는 UploadCsv.html이 processCsvUploadFromSheet를 직접 부른다
+        // [TASK-026] 품목 CSV 업로드(uploadItemCsv)는 시트 메뉴에서 빠졌다 — 웹앱 품목 관리 탭(JS_Items.html)이 uploadItemMasterCSV를 직접 부른다
         return { success: false, message: "이 작업은 대화상자에서 실행할 수 없습니다: " + actionId };
     }
   } catch (err) {
@@ -95,8 +94,8 @@ function menuValidateSeasonSettings()  { openAdminActionDialog("validateSeason")
 function menuBackupCSV()               { openAdminActionDialog("backupCSV"); }
 function menuRepairAllSheetFormatting(){ openAdminActionDialog("repairFormatting"); }
 function menuAssignMissingVendorCodes(){ openAdminActionDialog("assignVendorCodes"); }
-// CSV 업로드는 안내·파일 선택·실행이 한 창(UploadCsv.html)에 있다 — 확인창을 따로 거치지 않는다
-function menuOpenCsvUploadModal()      { openCsvUploadModal(); }
+// [TASK-026] 「📤 품목마스터 CSV 업로드」 메뉴와 시트 전용 업로드 창·수신 함수는 제거됐다.
+//   품목 등록·수정·CSV 일괄 등록은 웹앱 품목 관리 탭(admin·manager)에서만 한다 — 구매팀은 시트를 편집하지 않는다.
 
 /**
  * [TASK-016] 마스터·통합기록장·템플릿·업장 시트의 서식/드롭다운/보호 범위를
@@ -141,17 +140,6 @@ function repairAllSheetFormatting(isSilent = false) {
 function backupCSV() {
   backupToCSV();
   SpreadsheetApp.getUi().alert("✅ CSV 백업이 완료되었습니다.");
-}
-
-/**
- * 시트 관리자 도구 메뉴에서 품목마스터 CSV 업로드 창을 띄운다.
- * [TASK-023] 안내문(SYSTEM_ACTIONS.uploadItemCsv)·파일 선택·실행·결과가 한 창에 있다. 템플릿이라 Stylesheet를 include한다.
- */
-function openCsvUploadModal() {
-  const t = HtmlService.createTemplateFromFile("UploadCsv");
-  t.action = getSystemAction("uploadItemCsv");
-  const html = t.evaluate().setWidth(ADMIN_DIALOG_WIDTH).setHeight(ADMIN_DIALOG_HEIGHT);
-  SpreadsheetApp.getUi().showModalDialog(html, t.action.title);
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -204,7 +204,7 @@
 | Column | Index (0-based) | Constant | Type | Description |
 |--------|-----------------|----------|------|-------------|
 | A | 0 | `CHANGELOG_COLS.DATE` | DateTime | 변경일시 |
-| B | 1 | `CHANGELOG_COLS.USER` | String | 변경자 (웹앱: 세션 이름 / 시트편집: 편집자 이메일 / 시트 CSV 모달: "시트 CSV") |
+| B | 1 | `CHANGELOG_COLS.USER` | String | 변경자 (웹앱·CSV: 세션 이름 / 시트편집: 편집자 이메일). 옛 시트 CSV 모달의 "시트 CSV"는 TASK-026 이전 기록에만 남아 있다 |
 | C | 2 | `CHANGELOG_COLS.CODE` | String | 품목코드 |
 | D | 3 | `CHANGELOG_COLS.NAME` | String | 품목명 |
 | E | 4 | `CHANGELOG_COLS.FIELD` | String | 변경필드 — `MASTER_FIELD_LABELS` 값. 등록은 `신규 등록`(`CHANGELOG_NEW_ITEM_FIELD`) |

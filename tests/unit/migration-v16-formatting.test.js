@@ -337,6 +337,7 @@ const run7 = buildContext(NAMES.concat(['📋 변경이력']), SHOPS, 3, ['ItemS
 run7.sandbox._isMasterSchemaCurrent = () => true;
 run7.sandbox._loadItemCatalog = () => ({ categories: new Set(['소모품']), units: new Set(['개']), vendorCodes: new Set() });
 run7.sandbox.backupMasterSnapshot = () => '품목마스터_업로드전_stub.csv';
+run7.sandbox.validateSession = () => ({ name: '테스터', username: 'tester', role: 'admin' }); // [TASK-026] SHEET_UI 우회 토큰 제거 — 세션 스텁
 const master7 = run7.sheets['🗂️ 품목 마스터'];
 const csvRows = [
   ['CHE-262', '신규품목1', '소모품', '', '개'], ['CHE-263', '신규품목2', '소모품', '', '개'],
@@ -344,7 +345,7 @@ const csvRows = [
 ];
 let uploadResult = null;
 check('CSV 업로드: 남은 행보다 CSV가 커도 쓰기가 실패하지 않는다 (선제 행 확충)', () => {
-  uploadResult = run7.sandbox.uploadItemMasterCSV('SHEET_UI', csvRows);
+  uploadResult = run7.sandbox.uploadItemMasterCSV('GOOD', csvRows);
   assert.ok(uploadResult && uploadResult.success, '실패: ' + (uploadResult && uploadResult.message));
   assert.ok(master7.maxRows >= 2 + csvRows.length, '행 확충 안 됨 (maxRows=' + master7.maxRows + ')');
 });
