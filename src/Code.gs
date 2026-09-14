@@ -213,7 +213,17 @@ function onEdit(e) {
   const sheetName = sheet.getName();
   const row = e.range.getRow();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
+
+  // [CR-01 FIX] 설정·마스터 시트를 직접 고치면 웹앱 캐시를 즉시 지운다.
+  //   [TASK-027] 함수 맨 아래(업장 시트 처리 뒤)에 있던 것을 앞으로 옮겼다 — 시스템 시트는 그 앞의
+  //   return에 걸려 이 무효화가 한 번도 실행되지 않았다. 시트에서 단가를 고쳐도 ITEM_CODE_MAP(TTL 10분)이
+  //   옛 단가로 거래를 기록할 수 있었고, 시즌·기초데이터·업장 편집도 웹앱에 TTL이 끝나야 보였다.
+  //   사용자관리·거래처관리도 캐시(CONFIG_DATA·VENDOR_LIST)에 들어가므로 함께 넣는다.
+  const INVALIDATE_SHEETS = [SHEET_MASTER, SHEET_SHOPS, SHEET_SEASONS, SHEET_BASE_DATA, SHEET_USERS, SHEET_VENDORS];
+  if (INVALIDATE_SHEETS.includes(sheetName)) {
+    try { CacheManager.invalidateAll(); } catch (err) { console.warn("[onEdit] 캐시 무효화 실패: " + err.message); }
+  }
+
   // === 업장관리 시트 가드레일 ===
   if (sheetName === SHEET_SHOPS && row >= 3 && row <= 30) {
     const col = e.range.getColumn();
@@ -489,11 +499,6 @@ function onEdit(e) {
     sheet.getRange(row, 9, numRows, 1).setValues(iUpdates).setBackgrounds(iBgUpdates).setHorizontalAlignment("center"); // [v7.0] 거래ID
   }
 
-  // [CR-01 FIX] Triggers.gs에서 병합: 설정 시트 편집 시 캐시 무효화
-  const INVALIDATE_SHEETS = [SHEET_MASTER, SHEET_SHOPS, SHEET_SEASONS, SHEET_BASE_DATA];
-  if (INVALIDATE_SHEETS.includes(sheetName)) {
-    try { CacheManager.invalidateAll(); } catch(err) {}
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

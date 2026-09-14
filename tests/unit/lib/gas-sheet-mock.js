@@ -68,7 +68,17 @@ class Range {
   getFormula() { return this.sheet.cell(this.row, this.col).formula; }
   setFormula(f) { return this._each(cell => { cell.formula = f; cell.value = f; }); }
   getBackground() { return this.sheet.cell(this.row, this.col).bg; }
+  getBackgrounds() { // [TASK-027] onEdit 업장 시트 분기(거래ID 열 배경 보존)가 읽는다
+    const out = [];
+    for (let r = 0; r < this.numRows; r++) {
+      const line = [];
+      for (let c = 0; c < this.numCols; c++) line.push(this.sheet.cell(this.row + r, this.col + c).bg || null);
+      out.push(line);
+    }
+    return out;
+  }
   setBackground(v) { return this._each(cell => { cell.bg = v; }); }
+  setBackgrounds(vals) { return this._each((cell, r, c) => { cell.bg = vals[r][c]; }); }
   setFontColor() { return this; }
   setFontWeight() { return this; }
   setFontStyle() { return this; }

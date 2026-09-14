@@ -592,6 +592,8 @@ function setLatestClosingCutoff(cutoff) {
   const key = isDate ? _toDateKey(cutoff) : String(cutoff).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
   PropertiesService.getScriptProperties().setProperty(CLOSING_CUTOFF_PROPERTY, key);
+  // [TASK-027] "마감 이력 없음" 부정 캐시가 남아 있으면 방금 기록한 마감일이 최대 10분간 무시된다
+  try { CacheService.getScriptCache().remove(CACHE_KEYS.CLOSING_CUTOFF_NONE); } catch (e) { /* 캐시 없음 */ }
 }
 
 /**
@@ -600,6 +602,11 @@ function setLatestClosingCutoff(cutoff) {
  * 1순위는 ScriptProperties 캐시다(거래 등록마다 시트를 풀 스캔하지 않기 위함).
  * 값이 없으면 통합 입출고 기록장의 "마감 이월" 입고 행을 훑어 역산한다.
  * 이월 행의 날짜는 마감 **익월 1일**이므로, 마감 기준일은 그 하루 전날이다.
+ *
+ * [TASK-027] 마감 이력이 **없는** 환경(프로퍼티도 이월 행도 없음)에서는 결과 null을 CacheService에
+ * 10분간 부정 캐시한다. 그 전에는 거래 등록·시트 편집마다 통합 시트 전체를 다시 훑었다 —
+ * 아직 한 번도 월마감하지 않은 운영 초기에 등록이 유독 느린 원인 중 하나다.
+ * 월마감이 setLatestClosingCutoff로 프로퍼티를 기록할 때 부정 캐시를 함께 지운다.
  *
  * @param {Spreadsheet} [ss] 생략 시 필요할 때만 활성 스프레드시트를 연다
  * @return {string|null} "yyyy-MM-dd" 또는 마감 이력이 없으면 null
@@ -611,14 +618,15 @@ function getLatestClosingCutoff(ss) {
     return String(cached).trim();
   }
 
+  const cache = CacheService.getScriptCache();
+  if (cache.get(CACHE_KEYS.CLOSING_CUTOFF_NONE)) return null;
+
   const spreadsheet = ss || SpreadsheetApp.getActiveSpreadsheet();
   const txSheet = spreadsheet.getSheetByName(SHEET_INOUT);
   if (!txSheet) return null;
 
   const lastRow = txSheet.getLastRow();
-  if (lastRow < 3) return null;
-
-  const rows = txSheet.getRange(3, 1, lastRow - 2, TX_COLS).getValues();
+  const rows = lastRow >= 3 ? txSheet.getRange(3, 1, lastRow - 2, TX_COLS).getValues() : [];
   let latestCarryover = null;
   rows.forEach(row => {
     if (!isCarryoverRow(row)) return;
@@ -627,7 +635,10 @@ function getLatestClosingCutoff(ss) {
     if (!latestCarryover || d > latestCarryover) latestCarryover = d;
   });
 
-  if (!latestCarryover) return null;
+  if (!latestCarryover) {
+    cache.put(CACHE_KEYS.CLOSING_CUTOFF_NONE, "1", TTL.DEFAULT);
+    return null;
+  }
 
   // 이월 행 날짜(익월 1일)의 하루 전 = 마감 기준일(마감월 말일)
   const cutoff = new Date(latestCarryover.getFullYear(), latestCarryover.getMonth(), latestCarryover.getDate() - 1);

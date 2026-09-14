@@ -103,30 +103,54 @@ function onLoginSuccess() {
   // 역할별 UI 분기
   applyRolePermissions();
 
-  // 데이터 로드
-  loadDashboard();
-  loadShopList();
-  loadItemCodes();
-  loadClosingCutoff(); // [TASK-010] 거래일 선택 하한(마감일 익일) 설정
-  
-  // 마지막 취합 시간 조회 (폴링 간격 1분 유지 또는 1회성으로 사용 가능. 여기선 1분 유지)
-  updateLastSyncTime();
+  // 데이터 로드 — [TASK-027] 대시보드·업장 목록·마감 기준일·마지막 동기화 시각을 왕복 1회(getBootstrapData)로 받는다.
+  //   전에는 네 호출을 따로 쏘고(+ 품목 코드 150KB), 각각 약 1초의 왕복 비용을 냈다.
+  //   품목 코드 목록은 서버 검색 폴백에만 쓰이므로 필요해질 때 받는다(JS_Tx ensureItemCodes).
+  loadBootstrap();
+
+  // 마지막 취합 시간 폴링 (1분 간격 유지)
   if (window.syncPollInterval) clearInterval(window.syncPollInterval);
   window.syncPollInterval = setInterval(updateLastSyncTime, 60000);
 }
 
+function loadBootstrap() {
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(boot) {
+      hideLoading();
+      if (!boot || boot.success === false) {
+        showToast((boot && boot.message) || '초기 데이터를 불러오지 못했습니다', 'error');
+        return;
+      }
+      applyShopList(boot.shops);
+      applyClosingCutoff(boot.closing);
+      applyLastSyncTime(boot.lastSync);
+      // staff는 대시보드 권한이 없어 success:false가 온다 — 탭 자체가 숨겨져 있으므로 조용히 넘긴다
+      if (boot.dashboard && boot.dashboard.success !== false) renderDashboard(boot.dashboard);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('초기 데이터 로드 실패: ' + err.message, 'error');
+      // 묶음 호출이 실패하면 예전 방식(개별 호출)으로 한 번 더 시도한다
+      loadDashboard(); loadShopList(); loadClosingCutoff(); updateLastSyncTime();
+    })
+    .getBootstrapData(getToken());
+}
+
 function updateLastSyncTime() {
   google.script.run
-    .withSuccessHandler(function(res) {
-      if (res.success && res.timestamp) {
-        var d = new Date(res.timestamp);
-        var timeStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        document.getElementById('lastSyncTimeText').textContent = timeStr;
-      } else {
-        document.getElementById('lastSyncTimeText').textContent = "기록 없음";
-      }
-    })
+    .withSuccessHandler(applyLastSyncTime)
     .getLastSyncTime(getToken());
+}
+
+function applyLastSyncTime(res) {
+  if (res && res.success && res.timestamp) {
+    var d = new Date(res.timestamp);
+    var timeStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    document.getElementById('lastSyncTimeText').textContent = timeStr;
+  } else {
+    document.getElementById('lastSyncTimeText').textContent = "기록 없음";
+  }
 }
 
 function applyRolePermissions() {

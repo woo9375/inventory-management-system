@@ -1,5 +1,39 @@
 <script>
 // ═══════════════════════════════════════════════════════════════
+//  [TASK-027] 탭 데이터 클라이언트 캐시
+//
+//  google.script.run 왕복은 아무것도 읽지 않는 함수도 약 1초다(DEV 실측 955ms). 업장·시즌·사용자 탭은
+//  같은 getConfigData 응답을 쓰는데 탭을 옮길 때마다 서버를 다시 불렀다. 이제 응답을 세션 동안 들고 있다가
+//  · 1분 안에 다시 열면 서버를 부르지 않고 그린다
+//  · 그보다 오래됐으면 들고 있던 것을 먼저 그리고 뒤에서 조용히 새로 받아 다시 그린다(오버레이 없음)
+//  · 등록/수정/삭제 직후와 「시트 동기화」는 강제로 새로 받는다(loadXxx(true) / clearTabData())
+// ═══════════════════════════════════════════════════════════════
+var TAB_CACHE_FRESH_MS = 60000;
+var tabDataCache = {};
+
+function getTabData(key) { return tabDataCache[key] || null; }
+function setTabData(key, data) { tabDataCache[key] = { data: data, at: Date.now() }; }
+function clearTabData(key) { if (key) delete tabDataCache[key]; else tabDataCache = {}; }
+function isTabDataFresh(entry) { return !!entry && (Date.now() - entry.at) < TAB_CACHE_FRESH_MS; }
+
+/**
+ * 캐시 우선 로더. render(data)로 그리고, fetch(onDone)로 서버를 부른다 — fetch는 결과를 onDone(data)에 넘긴다.
+ * @param {string} key 캐시 키
+ * @param {boolean} force true면 캐시를 무시하고 오버레이를 띄운 채 새로 받는다
+ */
+function loadWithTabCache(key, force, render, fetch) {
+  var cached = force ? null : getTabData(key);
+  if (cached) {
+    render(cached.data);
+    if (isTabDataFresh(cached)) return;
+    fetch(false, function(data) { setTabData(key, data); render(data); });
+    return;
+  }
+  showLoading();
+  fetch(true, function(data) { setTabData(key, data); render(data); });
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  네비게이션
 // ═══════════════════════════════════════════════════════════════
 function showTab(tabId, navEl) {
@@ -102,6 +136,7 @@ function doForceRefresh(callback) {
   google.script.run
     .withSuccessHandler(function(r) {
       if (r.success) {
+        clearTabData(); // [TASK-027] 서버 캐시를 버렸으니 화면이 들고 있던 탭 데이터도 버린다
         showToast('구글 시트 동기화가 완료되었습니다.', 'success');
         if(typeof callback === 'function') callback();
         else hideLoading();

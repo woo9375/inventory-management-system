@@ -51,11 +51,9 @@ function _getInitialAdminConfiguration() {
 }
 
 function _getActiveShopNames() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SHOPS);
-  if (!sheet || sheet.getLastRow() < 3) return [];
-  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 4).getValues()
-    .filter(row => row[1] && row[3] === "생성완료")
-    .map(row => String(row[1]).trim());
+  // [TASK-027] 업장관리 시트를 매번 읽지 않고 활성 업장 캐시(TxService._getActiveShops)를 쓴다.
+  //   _canAccessShop이 API 호출마다 불리므로 이 한 곳이 시트 읽기 2~3회를 빼 준다.
+  return _getActiveShops().map(shop => shop.name);
 }
 
 function _canAccessShop(session, shopName) {

@@ -5,7 +5,9 @@
  */
 const CacheManager = {
   CHUNK_SIZE: 90000, // 90KB (안전 마진 포함)
-  TTL: 60, // 60초 (기본 캐시 유지 시간)
+  // [TASK-027] 기본 TTL은 Config.gs의 TTL.DEFAULT(10분). 객체 리터럴 평가 시점에 Config.gs가 아직
+  //   로드되지 않았을 수 있으므로 set() 안에서 늦게 읽는다. 아래 값은 그 폴백이다.
+  TTL: 600,
 
   /**
    * 데이터를 캐시에 저장
@@ -13,7 +15,8 @@ const CacheManager = {
    * @param {any} data 저장할 데이터 (객체 또는 배열)
    * @param {number} ttl 유지 시간 (초)
    */
-  set: function(key, data, ttl = this.TTL) {
+  set: function(key, data, ttl) {
+    if (ttl === undefined) ttl = (typeof TTL !== 'undefined' && TTL.DEFAULT) ? TTL.DEFAULT : this.TTL;
     const cache = CacheService.getScriptCache();
     const jsonStr = JSON.stringify(data);
     
@@ -46,14 +49,17 @@ const CacheManager = {
    */
   get: function(key) {
     const cache = CacheService.getScriptCache();
-    const chunksStr = cache.get(key + '_chunks');
-    
+    // [TASK-027] 청크 개수와 단일 본체를 getAll 1회로 같이 읽는다 — 90KB 이하 데이터(업장·설정·품목맵 등 대부분)는
+    //   왕복 1회로 끝난다. 전에는 _chunks 조회 + 본체 조회 2회였고, 이 함수는 API 호출마다 1~2번 불린다.
+    const head = cache.getAll([key + '_chunks', key]) || {};
+    const chunksStr = head[key + '_chunks'];
+
     if (!chunksStr) return null; // 캐시 미스
 
     const numChunks = parseInt(chunksStr, 10);
     if (numChunks === 1) {
-      const dataStr = cache.get(key);
-      return dataStr ? JSON.parse(dataStr) : null;
+      const dataStr = head[key];
+      try { return dataStr ? JSON.parse(dataStr) : null; } catch (e) { return null; }
     }
 
     // [v10.0] 분할된 캐시 조립 시 루프 밖에서 한 번에 가져오기 (성능 최적화)
@@ -103,22 +109,23 @@ const CacheManager = {
    * [CR-04 FIX] CONFIG_DATA/BASE_DATA의 역할별 접미사 키도 명시적 삭제
    */
   invalidateAll: function() {
-    const ROLE_SUFFIXES = ['_admin', '_manager', '_staff'];
-    this.remove('ITEM_MASTER_DATA');
-    this.remove('ITEM_MASTER_DATA_ALL'); // [TASK-024] 미사용 포함 목록(품목 관리 화면)
-    this.remove('ITEM_CODES');
-    this.remove('CONFIG_DATA');
-    this.remove('BASE_DATA');
-    this.remove('SHOP_LIST');
-    // [TASK-018] 거래처 목록. 이 목록은 여기 나열되지 않으면 등록/수정/삭제 직후에도
-    //   TTL(60초)이 끝날 때까지 낡은 값이 화면에 남는다.
-    this.remove(CACHE_KEYS.VENDOR_LIST);
-    this.remove(CACHE_KEYS.ITEM_MAP);
-    // [CR-04 + NF-03] 역할별 캐시 키 전부 삭제
-    ROLE_SUFFIXES.forEach(suffix => {
-      this.remove('CONFIG_DATA' + suffix);
-      this.remove('BASE_DATA' + suffix);
+    // [TASK-027] 키마다 get + removeAll을 반복하던 것(키 14개 × 2 = 28회 왕복, 쓰기마다 0.5~1.5초)을
+    //   getAll 1회(청크 개수 조회) + removeAll 1회로 줄였다. 대상 키는 Config.gs CACHE_INVALIDATE_KEYS —
+    //   새 캐시 키는 거기에 넣지 않으면 등록/수정 직후에도 TTL이 끝날 때까지 낡은 값이 화면에 남는다.
+    //   거래 등록(addTransaction)은 이 함수를 더 이상 부르지 않는다 — 거래 행은 어떤 캐시에도 들어 있지 않다.
+    const cache = CacheService.getScriptCache();
+    const baseKeys = (typeof CACHE_INVALIDATE_KEYS !== 'undefined') ? CACHE_INVALIDATE_KEYS : [];
+    const counts = cache.getAll(baseKeys.map(k => k + '_chunks')) || {};
+
+    const toRemove = [];
+    baseKeys.forEach(key => {
+      toRemove.push(key, key + '_chunks');
+      const n = parseInt(counts[key + '_chunks'], 10);
+      for (let i = 0; i < (n > 1 ? n : 0); i++) toRemove.push(key + '_' + i);
     });
+    cache.removeAll(toRemove);
+    // 같은 요청 안에서 들고 있던 메모(TxService._getActiveShops)도 함께 비운다
+    if (typeof _resetRequestMemos === 'function') _resetRequestMemos();
   },
 
   /**

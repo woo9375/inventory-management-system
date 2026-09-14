@@ -81,7 +81,12 @@
 동시성 제어는 `try/finally` 패턴과 `waitLock()`을 사용합니다.
 
 ## 10. CacheManager 사용 패턴
-데이터 캐싱 및 변경 후 `CacheManager.invalidateAll();` 호출.
+캐시에 든 데이터(마스터·업장·시즌·사용자·기초데이터·거래처·대시보드)를 바꾸는 API는 끝에 `CacheManager.invalidateAll();`을 호출한다.
+- 새 캐시 키를 만들면 `Config.gs`의 `CACHE_KEYS`와 **`CACHE_INVALIDATE_KEYS`에 반드시 넣는다** — 빠지면 쓰기 직후에도 TTL(10분)이 끝날 때까지 낡은 값이 남는다.
+- **거래 등록(입출고)은 캐시를 지우지 않는다.** 거래 행은 어떤 캐시에도 들어 있지 않고, 현재고는 통합 갱신이 다시 계산할 때 바뀐다. 등록마다 지우면 다음 호출이 전부 콜드 미스(마스터 4,300행 재조회)가 된다 (TASK-027).
+- 같은 시트를 한 요청 안에서 두 번 읽지 않는다. 업장관리 시트는 `_getActiveShops()`로만 읽는다.
+- 화면 쪽은 `loadWithTabCache(key, force, render, fetch)`(JS_UI.html) 패턴으로 탭 응답을 세션 동안 보관하고, 쓰기 직후에는 `force=true`로 다시 받는다.
+- `google.script.run` 왕복은 빈 함수도 약 1초다(DEV 실측). 화면 하나가 여러 호출을 순서대로 쏘지 말고, 서버에서 묶어 1회로 돌려준다(`getBootstrapData` 참고).
 
 ## 커밋 메시지
 ```

@@ -122,22 +122,25 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close
 // ═══════════════════════════════════════════════════════════════
 function loadShopList() {
   google.script.run
-    .withSuccessHandler(function(shops) {
-      var select = document.getElementById('txShopSelect');
-      select.replaceChildren();
-      var placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.textContent = '업장 선택...';
-      select.appendChild(placeholder);
-      shops.forEach(function(shop) {
-        var opt = document.createElement('option');
-        opt.value = shop.name;
-        opt.textContent = shop.name + ' (' + shop.category + ')';
-        select.appendChild(opt);
-      });
-    })
+    .withSuccessHandler(applyShopList)
     .withFailureHandler(function() {})
     .getShopList(getToken());
+}
+
+/** 업장 드롭다운 채우기 — 로그인 부트스트랩(getBootstrapData)과 loadShopList가 같이 쓴다 [TASK-027] */
+function applyShopList(shops) {
+  var select = document.getElementById('txShopSelect');
+  select.replaceChildren();
+  var placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '업장 선택...';
+  select.appendChild(placeholder);
+  (shops || []).forEach(function(shop) {
+    var opt = document.createElement('option');
+    opt.value = shop.name;
+    opt.textContent = shop.name + ' (' + shop.category + ')';
+    select.appendChild(opt);
+  });
 }
 
 // [TASK-010] 마감된 기간의 날짜를 아예 고를 수 없게 한다 (서버 검증과 이중 방어).
@@ -146,22 +149,36 @@ var closedCutoffDate = null; // "yyyy-MM-dd" 또는 null(마감 이력 없음)
 
 function loadClosingCutoff() {
   google.script.run
-    .withSuccessHandler(function(info) {
-      if (!info || !info.success || !info.minDate) return;
-      closedCutoffDate = info.cutoff;
-      var txDate = document.getElementById('txDate');
-      if (txDate) txDate.min = info.minDate;
-    })
+    .withSuccessHandler(applyClosingCutoff)
     .withFailureHandler(function() {})
     .getClosingCutoffInfo(getToken());
 }
 
-function loadItemCodes() {
+/** 거래일 하한 적용 — 로그인 부트스트랩과 loadClosingCutoff가 같이 쓴다 [TASK-027] */
+function applyClosingCutoff(info) {
+  if (!info || !info.success || !info.minDate) return;
+  closedCutoffDate = info.cutoff;
+  var txDate = document.getElementById('txDate');
+  if (txDate) txDate.min = info.minDate;
+}
+
+// [TASK-027] 품목 코드 전체 목록(약 4,300건·150KB)은 서버 검색이 실패했을 때의 폴백에만 쓰인다.
+//   로그인마다 미리 받던 것을, 실제로 폴백이 필요해진 첫 순간에 한 번만 받도록 바꿨다.
+var itemCodesLoading = null;
+function ensureItemCodes(cb) {
+  if (itemCodeList.length > 0) return cb(itemCodeList);
+  if (itemCodesLoading) { itemCodesLoading.push(cb); return; }
+  itemCodesLoading = [cb];
   google.script.run
-    .withSuccessHandler(function(items) { itemCodeList = items || []; })
-    .withFailureHandler(function(err) { 
+    .withSuccessHandler(function(items) {
+      itemCodeList = items || [];
+      var waiters = itemCodesLoading; itemCodesLoading = null;
+      waiters.forEach(function(fn) { fn(itemCodeList); });
+    })
+    .withFailureHandler(function(err) {
       console.error('품목 코드 로드 실패:', err);
-      itemCodeList = []; // 실패 시 빈 배열로 초기화
+      var waiters = itemCodesLoading; itemCodesLoading = null;
+      waiters.forEach(function(fn) { fn([]); });
     })
     .getItemCodes(getToken());
 }
@@ -204,15 +221,17 @@ function onItemNameInput(value) {
       })
       .withFailureHandler(function(err) {
         console.error('품목 검색 실패:', err);
-        // 서버 검색 실패 시 클라이언트 사이드 폴백
-        var query = value.toLowerCase().trim();
-        var fallbackMatches = itemCodeList.filter(function(item) {
-          return item.name.toLowerCase().indexOf(query) > -1 || item.code.toLowerCase().indexOf(query) > -1;
-        }).slice(0, 10);
-        
-        if (fallbackMatches.length === 0) { dropdown.hidden = true; codeField.value = ''; return; }
-        renderItemMatches(dropdown, fallbackMatches);
-        dropdown.hidden = false;
+        // 서버 검색 실패 시 클라이언트 사이드 폴백 — 목록은 이때 처음 받는다 [TASK-027]
+        ensureItemCodes(function(list) {
+          var query = value.toLowerCase().trim();
+          var fallbackMatches = list.filter(function(item) {
+            return item.name.toLowerCase().indexOf(query) > -1 || item.code.toLowerCase().indexOf(query) > -1;
+          }).slice(0, 10);
+
+          if (fallbackMatches.length === 0) { dropdown.hidden = true; codeField.value = ''; return; }
+          renderItemMatches(dropdown, fallbackMatches);
+          dropdown.hidden = false;
+        });
       })
       .searchItemCodes(getToken(), value.trim());
   }, 300); // 300ms 디바운스
@@ -261,8 +280,10 @@ function loadTransactions() {
   google.script.run
     .withSuccessHandler(function(records) { hideLoading(); renderTransactions(records); })
     .withFailureHandler(function(err) { hideLoading(); showToast('기록 로드 실패: ' + err.message, 'error'); })
-    .getRecentTransactions(getToken(), shopName, 50);
+    .getRecentTransactions(getToken(), shopName, TX_LIST_LIMIT);
 }
+
+var TX_LIST_LIMIT = 50;
 
 function renderTransactions(records) {
   var tbody = document.getElementById('txTableBody');
@@ -271,24 +292,41 @@ function renderTransactions(records) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><span class="empty-icon">' + iconSvg('inbox') + '</span><p>입출고 기록이 없습니다</p></td></tr>';
     return;
   }
+  var fragment = document.createDocumentFragment();
+  records.forEach(function(r) { fragment.appendChild(buildTxRow(r)); });
+  tbody.replaceChildren(fragment);
+}
+
+/** 입출고 레코드 1건 → <tr>. 목록 렌더와 저장 직후 끼워 넣기(prependTransactions)가 같이 쓴다 */
+function buildTxRow(r) {
   // [TASK-020] 열 정렬 — 날짜 muted · 코드/ID mono · 구분 ctr(배지) · 수량 num (UIGuidelines §5)
   var TX_CELL_CLASS = ['muted', 'mono', '', 'ctr', 'num', '', 'muted', 'mono'];
-  var fragment = document.createDocumentFragment();
-  records.forEach(function(r) {
-    var tr = document.createElement('tr');
-    [r.date, r.code, r.name, r.type, r.qty, r.person || '—', r.note || '—', r.txId || '—'].forEach(function(value, index) {
-      var td = document.createElement('td');
-      if (TX_CELL_CLASS[index]) td.className = TX_CELL_CLASS[index];
-      if (index === 3) {
-        td.appendChild(txTypeBadge(r.type));
-      } else {
-        td.textContent = value == null ? '' : String(value);
-      }
-      tr.appendChild(td);
-    });
-    fragment.appendChild(tr);
+  var tr = document.createElement('tr');
+  [r.date, r.code, r.name, r.type, r.qty, r.person || '—', r.note || '—', r.txId || '—'].forEach(function(value, index) {
+    var td = document.createElement('td');
+    if (TX_CELL_CLASS[index]) td.className = TX_CELL_CLASS[index];
+    if (index === 3) {
+      td.appendChild(txTypeBadge(r.type));
+    } else {
+      td.textContent = value == null ? '' : String(value);
+    }
+    tr.appendChild(td);
   });
-  tbody.replaceChildren(fragment);
+  return tr;
+}
+
+/**
+ * [TASK-027] 저장 응답의 records(시트 순서)를 목록 맨 위에 끼워 넣는다 — 서버를 다시 부르지 않는다.
+ *   목록은 최신이 위(getRecentTransactions = 시트 역순)다. 시트 순서대로 하나씩 맨 위에 끼우면
+ *   마지막 행(-04)이 맨 위, 첫 행(-01)이 그 아래에 온다 — 재조회했을 때와 같은 순서다. 50건을 넘는 꼬리는 잘라 낸다.
+ */
+function prependTransactions(records) {
+  var tbody = document.getElementById('txTableBody');
+  var emptyRow = tbody.querySelector('.empty-state');
+  if (emptyRow) tbody.replaceChildren();
+  records.forEach(function(r) { tbody.insertBefore(buildTxRow(r), tbody.firstChild); });
+  while (tbody.rows.length > TX_LIST_LIMIT) tbody.deleteRow(tbody.rows.length - 1);
+  document.getElementById('txCount').textContent = tbody.rows.length + '건';
 }
 
 /** 입출고 구분 pill — 입고 normal · 출고 primary · 폐기 risk (UIGuidelines §5) */
@@ -326,7 +364,13 @@ function saveTransaction() {
       if (result.success) {
         showToast(result.message, 'success');
         resetTransactionForm(); // [TASK-021] 날짜·담당자는 남기고 나머지 초기화
-        loadTransactions();
+        // [TASK-027] 방금 쓴 행을 응답으로 받아 바로 그린다. 목록 재조회(왕복 1회, 약 2초)를 없앴다.
+        //   같은 업장을 보고 있을 때만 끼워 넣고, 응답에 records가 없으면(구버전 서버) 예전처럼 다시 읽는다.
+        if (Array.isArray(result.records) && result.records.length > 0 && currentShop === shopName) {
+          prependTransactions(result.records);
+        } else {
+          loadTransactions();
+        }
       } else { showToast(result.message, 'error'); }
     })
     .withFailureHandler(function(err) { hideLoading(); showToast('저장 실패: ' + err.message, 'error'); })

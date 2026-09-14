@@ -89,11 +89,15 @@ function loadContext(txRows, itemMap) {
     Utilities: Utilities,
     Session: Session,
     LockService: LockService,
+    // [TASK-027] 키별로 응답한다 — 업장 목록(SHOP_LIST)은 캐시 미스로 두어 시트에서 읽게 한다
     CacheManager: {
-      get: () => itemMap,
+      get: (key) => (key === 'ITEM_CODE_MAP' ? itemMap : null),
+      set: () => {},
       buildItemMapCache: () => itemMap,
       invalidateAll: () => { sandbox.__invalidated = true; }
     },
+    // [TASK-027] Archive.gs의 "마감 이력 없음" 부정 캐시가 CacheService를 쓴다 — 인메모리 스텁
+    CacheService: (() => { const m = new Map(); const c = { get: (k) => (m.has(k) ? m.get(k) : null), put: (k, v) => { m.set(k, String(v)); }, remove: (k) => { m.delete(k); } }; return { getScriptCache: () => c }; })(),
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ({
         getSheetByName: (name) => (name === '🏢 업장관리' ? shopSheet : txSheet)

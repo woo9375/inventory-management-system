@@ -51,6 +51,12 @@ function getDashboardData(token) {
   if (!session) return { success: false, message: "인증이 필요합니다." };
   if (session.role === ROLES.STAFF) return { success: false, message: "대시보드 조회 권한이 없습니다." };
 
+  // [TASK-027] 마스터 4,300행 스캔 결과를 캐시한다(역할과 무관한 값). 로그인마다 3초 넘게 걸리던 호출이다.
+  //   현재고·상태는 통합 갱신이 바꾸며 그쪽이 invalidateAll로 지운다. date는 캐시 시점의 값이 그대로 남는데,
+  //   이 값은 "재고 상태를 마지막으로 읽은 시각"이므로 캐시 시점을 보여 주는 것이 맞다.
+  const cachedDashboard = CacheManager.get(CACHE_KEYS.DASHBOARD);
+  if (cachedDashboard) return cachedDashboard;
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
   // [v7.0] 시즌 데이터를 시즌설정 시트에서 읽기
@@ -91,7 +97,7 @@ function getDashboardData(token) {
     }
   });
 
-  return {
+  const dashboard = {
     success: true,
     season: currentSeason,
     seasonMultiplier: seasonMultiplier,
@@ -99,6 +105,8 @@ function getDashboardData(token) {
     kpi: { total: totalItems, risk: riskCount, order: orderCount, normal: normalCount },
     alertItems: alertItems
   };
+  CacheManager.set(CACHE_KEYS.DASHBOARD, dashboard);
+  return dashboard;
 }
 
 
@@ -177,4 +185,21 @@ function getLastSyncTime(token) {
   const props = PropertiesService.getScriptProperties();
   const time = props.getProperty("LAST_SYNC_TIMESTAMP");
   return { success: true, timestamp: time };
+}
+
+/**
+ * [TASK-027] 로그인 직후 화면이 필요로 하는 것을 한 번에 돌려준다.
+ *   google.script.run 왕복은 빈 함수도 약 1초라, 네 호출을 따로 쏘던 것을 1회로 묶었다.
+ *   각 항목은 기존 API를 그대로 부르므로 권한 규칙(예: staff는 대시보드 불가)이 그대로 적용된다.
+ */
+function getBootstrapData(token) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+  return {
+    success: true,
+    dashboard: getDashboardData(token),
+    shops: getShopList(token),
+    closing: getClosingCutoffInfo(token),
+    lastSync: getLastSyncTime(token)
+  };
 }

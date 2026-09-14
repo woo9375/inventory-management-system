@@ -46,6 +46,8 @@ function buildContext(txRows, props) {
         setProperty: (k, v) => { stored[k] = v; }
       })
     },
+    // [TASK-027] Archive.gs의 "마감 이력 없음" 부정 캐시가 CacheService를 쓴다 — 인메모리 스텁
+    CacheService: (() => { const m = new Map(); const c = { get: (k) => (m.has(k) ? m.get(k) : null), put: (k, v) => { m.set(k, String(v)); }, remove: (k) => { m.delete(k); } }; return { getScriptCache: () => c }; })(),
     Session: { getScriptTimeZone: () => 'Asia/Seoul' },
     Utilities: {
       // GAS Utilities.formatDate의 "yyyy-MM-dd" 부분만 흉내낸다

@@ -5,17 +5,26 @@
 //  API: 입출고 기록
 // ═══════════════════════════════════════════════════════════════════
 
-function getShopList(token) {
-  const session = validateSession(token);
-  if (!session) return [];
+/**
+ * [TASK-027] 활성(생성완료) 업장 목록 — 업장관리 시트를 읽는 유일한 조회 경로.
+ *   접근 검사(_canAccessShop)·거래ID 접두사(_getShopTxPrefix)·업장 드롭다운(getShopList)이 전부 이 캐시를 읽는다.
+ *   전에는 거래 1건 등록에 업장관리 시트를 세 번(접근 검사 2회 + 접두사 1회) 다시 읽었다.
+ *   캐시는 업장 등록/삭제(ConfigService)와 시트 직접 편집(onEdit)이 invalidateAll로 지운다.
+ *   한 요청 안에서는 메모(_activeShopsMemo)로 한 번만 읽는다 — 거래 등록은 접근 검사와 접두사 조회로 두 번 부른다.
+ *   GAS 실행은 요청마다 새로 시작하므로 전역 변수가 요청을 넘어 남지 않는다. invalidateAll이 메모도 비운다.
+ * @return {Array<{category:string, name:string, tag:string, assignees:string[]}>}
+ */
+let _activeShopsMemo = null;
+function _resetRequestMemos() { _activeShopsMemo = null; }
 
-  const CACHE_KEY = 'SHOP_LIST';
-  let shops = CacheManager.get(CACHE_KEY);
-  if (shops) return shops;
+function _getActiveShops(ss) {
+  if (_activeShopsMemo) return _activeShopsMemo;
+  let shops = CacheManager.get(CACHE_KEYS.SHOP_LIST);
+  if (shops) { _activeShopsMemo = shops; return shops; }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // [v7.0] 업장관리 시트
-  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
+  const spreadsheet = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const shopSheet = spreadsheet.getSheetByName(SHEET_SHOPS);
+  if (!shopSheet) return [];
   const lastRow = shopSheet.getLastRow();
   if (lastRow < 3) return [];
 
@@ -23,16 +32,25 @@ function getShopList(token) {
   shops = [];
   data.forEach(row => {
     if (row[1] && row[3] === "생성완료") {
-      shops.push({ 
-        category: row[0], 
-        name: row[1], 
+      shops.push({
+        category: row[0],
+        name: String(row[1]).trim(),
         tag: row[2],
-        assignees: row[6] ? row[6].toString().split(',').map(s=>s.trim()).filter(Boolean) : []
+        assignees: row[6] ? row[6].toString().split(',').map(s => s.trim()).filter(Boolean) : []
       });
     }
   });
-  CacheManager.set(CACHE_KEY, shops);
-  
+  CacheManager.set(CACHE_KEYS.SHOP_LIST, shops);
+  _activeShopsMemo = shops;
+  return shops;
+}
+
+function getShopList(token) {
+  const session = validateSession(token);
+  if (!session) return [];
+
+  const shops = _getActiveShops();
+
   if (session.role === ROLES.STAFF) {
     const assigned = session.assignedShops || [];
     return shops.filter(shop => assigned.includes(shop.name));
@@ -55,29 +73,38 @@ function getRecentTransactions(token, shopName, limit) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   limit = Math.max(1, Math.min(Number(limit) || 50, 100));
 
-  let sheet;
-  sheet = ss.getSheetByName(shopName);
+  const sheet = ss.getSheetByName(shopName);
   if (!sheet) return [];
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 3) return [];
 
-  // [v7.0] 9열 구조
-  const data = sheet.getRange(3, 1, lastRow - 2, TX_COLS).getValues();
+  // [TASK-027] 최근 N건만 필요하므로 시트 끝에서부터 거꾸로 읽는다.
+  //   전에는 업장 시트 전체(수천 행)를 읽고 뒤집어 50건만 잘랐다 — 조회 1회에 2초 넘게 걸리던 원인.
+  //   빈 행(품목코드 없음)이 섞여 있으면 부족한 만큼 위 블록을 더 읽으므로 결과는 전체 읽기와 같다.
+  const tz = Session.getScriptTimeZone();
   const records = [];
+  let endRow = lastRow;
+  while (endRow >= 3 && records.length < limit) {
+    const startRow = Math.max(3, endRow - (limit + RECENT_TX_READ_MARGIN) + 1);
+    const block = sheet.getRange(startRow, 1, endRow - startRow + 1, TX_COLS).getValues();
+    for (let i = block.length - 1; i >= 0 && records.length < limit; i--) {
+      if (!block[i][1]) continue;
+      records.push(_txRowToRecord(block[i], tz));
+    }
+    endRow = startRow - 1;
+  }
+  return records;
+}
 
-  data.forEach(row => {
-    if (!row[1]) return;
-    records.push({
-      date: row[0] instanceof Date ? Utilities.formatDate(row[0], Session.getScriptTimeZone(), "yyyy-MM-dd") : row[0],
-      code: row[1], name: row[2], type: row[3],
-      qty: row[4], unitPrice: row[5], // [v7.0] 단가 스냅샷
-      person: row[6], note: row[7], txId: row[8] // [v7.0] 열 위치 변경
-    });
-  });
-
-  records.reverse();
-  return records.slice(0, limit);
+/** 업장 시트 행(TX_COLS) → 화면 레코드. getRecentTransactions와 addTransaction 응답이 같은 모양을 쓴다. */
+function _txRowToRecord(row, tz) {
+  return {
+    date: row[0] instanceof Date ? Utilities.formatDate(row[0], tz || Session.getScriptTimeZone(), "yyyy-MM-dd") : row[0],
+    code: row[1], name: row[2], type: row[3],
+    qty: row[4], unitPrice: row[5], // [v7.0] 단가 스냅샷
+    person: row[6], note: row[7], txId: row[8] // [v7.0] 열 위치 변경
+  };
 }
 
 
@@ -164,12 +191,10 @@ function _loadItemInfoMap(ss) {
   return itemInfoMap;
 }
 
-/** 업장관리 시트에서 거래ID 접두사(태그)를 찾는다. 없으면 "XX". */
+/** 활성 업장 목록(캐시)에서 거래ID 접두사(태그)를 찾는다. 없으면 "XX". */
 function _getShopTxPrefix(ss, shopName) {
-  const shopSheet = ss.getSheetByName(SHEET_SHOPS);
-  const shopData = shopSheet.getRange(3, 1, Math.max(shopSheet.getLastRow() - 2, 1), 6).getValues();
-  const shopConfig = shopData.find(r => r[1] === shopName && r[3] === "생성완료");
-  return shopConfig ? shopConfig[2] : "XX";
+  const shop = _getActiveShops(ss).find(s => s.name === String(shopName).trim());
+  return (shop && shop.tag) ? shop.tag : "XX";
 }
 
 /**
@@ -280,7 +305,10 @@ function addTransaction(token, shopName, txData) {
     // [v7.0] 9열 구조: 단가 스냅샷 포함 / [TASK-005] N개 분할행을 1회 setValues로 배치 삽입
     _appendTxRows(sheet, built.rows);
 
-    CacheManager.invalidateAll();
+    // [TASK-027] 여기서 CacheManager.invalidateAll()을 부르지 않는다.
+    //   캐시에 든 것은 마스터·업장·시즌·기초데이터·거래처·대시보드(마스터 파생)뿐이고 거래 행은 어디에도 없다.
+    //   현재고(H열)는 통합 갱신(refreshDashboard)이 다시 계산할 때 바뀌며 그쪽이 캐시를 지운다.
+    //   전에는 등록마다 캐시를 전부 지워 다음 등록·다음 탭 열기가 매번 콜드 미스(마스터 4,300행 재조회)였다.
 
     const totalSplits = built.splitCount;
     const txIds = built.txIds;
@@ -291,6 +319,7 @@ function addTransaction(token, shopName, txData) {
       message += ` ⚠️ 가용 로트보다 ${built.overdraftQty} 많이 ${type}되어 초과분은 마스터 단가로 기록되었습니다.`;
     }
 
+    const tz = Session.getScriptTimeZone();
     return {
       success: true,
       message: message,
@@ -298,7 +327,10 @@ function addTransaction(token, shopName, txData) {
       parentTxId: built.parentTxId,
       txIds: txIds,
       splitCount: totalSplits,
-      overdraftQty: built.overdraftQty
+      overdraftQty: built.overdraftQty,
+      // [TASK-027] 방금 쓴 행을 화면 레코드로 돌려준다(시트 순서). 화면은 이것을 목록 맨 위에 끼워 넣고
+      //   getRecentTransactions를 다시 부르지 않는다 — 저장 체감 시간에서 왕복 1회(약 2초)를 뺀다.
+      records: built.rows.map(r => _txRowToRecord(r, tz))
     };
   } finally {
     lock.releaseLock();
@@ -420,7 +452,7 @@ function uploadBulkTransactions(token, shopName, rows, options) {
     });
 
     _appendTxRows(sheet, pending);
-    CacheManager.invalidateAll();
+    // [TASK-027] 단건 등록과 같은 이유로 캐시를 지우지 않는다 (addTransaction 주석 참고).
 
     let message = `✅ ${validated.length}건 저장 완료 (시트 ${pending.length}행)`;
     if (splitRows > 0) message += ` · FIFO 로트 분할 포함`;

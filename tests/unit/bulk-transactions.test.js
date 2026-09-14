@@ -81,11 +81,15 @@ function loadContext(txRows, itemMap, opts) {
     },
     Session: { getScriptTimeZone: () => 'Asia/Seoul' },
     LockService: { getScriptLock: () => ({ waitLock() { if (opts.lockFails) throw new Error('lock'); }, releaseLock() {} }) },
+    // [TASK-027] 키별로 응답한다 — 업장 목록(SHOP_LIST)은 캐시 미스로 두어 시트에서 읽게 한다
     CacheManager: {
-      get: () => itemMap,
+      get: (key) => (key === 'ITEM_CODE_MAP' ? itemMap : null),
+      set: () => {},
       buildItemMapCache: () => itemMap,
       invalidateAll: () => { sandbox.__invalidated = (sandbox.__invalidated || 0) + 1; }
     },
+    // [TASK-027] Archive.gs의 "마감 이력 없음" 부정 캐시가 CacheService를 쓴다 — 인메모리 스텁
+    CacheService: (() => { const m = new Map(); const c = { get: (k) => (m.has(k) ? m.get(k) : null), put: (k, v) => { m.set(k, String(v)); }, remove: (k) => { m.delete(k); } }; return { getScriptCache: () => c }; })(),
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ({
         getSheetByName: (name) => {
@@ -183,7 +187,7 @@ test('저장: 오류가 하나라도 있으면 청크 전체를 저장하지 않
   assert.strictEqual(ctx.__txSheet.writes, 0);
 });
 
-test('저장: 담당자=로그인 사용자, 단가 스냅샷, 1회 setValues, 캐시 무효화', () => {
+test('저장: 담당자=로그인 사용자, 단가 스냅샷, 1회 setValues, 캐시는 건드리지 않는다', () => {
   const ctx = loadContext([], ITEMS);
   const r = ctx.uploadBulkTransactions('t', '테스트업장', [
     { rowNo: 2, date: '2026-09-01', code: 'A001', type: '입고', qty: 10, note: '납품', person: '파일의담당자' },
@@ -193,7 +197,9 @@ test('저장: 담당자=로그인 사용자, 단가 스냅샷, 1회 setValues, �
   assert.strictEqual(r.saved, 2);
   assert.strictEqual(r.rowsWritten, 2);
   assert.strictEqual(ctx.__txSheet.writes, 1, '청크는 setValues 1회로 저장');
-  assert.strictEqual(ctx.__invalidated, 1);
+  // [TASK-027] 거래 행은 어떤 캐시에도 들어 있지 않으므로 저장이 캐시를 지우지 않는다
+  //   (지우면 다음 등록·탭 열기가 마스터 4,300행을 다시 읽는 콜드 미스가 된다)
+  assert.strictEqual(ctx.__invalidated, undefined, '거래 저장은 invalidateAll을 부르지 않는다');
 
   const rows = savedRows(ctx);
   assert.strictEqual(rows.length, 2);

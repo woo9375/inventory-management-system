@@ -99,11 +99,28 @@ const CURRENT_SCHEMA_VERSION = 19; // [v12] 서식/검증 행 범위 확장(TASK
 // [v8.0] 성능 최적화용 캐시 키 & TTL 상수
 const CACHE_KEYS = {
   ITEM_MAP: 'ITEM_CODE_MAP',
-  VENDOR_LIST: 'VENDOR_LIST' // [TASK-018] 거래처 목록
+  VENDOR_LIST: 'VENDOR_LIST', // [TASK-018] 거래처 목록
+  SHOP_LIST: 'SHOP_LIST',     // [TASK-027] 활성 업장 목록 — 접근 검사·거래ID 접두사도 이 캐시를 읽는다
+  DASHBOARD: 'DASHBOARD_DATA', // [TASK-027] 대시보드 KPI/알림 (마스터 4,300행 스캔 결과)
+  CLOSING_CUTOFF_NONE: 'CLOSING_CUTOFF_NONE' // [TASK-027] "마감 이력 없음" 부정 캐시 — 통합 시트 풀 스캔 억제
 };
+// [TASK-027] 기본 TTL을 60초 → 10분으로 올렸다. 캐시된 데이터(마스터·업장·시즌·기초데이터·거래처·대시보드)를
+//   바꾸는 모든 경로가 CacheManager.invalidateAll()을 부르므로(웹앱 API·시트 onEdit·통합 갱신·마이그레이션)
+//   TTL은 "무효화가 빠졌을 때의 상한"일 뿐이다. 60초일 때는 사용자가 흩어져 접속하는 실제 운영에서
+//   탭을 열 때마다 콜드 미스(마스터 4,300행 재조회, 3~5초)가 나는 것이 느림의 큰 원인이었다.
 const TTL = {
+  DEFAULT: 600,
   ITEM_MAP: 600 // 품목 마스터 인덱스 (10분)
 };
+// [TASK-027] invalidateAll이 지우는 키 목록(청크 접미사는 CacheManager가 붙인다).
+//   역할별 접미사 키(CONFIG_DATA_admin 등)는 여기서 풀어 둔다. 새 캐시 키를 추가하면 반드시 여기에도 넣는다 —
+//   빠지면 등록/수정 직후에도 TTL(10분)이 끝날 때까지 낡은 값이 화면에 남는다.
+const CACHE_INVALIDATE_KEYS = [
+  'ITEM_MASTER_DATA', 'ITEM_MASTER_DATA_ALL', 'ITEM_CODES',
+  'CONFIG_DATA_admin', 'CONFIG_DATA_manager', 'CONFIG_DATA_staff',
+  'BASE_DATA_admin', 'BASE_DATA_manager', 'BASE_DATA_staff',
+  CACHE_KEYS.SHOP_LIST, CACHE_KEYS.VENDOR_LIST, CACHE_KEYS.ITEM_MAP, CACHE_KEYS.DASHBOARD
+];
 
 // ═══════════════════════════════════════════════════════════════════
 //  인증 시스템 상수
@@ -129,6 +146,8 @@ const INITIAL_ADMIN_PROPERTY_KEYS = {
 const VALID_TRANSACTION_TYPES = ["입고", "출고", "폐기"];
 const MAX_TRANSACTION_QTY = 100000000;
 const MAX_TRANSACTION_NOTE_LENGTH = 500;
+// [TASK-027] 최근 입출고 조회가 시트 끝에서 읽는 여유 행 수 — 빈 행이 섞여 있어도 한 블록으로 끝나게 한다
+const RECENT_TX_READ_MARGIN = 20;
 
 // [TASK-019] 웹앱 입출고 일괄 업로드(CSV/XLSX)
 //   BULK_TX_CHUNK_SIZE — 서버가 한 번의 호출에서 저장하는 최대 행 수.

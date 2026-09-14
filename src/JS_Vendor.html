@@ -9,22 +9,26 @@
 var VENDOR_PAGE_SIZE = 25;
 var vendorState = { all: [], editingCode: null, visibleCount: VENDOR_PAGE_SIZE };
 
-function loadVendors() {
-  showLoading();
-  google.script.run
-    .withSuccessHandler(function(res) {
-      hideLoading();
-      if (!res || res.success === false) {
-        showToast((res && res.message) || '거래처 목록을 불러오지 못했습니다', 'error');
-        vendorState.all = [];
-        renderVendors();
-        return;
-      }
-      vendorState.all = res.vendors || [];
-      renderVendors();
-    })
-    .withFailureHandler(function(err) { hideLoading(); showToast('거래처 로드 실패: ' + err.message, 'error'); })
-    .getVendors(getToken());
+// [TASK-027] 탭 캐시(JS_UI loadWithTabCache) — 등록/수정/삭제 뒤에는 loadVendors(true)
+function loadVendors(force) {
+  loadWithTabCache('vendors', force, function(res) {
+    vendorState.all = res.vendors || [];
+    renderVendors();
+  }, function(withOverlay, onDone) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (withOverlay) hideLoading();
+        if (!res || res.success === false) {
+          showToast((res && res.message) || '거래처 목록을 불러오지 못했습니다', 'error');
+          vendorState.all = [];
+          renderVendors();
+          return;
+        }
+        onDone(res);
+      })
+      .withFailureHandler(function(err) { if (withOverlay) hideLoading(); showToast('거래처 로드 실패: ' + err.message, 'error'); })
+      .getVendors(getToken());
+  });
 }
 
 /** 검색어 · 사용여부 필터를 적용한 목록 */
@@ -263,7 +267,7 @@ function submitVendor() {
   var done = function(r) {
     hideLoading();
     showToast(r.message, r.success ? 'success' : 'error');
-    if (r.success) { closeModal(); loadVendors(); }
+    if (r.success) { closeModal(); loadVendors(true); }
   };
   var failed = function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); };
 
@@ -303,7 +307,7 @@ function doDeleteVendor(code) {
       if (r.success) {
         showToast(r.message, 'success');
         closeModal();
-        loadVendors();
+        loadVendors(true);
         return;
       }
       // 사용 중이라 거절된 경우는 토스트로 흘려보내면 안 된다 — 어떤 품목이 막고 있는지,
@@ -339,7 +343,7 @@ function markVendorUnused(code) {
       hideLoading();
       showToast(r.success ? "거래처 '" + v.name + "'을(를) 미사용으로 변경했습니다" : r.message,
         r.success ? 'success' : 'error');
-      if (r.success) { closeModal(); loadVendors(); }
+      if (r.success) { closeModal(); loadVendors(true); }
     })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
     .updateVendor(getToken(), code, data);

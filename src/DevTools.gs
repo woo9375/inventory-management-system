@@ -350,3 +350,53 @@ function resetDevEnvironment() {
     lock.releaseLock();
   }
 }
+
+
+/**
+ * [TASK-027] DEV 전용 — 서버 기본 연산의 소요 시간을 잰다. 어디서 시간이 가는지 숫자로 보기 위한 도구.
+ *   Sheets/Cache/Properties 호출 하나하나를 Date.now()로 재고, 쓰기는 "한 번에 몰아 쓴 뒤 flush"와
+ *   "낱개 서식 호출 뒤 flush"를 나눠 잰다(플랫폼이 쓰기를 묶어 주는지 확인). 임시 시트(__perf)를 만들고 지운다.
+ *   호출: tests/e2e/perf-baseline.spec.js 또는 편집기. Production에서는 _requireDevEnv가 막는다.
+ * @return {Object} { step: ms }
+ */
+function devProfileServerOps(token) {
+  _requireDevEnv();
+  const session = validateSession(token);
+  if (!session || session.role !== ROLES.ADMIN) throw new Error("관리자 세션이 필요합니다.");
+
+  const t = {};
+  const lap = (name, fn) => { const s = Date.now(); const r = fn(); t[name] = Date.now() - s; return r; };
+
+  const cache = CacheService.getScriptCache();
+  lap("cache.get(1키)", () => cache.get("SHOP_LIST_chunks"));
+  lap("cache.getAll(2키)", () => cache.getAll(["SHOP_LIST_chunks", "SHOP_LIST"]));
+  lap("props.getProperty", () => PropertiesService.getScriptProperties().getProperty(CLOSING_CUTOFF_PROPERTY));
+  lap("lock.waitLock+release", () => { const l = LockService.getScriptLock(); l.waitLock(5000); l.releaseLock(); });
+
+  const ss = lap("getActiveSpreadsheet", () => SpreadsheetApp.getActiveSpreadsheet());
+  const master = lap("getSheetByName(마스터)", () => ss.getSheetByName(SHEET_MASTER));
+  const lastRow = lap("master.getLastRow", () => master.getLastRow());
+  lap("master.getValues(전체 25열)", () => master.getRange(3, 1, Math.max(lastRow - 2, 1), MASTER_COL_COUNT).getValues());
+  lap("master.getValues(70행 9열)", () => master.getRange(Math.max(3, lastRow - 69), 1, 70, 9).getValues());
+  lap("CacheManager.get(ITEM_CODE_MAP)", () => CacheManager.get(CACHE_KEYS.ITEM_MAP));
+
+  let perf = ss.getSheetByName("__perf");
+  if (perf) ss.deleteSheet(perf);
+  perf = lap("insertSheet(__perf)", () => ss.insertSheet("__perf"));
+  const row = [new Date(), "X", "x", "입고", 1, 0, "perf", "", "PERF-1"];
+  lap("setValues(1행)+flush", () => { perf.getRange(1, 1, 1, 9).setValues([row]); SpreadsheetApp.flush(); });
+  lap("setValues+정렬+배경3회+flush", () => {
+    perf.getRange(2, 1, 1, 9).setValues([row]).setHorizontalAlignment("center");
+    perf.getRange(2, 3, 1, 1).setBackground(COLORS.autoBg);
+    perf.getRange(2, 6, 1, 1).setBackground(COLORS.autoBg);
+    perf.getRange(2, 9, 1, 1).setBackground(COLORS.autoBg);
+    SpreadsheetApp.flush();
+  });
+  lap("setValues+정렬+RangeList배경+flush", () => {
+    perf.getRange(3, 1, 1, 9).setValues([row]).setHorizontalAlignment("center");
+    perf.getRangeList(["C3", "F3", "I3"]).setBackground(COLORS.autoBg);
+    SpreadsheetApp.flush();
+  });
+  lap("deleteSheet(__perf)", () => ss.deleteSheet(perf));
+  return t;
+}

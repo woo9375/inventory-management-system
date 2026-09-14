@@ -4,16 +4,19 @@
 // ═══════════════════════════════════════════════════════════════
 var modalActionContext = {};
 
-function loadConfig() {
-  showLoading();
-  google.script.run
-    .withSuccessHandler(function(config) {
-      hideLoading();
-      if (config.success === false) { showToast(config.message, 'error'); return; }
-      renderConfig(config);
-    })
-    .withFailureHandler(function(err) { hideLoading(); showToast('설정 로드 실패: ' + err.message, 'error'); })
-    .getConfigData(getToken());
+// [TASK-027] 업장·시즌·사용자 탭이 같은 응답을 쓴다 — 탭 캐시(JS_UI loadWithTabCache)로 한 번만 받는다.
+//   등록/수정/삭제 뒤에는 loadConfig(true)로 강제 갱신한다.
+function loadConfig(force) {
+  loadWithTabCache('config', force, renderConfig, function(withOverlay, onDone) {
+    google.script.run
+      .withSuccessHandler(function(config) {
+        if (withOverlay) hideLoading();
+        if (config.success === false) { showToast(config.message, 'error'); return; }
+        onDone(config);
+      })
+      .withFailureHandler(function(err) { if (withOverlay) hideLoading(); showToast('설정 로드 실패: ' + err.message, 'error'); })
+      .getConfigData(getToken());
+  });
 }
 
 function renderConfig(config) {
@@ -139,7 +142,7 @@ function submitNewShop() {
 
   showLoading();
   google.script.run
-    .withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); loadShopList(); } })
+    .withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); loadShopList(); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
     .addShop(getToken(), data);
 }
@@ -154,7 +157,7 @@ function confirmDeleteShop(name) {
 function doDeleteShop(name) {
   showLoading();
   google.script.run
-    .withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); loadShopList(); } })
+    .withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); loadShopList(); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
     .deleteShop(getToken(), name);
 }
@@ -177,7 +180,7 @@ function submitNewSeason() {
   var data = { name: document.getElementById('newSeasonName').value, start: document.getElementById('newSeasonStart').value, end: document.getElementById('newSeasonEnd').value, multiplier: document.getElementById('newSeasonMult').value };
   if (!data.name || !data.start || !data.end || !data.multiplier) return showToast('모든 필드를 입력해주세요', 'warning');
   showLoading();
-  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).addSeason(getToken(), data);
 }
 
@@ -195,7 +198,7 @@ function openEditSeasonModal(name, start, end, mult) {
 function submitEditSeason(name) {
   var updates = { start: document.getElementById('editSeasonStart').value, end: document.getElementById('editSeasonEnd').value, multiplier: document.getElementById('editSeasonMult').value };
   showLoading();
-  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).updateSeason(getToken(), name, updates);
 }
 
@@ -208,7 +211,7 @@ function confirmDeleteSeason(name) {
 
 function doDeleteSeason(name) {
   showLoading();
-  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).deleteSeason(getToken(), name);
 }
 
@@ -239,7 +242,7 @@ function submitCreateUser() {
   if (data.password.length < 8) return showToast('비밀번호는 8자 이상이어야 합니다', 'warning');
 
   showLoading();
-  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).createUser(getToken(), data);
 }
 
@@ -313,7 +316,7 @@ function submitEditUser(username) {
     assignedShops: selectedShops
   };
   showLoading();
-  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).updateUser(getToken(), username, updates);
 }
 
@@ -341,7 +344,7 @@ function confirmDeleteUser(username) {
 
 function doDeleteUser(username) {
   showLoading();
-  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(); } })
+  google.script.run.withSuccessHandler(function(r) { hideLoading(); showToast(r.message, r.success ? 'success' : 'error'); if (r.success) { closeModal(); loadConfig(true); } })
     .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); }).deleteUser(getToken(), username);
 }
 

@@ -99,11 +99,12 @@ Frontend (JS_Tx.html)
   → google.script.run.addTransaction(token, shopName, txData)
   → TxService.gs: addTransaction()
     → validateSession() (RBAC)
-    → _canAccessShop() (업장 권한)
+    → _canAccessShop() (업장 권한 — 활성 업장 캐시 _getActiveShops, 시트 재조회 없음)
     → CacheManager: 품목맵 조회
     → LockService: 동시성 제어
     → Sheet: 데이터 기록
-    → CacheManager.invalidateAll()
+    → 응답 records(방금 쓴 행) — 화면은 목록 맨 위에 끼워 넣고 재조회하지 않는다 (TASK-027)
+    (캐시를 지우지 않는다 — 거래 행은 어떤 캐시에도 없다. 현재고는 통합 갱신이 다시 계산하며 그쪽이 지운다)
 ```
 
 ### 입출고 일괄 업로드 흐름 (TASK-019)
@@ -118,7 +119,20 @@ Web App: JS_Tx.html openBulkUploadModal() → 안내문 → 파일 선택 → Sh
     → LockService: 동시성 제어
     → Sheet 1회 읽기 → _calculateFifoOutboundSplitsFromRows(existing + pending) → _buildTxRows()
     → _appendTxRows(): 청크를 setValues 1회로 기록
-    → CacheManager.invalidateAll()
+    (캐시를 지우지 않는다 — 단건 등록과 같은 이유)
+```
+
+### 캐시 계층 (TASK-027)
+```
+CacheService(스크립트 캐시) ← CacheManager (90KB 청크 분할, 기본 TTL 10분 = Config.gs TTL.DEFAULT)
+  키: Config.gs CACHE_INVALIDATE_KEYS — 마스터 목록·코드·품목맵, 업장(SHOP_LIST), 설정(CONFIG_DATA_역할),
+      기초데이터(BASE_DATA_역할), 거래처(VENDOR_LIST), 대시보드(DASHBOARD_DATA)
+  무효화: invalidateAll() = getAll 1회 + removeAll 1회. 부르는 곳 — 마스터/업장/시즌/사용자/기초데이터/거래처 쓰기 API,
+      시트 직접 편집(onEdit, 시스템 시트 어디든), 통합 갱신, 월마감, 마이그레이션, 웹앱 「시트 동기화」
+  거래 등록은 캐시를 지우지 않는다. 마감 기준일이 없는 환경은 CLOSING_CUTOFF_NONE 부정 캐시로 통합 시트 풀 스캔을 막는다.
+클라이언트(JS_UI loadWithTabCache): 업장·시즌·사용자(getConfigData)·기초데이터·거래처 응답을 세션 동안 보관.
+  1분 안 재방문은 서버 호출 없음, 그 뒤는 먼저 그리고 뒤에서 갱신. 쓰기 직후 loadXxx(true), 「시트 동기화」는 clearTabData().
+로그인: getBootstrapData 1회 = 대시보드 + 업장 목록 + 마감 기준일 + 마지막 동기화 시각.
 ```
 
 ### 대시보드 갱신 흐름

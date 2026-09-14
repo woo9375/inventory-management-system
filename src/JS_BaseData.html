@@ -2,16 +2,18 @@
 // ═══════════════════════════════════════════════════════════════
 //  [NEW] 기초데이터 관리 (Phase 6)
 // ═══════════════════════════════════════════════════════════════
-function loadBaseData() {
-  showLoading();
-  google.script.run
-    .withSuccessHandler(function(res) {
-      hideLoading();
-      if (!res.success) return showToast(res.message, 'error');
-      renderBaseData(res);
-    })
-    .withFailureHandler(function(err) { hideLoading(); showToast('기초데이터 로드 실패: ' + err.message, 'error'); })
-    .getBaseData(getToken());
+// [TASK-027] 탭 캐시(JS_UI loadWithTabCache) — 추가/삭제 뒤에는 loadBaseData(true)
+function loadBaseData(force) {
+  loadWithTabCache('basedata', force, renderBaseData, function(withOverlay, onDone) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (withOverlay) hideLoading();
+        if (!res.success) return showToast(res.message, 'error');
+        onDone(res);
+      })
+      .withFailureHandler(function(err) { if (withOverlay) hideLoading(); showToast('기초데이터 로드 실패: ' + err.message, 'error'); })
+      .getBaseData(getToken());
+  });
 }
 
 function renderBaseData(data) {
@@ -46,7 +48,7 @@ function addBaseDataItem(type) {
       showToast(r.message, r.success ? 'success' : 'error');
       if (r.success) {
         inputEl.value = '';
-        loadBaseData();
+        loadBaseData(true);
       }
     })
     .withFailureHandler(function(e) { hideLoading(); showToast('추가 실패: ' + e.message, 'error'); })
@@ -61,7 +63,7 @@ function deleteBaseDataItem(type, value) {
     .withSuccessHandler(function(r) {
       hideLoading();
       showToast(r.message, r.success ? 'success' : 'error');
-      if (r.success) loadBaseData();
+      if (r.success) loadBaseData(true);
     })
     .withFailureHandler(function(e) { hideLoading(); showToast('삭제 실패: ' + e.message, 'error'); })
     .deleteBaseDataItem(getToken(), type, value);
