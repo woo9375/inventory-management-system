@@ -372,6 +372,188 @@ function _masterSchemaFailure(masterSheet, where) {
 
 
 // ═══════════════════════════════════════════════════════════════════
+//  [TASK-025] 품목 관리 화면 — 서버 페이징 조회
+//
+//  마스터는 4,300행이라 화면에 통째로 내리면 전송만 2.6초다(TASK-027 실측). 대신 "사람이 고치는 필드"만 추린
+//  인덱스(ITEM_INDEX)를 캐시에 두고, 검색·카테고리·사용유무 필터와 정렬을 서버에서 끝낸 뒤 한 페이지(25건)만 돌려준다.
+//  인덱스는 미사용 품목까지 담는다(관리 화면은 사용/미사용을 오간다). 한 행이 수정 모달을 채울 만큼의 필드를
+//  들고 있어서, 수정을 눌렀을 때 서버를 다시 부르지 않는다.
+//
+//  콜드 미스는 마스터 1회 스캔(1.8초)이다. 등록·수정 직후에는 invalidateAll이 지운 인덱스를 같은 요청 안에서 다시
+//  채워 둔다(_refreshItemIndexAfterWrite) — 저장 뒤 목록 재조회가 매번 콜드 미스로 3초 걸리는 것을 막기 위해서다.
+// ═══════════════════════════════════════════════════════════════════
+
+/** 마스터 25열 행 → 인덱스 항목. 수식 열(안전재고·발주점 등)은 싣지 않는다. */
+function _itemIndexEntry(row) {
+  return {
+    code: _itemStr(row[MASTER_COLS.CODE]),
+    name: _itemStr(row[MASTER_COLS.NAME]),
+    category: _itemStr(row[MASTER_COLS.CATEGORY]),
+    grade: _itemStr(row[MASTER_COLS.GRADE]),
+    unit: _itemStr(row[MASTER_COLS.UNIT]),
+    initStock: Number(row[MASTER_COLS.INIT_STOCK]) || 0,
+    leadTime: Number(row[MASTER_COLS.LEAD_TIME]) || 0,
+    safetyDays: Number(row[MASTER_COLS.SAFETY_DAYS]) || 0,
+    targetDays: Number(row[MASTER_COLS.TARGET_DAYS]) || 0,
+    vendorCode: _itemStr(row[MASTER_COLS.VENDOR_CODE]),
+    taxType: _itemStr(row[MASTER_COLS.TAX_TYPE]) || ITEM_TAX_TYPES[0],
+    unitPrice: Number(row[MASTER_COLS.UNIT_PRICE]) || 0,
+    usageStatus: _itemStr(row[MASTER_COLS.USAGE_STATUS]) || ITEM_USAGE_STATUSES[0]
+  };
+}
+
+/** 사용 품목 먼저, 같은 상태 안에서는 품목코드 순 — 시트 정렬(_sortMasterByUsageStatus)과 같은 순서 */
+function _sortItemIndex(list) {
+  list.sort(function (a, b) {
+    const ad = a.usageStatus === "미사용" ? 1 : 0;
+    const bd = b.usageStatus === "미사용" ? 1 : 0;
+    if (ad !== bd) return ad - bd;
+    return a.code.localeCompare(b.code);
+  });
+  return list;
+}
+
+/** 25열 행 배열(코드 없는 행 포함) → 정렬된 인덱스 */
+function _buildItemIndex(rows) {
+  const list = [];
+  rows.forEach(function (row) {
+    if (_itemStr(row[MASTER_COLS.CODE]) === "") return;
+    list.push(_itemIndexEntry(row));
+  });
+  return _sortItemIndex(list);
+}
+
+/**
+ * 캐시에는 객체가 아니라 필드 순서가 고정된 배열로 넣는다 — 키 이름이 빠져 JSON이 절반 이하(4,300건 ≈ 800KB → 320KB)라
+ * 90KB 청크 put/get 횟수가 10회 → 4회로 준다. 읽을 때 다시 객체로 편다(4,300건 수 ms).
+ */
+const ITEM_INDEX_FIELDS = ['code', 'name', 'category', 'grade', 'unit', 'initStock', 'leadTime', 'safetyDays', 'targetDays', 'vendorCode', 'taxType', 'unitPrice', 'usageStatus'];
+
+function _setItemIndexCache(list) {
+  CacheManager.set(CACHE_KEYS.ITEM_INDEX, list.map(function (it) {
+    return ITEM_INDEX_FIELDS.map(function (f) { return it[f]; });
+  }));
+}
+
+/** @returns {Object[]|null} 캐시가 없거나 모양이 다르면 null */
+function _readItemIndexCache() {
+  const packed = CacheManager.get(CACHE_KEYS.ITEM_INDEX);
+  if (!Array.isArray(packed)) return null;
+  return packed.map(function (row) {
+    const it = {};
+    ITEM_INDEX_FIELDS.forEach(function (f, i) { it[f] = row[i]; });
+    return it;
+  });
+}
+
+/** 인덱스 — 캐시 적중이면 시트를 읽지 않는다. 마스터가 비어 있으면 빈 배열. */
+function _getItemIndex(ss) {
+  const cached = _readItemIndexCache();
+  if (cached) return cached;
+
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  const lastRow = _findMasterLastRow(masterSheet);
+  let index = [];
+  if (lastRow >= 3) {
+    index = _buildItemIndex(masterSheet.getRange(3, 1, lastRow - 2, MASTER_COL_COUNT).getValues());
+  }
+  _setItemIndexCache(index);
+  return index;
+}
+
+/**
+ * 쓰기 직후 인덱스를 다시 채운다. invalidateAll이 지운 뒤에 부른다.
+ *   rows가 있으면(updateItem — 이미 마스터 전체를 읽어 둔 경우) 그것으로 다시 만들고,
+ *   없으면(addNewItem) 캐시에 있던 인덱스에 새 항목만 끼워 넣는다. 캐시가 비어 있었으면 다음 조회가 채운다.
+ * 캐시 실패는 쓰기 성공을 뒤집지 않는다 — 삼켜 두고 다음 조회가 콜드 미스로 채운다.
+ */
+function _refreshItemIndexAfterWrite(rows, addedEntry, previousIndex) {
+  try {
+    if (rows) {
+      _setItemIndexCache(_buildItemIndex(rows));
+      return;
+    }
+    if (previousIndex && addedEntry) {
+      const next = previousIndex.filter(function (it) { return it.code !== addedEntry.code; });
+      next.push(addedEntry);
+      _setItemIndexCache(_sortItemIndex(next));
+    }
+  } catch (e) {
+    console.error("[TASK-025] 품목 인덱스 갱신 실패(다음 조회가 다시 만든다): " + e.message);
+  }
+}
+
+/** 조회 인자 정규화 — 화면과 테스트가 같은 기본값을 본다 */
+function _normalizeItemQuery(options) {
+  const o = options || {};
+  const q = _itemStr(o.q).toLowerCase();
+  const category = _itemStr(o.category);
+  const usageRaw = _itemStr(o.usage);
+  const usage = (usageRaw === "all" || ITEM_USAGE_STATUSES.indexOf(usageRaw) >= 0) ? usageRaw : ITEM_USAGE_STATUSES[0];
+  let page = parseInt(o.page, 10); if (!(page >= 1)) page = 1;
+  let pageSize = parseInt(o.pageSize, 10); if (!(pageSize >= 1)) pageSize = ITEM_QUERY_PAGE_SIZE;
+  if (pageSize > ITEM_QUERY_MAX_PAGE_SIZE) pageSize = ITEM_QUERY_MAX_PAGE_SIZE;
+  return { q: q, category: category, usage: usage, page: page, pageSize: pageSize, withCatalog: !!o.withCatalog };
+}
+
+/**
+ * 품목 목록 한 페이지. options: { q, category, usage: '사용'|'미사용'|'all', page, pageSize, withCatalog }
+ *   q는 품목코드·품목명 부분 일치(대소문자 무시). usage 기본값은 '사용'.
+ *   withCatalog=true면 필터·모달 드롭다운용 카탈로그(getItemCatalog)를 같이 싣는다 — 탭 진입이 왕복 1회로 끝나게.
+ * @returns {{success, total, totalAll, page, pageSize, items, catalog?}}  total = 필터 적용 건수, totalAll = 인덱스 전체
+ */
+function queryItems(token, options) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+  if (session.role === ROLES.STAFF) return { success: false, message: "품목 관리 권한이 없습니다." };
+
+  const p = _normalizeItemQuery(options);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const index = _getItemIndex(ss);
+
+  const filtered = index.filter(function (it) {
+    if (p.usage !== "all" && it.usageStatus !== p.usage) return false;
+    if (p.category && it.category !== p.category) return false;
+    if (p.q && it.code.toLowerCase().indexOf(p.q) < 0 && it.name.toLowerCase().indexOf(p.q) < 0) return false;
+    return true;
+  });
+  const start = (p.page - 1) * p.pageSize;
+  const result = {
+    success: true,
+    total: filtered.length,
+    totalAll: index.length,
+    page: p.page,
+    pageSize: p.pageSize,
+    items: filtered.slice(start, start + p.pageSize)
+  };
+  if (p.withCatalog) result.catalog = getItemCatalog(token);
+  return result;
+}
+
+/**
+ * 품목 폼·필터가 쓰는 선택지 — 카테고리·단위(📂 기초데이터), 사용 중인 거래처(🤝 거래처관리).
+ * 검증(_loadItemCatalog)과 같은 시트를 보지만 이쪽은 화면용이라 캐시(getBaseData · getVendorList)를 탄다.
+ */
+function getItemCatalog(token) {
+  const session = validateSession(token);
+  if (!session) return { success: false, message: "인증이 필요합니다." };
+
+  const base = getBaseData(token) || {};
+  const vendorRes = (typeof getVendorList === "function") ? getVendorList(token) : null;
+  const vendors = (vendorRes && vendorRes.success && Array.isArray(vendorRes.vendors)) ? vendorRes.vendors : [];
+  return {
+    success: true,
+    categories: (base.itemCategories || []).map(_itemStr).filter(Boolean),
+    units: (base.units || []).map(_itemStr).filter(Boolean),
+    vendors: vendors
+      .filter(function (v) { return v.usageStatus !== "미사용"; })
+      .map(function (v) { return { code: v.code, name: v.name, shortName: v.shortName || "" }; })
+  };
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════
 //  쓰기 API
 // ═══════════════════════════════════════════════════════════════════
 
@@ -406,7 +588,8 @@ function addNewItem(token, itemData) {
     if (!checked.valid) return { success: false, message: "❌ " + checked.message };
     const values = checked.values;
 
-    const startRow = _appendMasterRows(masterSheet, [_buildMasterRow(values)]);
+    const newRow = _buildMasterRow(values);
+    const startRow = _appendMasterRows(masterSheet, [newRow]);
     try {
       _appendChangelog([_newItemRecord(values)], {
         actor: session.name, route: CHANGELOG_ROUTES.WEBAPP,
@@ -418,8 +601,11 @@ function addNewItem(token, itemData) {
       return { success: false, message: "❌ 변경이력을 기록하지 못해 등록을 취소했습니다: " + clErr.message };
     }
 
+    // [TASK-025] 인덱스는 지우기 전에 읽어 두고, 지운 뒤 새 항목만 끼워 다시 채운다 (저장 직후 목록 재조회가 웜 히트)
+    const prevIndex = _readItemIndexCache();
     CacheManager.invalidateAll();
-    return { success: true, message: "✅ 품목 '" + values.name + "' 등록 완료", code: values.code };
+    _refreshItemIndexAfterWrite(null, _itemIndexEntry(newRow), prevIndex);
+    return { success: true, message: "✅ 품목 '" + values.name + "' 등록 완료", code: values.code, item: _itemIndexEntry(newRow) };
   } catch (err) {
     console.error("[TASK-024] addNewItem 실패: " + err.message);
     return { success: false, message: "❌ " + err.message };
@@ -431,12 +617,49 @@ function addNewItem(token, itemData) {
 
 
 /**
+ * CSV 행 검증·분류 — 실제 등록과 사전 검증(dryRun)이 같은 함수를 탄다.
+ * @returns {{newValues: Object[], ignoredCodes: string[], errors: string[]}}
+ *   newValues = 등록할 정규화 값(파일 순서), ignoredCodes = 이미 마스터에 있어 건너뛴 코드, errors = "[코드] 사유"
+ */
+function _classifyCsvRows(ss, masterSheet, dataRows) {
+  const masterLastRow = _findMasterLastRow(masterSheet);
+  const existingCodes = _existingMasterCodes(masterSheet, masterLastRow);
+  const catalog = _loadItemCatalog(ss);
+
+  const newValues = [];
+  const ignoredCodes = [];
+  const errors = [];
+
+  dataRows.forEach(function (row) {
+    if (!row || row.length < 2) return;
+    const code = _itemStr(row[0]);
+    if (!code) return;
+    if (existingCodes.has(code)) { ignoredCodes.push(code); return; }
+
+    const checked = _validateItemFields({
+      code: code, name: row[1], category: row[2], grade: row[3], unit: row[4],
+      initStock: row[5], leadTime: row[6], safetyDays: row[7], targetDays: row[8],
+      taxType: row[9], unitPrice: row[10]
+      // 거래처코드는 CSV 포맷에 없다 — 빈 값으로 두고 나중에 웹앱에서 고른다 (TASK-017)
+    }, { catalog: catalog, existingCodes: existingCodes });
+    if (!checked.valid) { errors.push("[" + code + "] " + checked.message); return; }
+
+    newValues.push(checked.values);
+    existingCodes.add(code); // 같은 CSV 내 중복 방지
+  });
+  return { newValues: newValues, ignoredCodes: ignoredCodes, errors: errors };
+}
+
+/**
  * CSV 일괄 등록. 신규 코드만 추가하고 기존 코드는 건너뛴다(기존 품목 일괄 수정은 2차 과제).
  * dataRows 열 순서: [품목코드, 품목명, 카테고리, 규격, 단위, 초기재고, 리드타임, 안전재고일수, 목표유지일수, 과세구분, 매입단가]
  * [TASK-024] 행마다 _validateItemFields를 타고(한 행이라도 실패하면 전체 중단), 쓰기 전 마스터 스냅샷을 Drive에 남기며,
  *   추가된 품목마다 '신규 등록' 이력을 남긴다.
+ * [TASK-025] options.dryRun=true면 검증·분류만 하고 아무것도 쓰지 않는다(백업도 없다) — 웹앱 미리보기용.
+ *   응답 { success, dryRun:true, added, ignored, ignoredCodes, errors, preview }. 오류가 있으면 success:false.
+ *   행 수 상한 ITEM_CSV_MAX_ROWS.
  */
-function uploadItemMasterCSV(token, dataRows) {
+function uploadItemMasterCSV(token, dataRows, options) {
   let actor = "시트 CSV";
   if (token !== 'SHEET_UI') {
     const session = validateSession(token);
@@ -444,6 +667,39 @@ function uploadItemMasterCSV(token, dataRows) {
     actor = session.name;
   }
   if (!Array.isArray(dataRows) || dataRows.length === 0) return { success: false, message: "❌ 업로드할 데이터가 없습니다." };
+  if (dataRows.length > ITEM_CSV_MAX_ROWS) {
+    return { success: false, message: "❌ 한 번에 최대 " + ITEM_CSV_MAX_ROWS + "건까지 업로드할 수 있습니다. (파일: " + dataRows.length + "건)" };
+  }
+  const dryRun = !!(options && options.dryRun);
+
+  // 사전 검증은 읽기만 한다 — 락을 잡지 않아 다른 사용자의 저장을 막지 않는다
+  if (dryRun) {
+    try {
+      const ssDry = SpreadsheetApp.getActiveSpreadsheet();
+      const masterDry = ssDry.getSheetByName(SHEET_MASTER);
+      const staleDry = _masterSchemaFailure(masterDry, "CSV 사전 검증");
+      if (staleDry) return staleDry;
+      const c = _classifyCsvRows(ssDry, masterDry, dataRows);
+      const previewOf = function (v) {
+        return { code: v.code, name: v.name, category: v.category, grade: v.grade, unit: v.unit, initStock: v.initStock, taxType: v.taxType, unitPrice: v.unitPrice };
+      };
+      return {
+        success: c.errors.length === 0,
+        dryRun: true,
+        message: c.errors.length > 0
+          ? "❌ 검증에 실패한 행이 있어 등록할 수 없습니다. (총 " + c.errors.length + "건)"
+          : "검증 통과: 신규 " + c.newValues.length + "건, 건너뜀 " + c.ignoredCodes.length + "건",
+        added: c.newValues.length,
+        ignored: c.ignoredCodes.length,
+        ignoredCodes: c.ignoredCodes.slice(0, 50),
+        errors: c.errors,
+        preview: c.newValues.slice(0, 20).map(previewOf)
+      };
+    } catch (err) {
+      console.error("[TASK-025] uploadItemMasterCSV dryRun 실패: " + err.message);
+      return { success: false, message: "❌ " + err.message };
+    }
+  }
 
   const lock = LockService.getScriptLock();
   try {
@@ -459,31 +715,10 @@ function uploadItemMasterCSV(token, dataRows) {
     if (stale) return stale;
     _requireChangelogSheet(ss);
 
-    const masterLastRow = _findMasterLastRow(masterSheet);
-    const existingCodes = _existingMasterCodes(masterSheet, masterLastRow);
-    const catalog = _loadItemCatalog(ss);
-
-    const newValues = [];
-    let ignoredCount = 0;
-    const errors = [];
-
-    dataRows.forEach(function (row) {
-      if (!row || row.length < 2) return;
-      const code = _itemStr(row[0]);
-      if (!code) return;
-      if (existingCodes.has(code)) { ignoredCount++; return; }
-
-      const checked = _validateItemFields({
-        code: code, name: row[1], category: row[2], grade: row[3], unit: row[4],
-        initStock: row[5], leadTime: row[6], safetyDays: row[7], targetDays: row[8],
-        taxType: row[9], unitPrice: row[10]
-        // 거래처코드는 CSV 포맷에 없다 — 빈 값으로 두고 나중에 웹앱에서 고른다 (TASK-017)
-      }, { catalog: catalog, existingCodes: existingCodes });
-      if (!checked.valid) { errors.push("[" + code + "] " + checked.message); return; }
-
-      newValues.push(checked.values);
-      existingCodes.add(code); // 같은 CSV 내 중복 방지
-    });
+    const classified = _classifyCsvRows(ss, masterSheet, dataRows);
+    const newValues = classified.newValues;
+    const ignoredCount = classified.ignoredCodes.length;
+    const errors = classified.errors;
 
     // [v9.0 FIX] throw 대신 return으로 에러 전달 (withFailureHandler 대신 withSuccessHandler에서 처리)
     if (errors.length > 0) {
@@ -633,10 +868,15 @@ function updateItem(token, itemCode, updates) {
     if (initStockChanged || moved) recalcStockAndUsage(ss);
 
     CacheManager.invalidateAll();
+    // [TASK-025] 이미 읽어 둔 마스터 전체(data)에 바뀐 행만 끼워 인덱스를 다시 채운다 — 저장 직후 목록 재조회가 웜 히트
+    const indexRows = data.slice();
+    indexRows[targetRowIdx] = updatedRow;
+    _refreshItemIndexAfterWrite(indexRows);
     return {
       success: true,
       message: "✅ 품목 '" + itemCode + "' 수정 완료" + note,
-      changes: changeRecords.map(function (r) { return { field: r.fieldName, oldValue: r.oldValue, newValue: r.newValue }; })
+      changes: changeRecords.map(function (r) { return { field: r.fieldName, oldValue: r.oldValue, newValue: r.newValue }; }),
+      item: _itemIndexEntry(updatedRow)
     };
   } catch (err) {
     console.error("[TASK-024] updateItem 실패: " + err.message);
@@ -700,7 +940,8 @@ function disableItemMaster(token, code, reason) {
     if (result.noChanges) return { success: false, message: "이미 미사용 상태인 품목입니다." };
     return result;
   }
-  return { success: true, message: "품목이 성공적으로 삭제(비활성화)되었습니다." };
+  // [TASK-025] 화면이 목록을 다시 받지 않고 이 행으로 고친다
+  return { success: true, message: "품목이 성공적으로 삭제(비활성화)되었습니다.", item: result.item };
 }
 
 

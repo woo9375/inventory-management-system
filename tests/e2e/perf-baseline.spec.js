@@ -74,15 +74,18 @@ test.describe('웹앱 API 응답 시간 벤치마크', () => {
       ['getItemCodes', []],
       ['getItemMasterData', []],
       ['getRecentTransactions', [shopName, 50]],
+      ['queryItems (TASK-025, page 1 + catalog)', [{ withCatalog: true }]],
+      ['queryItems (검색)', [{ q: '테스트' }]],
       ['getClosingCutoffInfo', []],
       ['searchItemCodes', ['테스트']]
     ];
-    for (const [fn, args] of READS) {
+    for (const [label, args] of READS) {
+      const fn = label.split(' ')[0]; // 라벨 뒤 설명은 표시용
       await callServer(app, 'forceRefreshData');
       const cold = (await timed(app, fn, args)).ms;
       const warm = [];
       for (let i = 0; i < REPEAT; i++) warm.push((await timed(app, fn, args)).ms);
-      record(fn, cold, warm);
+      record(label, cold, warm);
     }
 
     // 쓰기 — 입고 콜드 1 + 웜 REPEAT건 → 출고 1건(FIFO 분할 경로, 입고분 전부 소진)

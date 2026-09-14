@@ -1045,6 +1045,7 @@ input:disabled, select:disabled, textarea:disabled {
 /* JS가 토글하는 표시 상태는 [hidden] 속성으로 — display 규칙이 있는 요소는 명시적으로 덮는다 */
 .app-container[hidden], .nav-badge[hidden], .autocomplete-list[hidden], .modal-close[hidden], .modal-footer[hidden] { display: none; }
 .admin-only[hidden] { display: none !important; } /* 역할 가드(JS_Auth applyRolePermissions) — 어떤 display 규칙보다 우선 */
+.admin-manager-only[hidden] { display: none !important; } /* [TASK-025] admin + manager 공용(품목 관리) — .admin-only의 의미는 그대로 둔다 */
 
 /* 폼 보조 */
 .form-group--full { grid-column: 1 / -1; }
@@ -1318,6 +1319,27 @@ input:disabled, select:disabled, textarea:disabled {
 .action-btn.edit:hover { background: var(--primary-light); border-color: #bfdbfe; color: var(--primary); }
 .action-btn.delete:hover { background: var(--risk-light); border-color: var(--risk-border); color: var(--risk-text); }
 .action-btn.key:hover { background: var(--order-light); border-color: var(--order-border); color: var(--order-text); }
+/* [TASK-025] 품목 관리 — 글자 액션(미사용/재사용)은 아이콘 버튼과 같은 높이·테두리에 글자만 넣는다 */
+.action-btn--text { width: auto; padding: 0 9px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.action-btn.disable { color: var(--risk-text); }
+.action-btn.disable:hover { background: var(--risk-light); border-color: var(--risk-border); }
+.action-btn.enable { color: var(--primary); }
+.action-btn.enable:hover { background: var(--primary-light); border-color: #bfdbfe; }
+
+/* [TASK-025] 품목 관리 — 검색 상태 캡션 · 변경 미리보기 · CSV 집계 칩 */
+.card-header .cap.is-busy { color: var(--primary); }
+.diff-table td.old { color: var(--text-secondary); text-decoration: line-through; }
+.diff-table td.new { font-weight: 600; }
+.stat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.stat-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 600;
+  border: 1px solid var(--border); background: var(--bg-muted); color: var(--text-secondary);
+}
+.stat-chip.normal { background: var(--normal-light); color: var(--normal-text); border-color: var(--normal-border); }
+.stat-chip.risk { background: var(--risk-light); color: var(--risk-text); border-color: var(--risk-border); }
+.stat-chip .n { font-variant-numeric: tabular-nums; }
+.nowrap, .table-nowrap th, .table-nowrap td { white-space: nowrap; } /* 모달 안 표 — 날짜·코드가 두 줄로 꺾이지 않게, 넘치면 wrapper가 가로 스크롤 */
 
 /* ═══════════════ [NEW] Chip 컴포넌트 ═══════════════ */
 .chip-list {

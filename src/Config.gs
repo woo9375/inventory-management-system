@@ -102,7 +102,8 @@ const CACHE_KEYS = {
   VENDOR_LIST: 'VENDOR_LIST', // [TASK-018] 거래처 목록
   SHOP_LIST: 'SHOP_LIST',     // [TASK-027] 활성 업장 목록 — 접근 검사·거래ID 접두사도 이 캐시를 읽는다
   DASHBOARD: 'DASHBOARD_DATA', // [TASK-027] 대시보드 KPI/알림 (마스터 4,300행 스캔 결과)
-  CLOSING_CUTOFF_NONE: 'CLOSING_CUTOFF_NONE' // [TASK-027] "마감 이력 없음" 부정 캐시 — 통합 시트 풀 스캔 억제
+  CLOSING_CUTOFF_NONE: 'CLOSING_CUTOFF_NONE', // [TASK-027] "마감 이력 없음" 부정 캐시 — 통합 시트 풀 스캔 억제
+  ITEM_INDEX: 'ITEM_INDEX' // [TASK-025] 품목 관리 화면의 검색·페이징 인덱스 (사람이 고치는 필드만, 미사용 포함)
 };
 // [TASK-027] 기본 TTL을 60초 → 10분으로 올렸다. 캐시된 데이터(마스터·업장·시즌·기초데이터·거래처·대시보드)를
 //   바꾸는 모든 경로가 CacheManager.invalidateAll()을 부르므로(웹앱 API·시트 onEdit·통합 갱신·마이그레이션)
@@ -119,7 +120,8 @@ const CACHE_INVALIDATE_KEYS = [
   'ITEM_MASTER_DATA', 'ITEM_MASTER_DATA_ALL', 'ITEM_CODES',
   'CONFIG_DATA_admin', 'CONFIG_DATA_manager', 'CONFIG_DATA_staff',
   'BASE_DATA_admin', 'BASE_DATA_manager', 'BASE_DATA_staff',
-  CACHE_KEYS.SHOP_LIST, CACHE_KEYS.VENDOR_LIST, CACHE_KEYS.ITEM_MAP, CACHE_KEYS.DASHBOARD
+  CACHE_KEYS.SHOP_LIST, CACHE_KEYS.VENDOR_LIST, CACHE_KEYS.ITEM_MAP, CACHE_KEYS.DASHBOARD,
+  CACHE_KEYS.ITEM_INDEX
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -156,6 +158,13 @@ const RECENT_TX_READ_MARGIN = 20;
 //   BULK_TX_MAX_ROWS   — 파일 1개에서 받아들이는 최대 행 수(사전 검증 호출의 상한).
 const BULK_TX_CHUNK_SIZE = 100;
 const BULK_TX_MAX_ROWS = 2000;
+
+// [TASK-025] 웹앱 품목 관리 탭
+//   품목 마스터는 4,300행 규모라 화면에 통째로 내리지 않는다(2MB 전송 2.6초 — TASK-027 실측). 서버가 인덱스(ITEM_INDEX 캐시)에서
+//   검색·필터·정렬을 끝내고 한 페이지만 돌려준다(queryItems). 값은 Index.html이 getItemUiConfigJson()으로 주입해 양쪽이 같은 수를 본다.
+const ITEM_QUERY_PAGE_SIZE = 25;      // 한 페이지 행 수 — 거래처 화면의 "25건 더 보기"와 같은 보폭
+const ITEM_QUERY_MAX_PAGE_SIZE = 100; // 클라이언트가 요청할 수 있는 상한
+const ITEM_CSV_MAX_ROWS = 1000;       // CSV 일괄 등록 1회 상한 — 검증·백업·서식·재계산이 GAS 실행 제한(6분) 안에 끝나는 크기
 
 // ═══════════════════════════════════════════════════════════════════
 //  [TASK-023] 시스템 작업 안내문 SSOT
@@ -276,19 +285,22 @@ const SYSTEM_ACTIONS = {
     requiresAdmin: true,
     scope: "sheet"
   },
+  // [TASK-025] 시트 대화상자(UploadCsv.html)와 웹앱 품목 관리 탭이 같은 안내문을 쓴다 — scope both.
+  //   웹앱에서는 구매팀(manager)도 실행하므로 requiresAdmin=false. 실행은 runSystemCommand가 아니라
+  //   uploadItemMasterCSV를 직접 부른다(사전 검증 dryRun → 확인 → 등록).
   uploadItemCsv: {
     id: "uploadItemCsv",
     title: "품목마스터 CSV 업로드",
     desc: "CSV 파일을 업로드하여 품목 마스터에 새로운 품목을 일괄 등록합니다.",
     bullets: [
       "이미 존재하는 품목코드는 건너뛰고 신규 코드만 추가 등록합니다.",
-      "등록된 품목은 자동 삭제되지 않으므로, 실행 전 'CSV 백업 실행'을 권장합니다.",
-      "업로드할 CSV 파일을 선택한 후 실행 버튼을 눌러주세요."
+      "저장 전에 파일 전체를 먼저 검증하며, 오류가 한 행이라도 있으면 아무것도 등록하지 않습니다.",
+      "등록 직전 품목 마스터 스냅샷을 구글 드라이브 백업 폴더에 자동 저장합니다."
     ],
     btnText: "업로드 실행",
     btnClass: "btn-primary",
-    requiresAdmin: true,
-    scope: "sheet"
+    requiresAdmin: false,
+    scope: "both"
   }
 };
 
@@ -303,6 +315,22 @@ function getSystemAction(id) {
  */
 function getSystemActionsJson() {
   return JSON.stringify(SYSTEM_ACTIONS).replace(/</g, "\u003c");
+}
+
+/**
+ * [TASK-025] 웹앱 품목 관리 탭이 쓰는 상수 묶음 — Index.html이 `var ITEM_UI = <?!= getItemUiConfigJson() ?>;`로 주입한다.
+ *   필드 라벨(diff 표·이력), 숫자 기본값(플레이스홀더), 과세/사용유무 목록, 페이지 크기, CSV 상한을
+ *   서버와 같은 값으로 보게 해서 화면과 검증이 어긋나지 않게 한다.
+ */
+function getItemUiConfigJson() {
+  return JSON.stringify({
+    fieldLabels: MASTER_FIELD_LABELS,
+    numericDefaults: ITEM_NUMERIC_DEFAULTS,
+    taxTypes: ITEM_TAX_TYPES,
+    usageStatuses: ITEM_USAGE_STATUSES,
+    pageSize: ITEM_QUERY_PAGE_SIZE,
+    csvMaxRows: ITEM_CSV_MAX_ROWS
+  }).replace(/</g, "\u003c");
 }
 
 // [v7.0] 사용자 데이터 열 매핑 (👤 사용자관리 시트 A~E열)

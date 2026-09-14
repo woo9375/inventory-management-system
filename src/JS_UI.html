@@ -42,7 +42,6 @@ function showTab(tabId, navEl) {
   document.querySelectorAll('.nav-item').forEach(function(el) { el.classList.remove('active'); });
   if (navEl) navEl.classList.add('active');
 
-  if (tabId === 'master') loadItemMaster();
   if (tabId === 'transactions') {
     if (currentUser) document.getElementById('txPerson').value = currentUser.name;
     var currentShop = document.getElementById('txShopSelect').value;
@@ -53,6 +52,7 @@ function showTab(tabId, navEl) {
   if (tabId === 'shop' || tabId === 'season' || tabId === 'user') loadConfig();
   if (tabId === 'basedata') loadBaseData();
   if (tabId === 'vendor') loadVendors(); // [TASK-018]
+  if (tabId === 'items') loadItems();    // [TASK-025]
 
   closeSidebar();
 }

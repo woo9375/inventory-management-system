@@ -2,7 +2,7 @@
 //
 // 시트 관리자 도구 대화상자와 웹앱 안내 모달이 같은 정의를 읽으므로, 정의가 깨지면 두 화면이 함께 깨진다.
 //   · 9개 작업이 모두 있고 필수 키가 채워져 있다
-//   · forceRefresh만 requiresAdmin=false (staff/manager도 누르는 시트 동기화)
+//   · forceRefresh·uploadItemCsv만 requiresAdmin=false (시트 동기화는 staff/manager도, 품목 CSV는 구매팀 manager도 실행한다 — TASK-025)
 //   · assignVendorCodes만 btn-danger (되돌릴 수 없는 작업 — Docs/UIGuidelines.md §2)
 //   · 문구에 이모지가 없다 (§3)
 //   · 웹앱 주입용 JSON이 <script> 안에서 안전하다
@@ -23,7 +23,8 @@ const EXPECTED_IDS = [
 ];
 const EXPECTED_SCOPE = {
   forceRefresh: 'webapp', refreshDashboard: 'both', incrementalSync: 'webapp', syncPermissions: 'both',
-  validateSeason: 'both', backupCSV: 'both', repairFormatting: 'sheet', assignVendorCodes: 'sheet', uploadItemCsv: 'sheet'
+  validateSeason: 'both', backupCSV: 'both', repairFormatting: 'sheet', assignVendorCodes: 'sheet',
+  uploadItemCsv: 'both' // [TASK-025] 웹앱 품목 관리 탭도 같은 안내문을 쓴다
 };
 const REQUIRED_KEYS = ['id', 'title', 'desc', 'bullets', 'btnText', 'btnClass', 'requiresAdmin', 'scope'];
 const EMOJI = /[☀-➿\u{1F300}-\u{1FAFF}️]/u;
@@ -56,8 +57,10 @@ EXPECTED_IDS.forEach(id => {
   });
 });
 
-check('forceRefresh만 requiresAdmin=false — 시트 동기화는 staff/manager도 실행한다', () => {
-  EXPECTED_IDS.forEach(id => assert.strictEqual(ACTIONS[id].requiresAdmin, id !== 'forceRefresh', id));
+// [TASK-025] uploadItemCsv는 웹앱 품목 관리 탭에서 구매팀(manager)도 실행한다
+const NON_ADMIN_ACTIONS = ['forceRefresh', 'uploadItemCsv'];
+check('forceRefresh·uploadItemCsv만 requiresAdmin=false — 시트 동기화는 staff/manager, 품목 CSV는 manager도 실행한다', () => {
+  EXPECTED_IDS.forEach(id => assert.strictEqual(ACTIONS[id].requiresAdmin, NON_ADMIN_ACTIONS.indexOf(id) < 0, id));
 });
 
 check('assignVendorCodes만 btn-danger, 나머지는 btn-primary', () => {

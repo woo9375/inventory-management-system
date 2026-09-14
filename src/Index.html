@@ -106,6 +106,10 @@
         <button id="navVendor" class="nav-item admin-only" onclick="showTab('vendor', this)">
           <span class="nav-icon"><svg class="ico"><use href="#i-handshake"/></svg></span> 거래처 관리
         </button>
+        <!-- [TASK-025] 품목 관리 — admin + 구매팀(manager). staff에게는 숨긴다 (.admin-manager-only, JS_Auth applyRolePermissions) -->
+        <button id="navItems" class="nav-item admin-manager-only" onclick="showTab('items', this)">
+          <span class="nav-icon"><svg class="ico"><use href="#i-package"/></svg></span> 품목 관리
+        </button>
         <button id="navMySettings" class="nav-item" onclick="showTab('mysettings', this)">
           <span class="nav-icon"><svg class="ico"><use href="#i-settings"/></svg></span> 내 설정
         </button>
@@ -528,6 +532,77 @@
         </div>
       </div>
 
+      <!-- ━━━━━━━━━ 품목 관리 탭 (TASK-025) ━━━━━━━━━ -->
+      <!-- 목록은 서버 페이징(queryItems, 25건). 검색·필터는 서버가 걸고 화면은 한 페이지만 들고 있다 (JS_Items.html). -->
+      <div id="tab-items" class="tab-content">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h2><svg class="ico"><use href="#i-package"/></svg>품목 관리</h2>
+            <span id="itemCount" class="season-badge">0건</span>
+          </div>
+          <div class="header-meta">
+            <button id="btnItemCsvUpload" class="btn btn-outline btn-sm" onclick="openItemCsvUploadModal()"
+              title="CSV/엑셀 파일로 신규 품목을 한 번에 등록합니다."><svg class="ico"><use href="#i-upload"/></svg> CSV 업로드</button>
+            <input type="file" id="itemCsvFile" accept=".csv,.xlsx,.xls" hidden onchange="onItemCsvFileSelected(this)">
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>품목 목록 <span id="itemQueryState" class="cap">사용 품목 · 코드순</span></h3>
+            <button id="btnItemAdd" class="btn btn-primary btn-sm" onclick="openAddItemModal()"><svg class="ico"><use href="#i-plus"/></svg> 신규 품목 등록</button>
+          </div>
+          <div class="card-body">
+            <div class="form-grid filter-bar">
+              <div class="form-group form-group--wide">
+                <label>검색 (품목명 · 품목코드)</label>
+                <input type="text" id="itemSearch" placeholder="검색어 입력..." autocomplete="off" oninput="onItemFilterInput()">
+              </div>
+              <div class="form-group">
+                <label>카테고리</label>
+                <select id="itemCategoryFilter" onchange="onItemFilterChange()">
+                  <option value="">전체</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>사용유무</label>
+                <select id="itemUsageFilter" onchange="onItemFilterChange()">
+                  <option value="all">전체</option>
+                  <option value="사용" selected>사용</option>
+                  <option value="미사용">미사용</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="mono">품목코드</th>
+                    <th>품목명</th>
+                    <th>카테고리</th>
+                    <th>규격</th>
+                    <th>단위</th>
+                    <th class="mono">거래처</th>
+                    <th class="ctr">과세구분</th>
+                    <th class="num">매입단가</th>
+                    <th class="ctr">사용유무</th>
+                    <th class="ctr">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="itemTableBody">
+                  <tr>
+                    <td colspan="10" class="empty-state"><span class="empty-icon"><svg class="ico"><use href="#i-inbox"/></svg></span>
+                      <p>데이터를 불러오는 중...</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ━━━━━━━━━ 내 설정 탭 ━━━━━━━━━ -->
       <div id="tab-mysettings" class="tab-content">
         <div class="page-header">
@@ -603,6 +678,8 @@
     var BULK_TX_MAX_ROWS = Number('<?= BULK_TX_MAX_ROWS ?>') || 2000;
     // [TASK-023] 시스템 작업 안내문 SSOT — Config.gs SYSTEM_ACTIONS를 그대로 주입 (시트 대화상자와 같은 문구)
     var SYSTEM_ACTIONS = <?!= getSystemActionsJson() ?>;
+    // [TASK-025] 품목 관리 탭 상수(필드 라벨·숫자 기본값·과세/사용유무 목록·페이지 크기·CSV 상한) — Config.gs SSOT
+    var ITEM_UI = <?!= getItemUiConfigJson() ?>;
   </script>
 
   <?!= include('JS_Auth') ?>
@@ -612,6 +689,7 @@
   <?!= include('JS_Config') ?>
   <?!= include('JS_BaseData') ?>
   <?!= include('JS_Vendor') ?>
+  <?!= include('JS_Items') ?>
 </body>
 
 </html>

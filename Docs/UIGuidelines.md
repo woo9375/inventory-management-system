@@ -19,6 +19,7 @@
 - 아이콘은 **Lucide** 선형 아이콘(24px viewBox, `stroke: currentColor`, `stroke-width: 2`)을 인라인 SVG 스프라이트(`src/Icons.html`, `<symbol id="i-…">`)로 싣고 `<svg class="ico"><use href="#i-…"/></svg>`로 쓴다. 외부 아이콘 CDN 사용 금지.
 - 아이콘 위치: 사이드바 메뉴·페이지 제목(h2)에는 **필수**, 버튼에는 인식에 도움될 때만(저장·업로드·동기화·검색), 카드 제목(h3)·라벨·테이블 셀에는 **쓰지 않는다.**
 - 상태 표현에는 아이콘 대신 **색 + 텍스트 pill**을 쓴다 (아래 5절).
+- 서버 API가 돌려주는 결과 문구 앞의 이모지(`✅`·`❌` 등 예전 메시지)는 화면에 그대로 내지 않는다 — 토스트·모달에 넣기 전에 떼어 낸다 (`JS_Items itemMsg`, `UploadCsv.html stripLeadingEmoji`).
 
 ### 아이콘 매핑 (사이드바 = 페이지 제목)
 | 화면 | Lucide | 기타 | Lucide |
@@ -31,6 +32,7 @@
 | 계정 관리 | `users` | 검색 | `search` |
 | 기초데이터 | `folder` | 토스트 success/error/warning/info | `check-circle-2` / `x-circle` / `alert-triangle` / `info` |
 | 거래처 관리 | `handshake` | 엠프티 스테이트 | `inbox` (없음) / `party-popper` (정상) |
+| 품목 관리 | `package` | 행 액션 수정 / 이력 | `pencil` / `clock` (미사용·재사용은 글자 버튼 `.action-btn--text`) |
 | 내 설정 | `settings` | KPI 위험/발주/정상 | 아이콘 없음 — 색 액센트로 충분 |
 
 ## 4. 레이아웃 · 컨트롤

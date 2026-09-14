@@ -27,6 +27,7 @@ DEV 배포가 Google 계정 로그인을 요구하면 `node tests/e2e/save-auth-
 | `transaction.spec.js` | 입고 등록 성공 및 거래ID 생성 (TASK-001A 회귀 방지) |
 | `basedata-excel.spec.js` | 단위 목록 신규 10종 노출 (TASK-002), 실사 양식 xlsx 다운로드 (TASK-001B) |
 | `transaction-bulk-upload.spec.js` | 입출고 일괄 업로드 (TASK-019): 안내 모달 취소, 오류 CSV 검증 실패(무저장), 정상 CSV 저장 → 최근 내역 표시 |
+| `items-management.spec.js` | 품목 관리 탭 (TASK-025): 서버 페이징 목록·검색·사용유무 필터, 등록 → diff·사유 필수 수정 → 이력(웹앱 경로) → 미사용 → 재사용, CSV 사전 검증 미리보기 → 등록, manager 노출/staff 숨김, 768px 가로 오버플로우 없음. 스크린샷을 `AI/audits/UI-AUDIT-001/after/TASK-025/`에 남긴다 |
 | `perf-baseline.spec.js` | **기본 실행에서 제외** — `E2E_PERF=1`일 때만. 화면이 부르는 API의 콜드/웜 응답 시간(ms) 표를 찍는다 (TASK-027). 성능 작업 전후 비교용이며 임계값으로 실패시키지 않는다 |
 | `perf-server-ops.spec.js` | **기본 실행에서 제외** — `E2E_PERF=1`일 때만. `DevTools.gs devProfileServerOps`로 Sheets/Cache/Properties 연산별 소요 시간(ms)을 찍는다 (TASK-027) |
 

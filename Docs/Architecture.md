@@ -11,16 +11,18 @@
 
 | 파일 | 상태 | 근거 |
 |------|------|------|
-| **`JS_Master.html`** | 🔴 **사장(Dead Code) — 수정 금지** | `Index.html`에 include되지 않음(커밋 `e4a6d6e`에서 제거). 사이드바에 `tab-master`도 없어 이 파일이 참조하는 DOM(`masterTableBody` 등)이 런타임에 존재하지 않는다 |
+| **`JS_Master.html`** | 🔴 **사장(Dead Code) — 수정 금지** | `Index.html`에 include되지 않음(커밋 `e4a6d6e`에서 제거). 사이드바에 `tab-master`도 없어 이 파일이 참조하는 DOM(`masterTableBody` 등)이 런타임에 존재하지 않는다. 품목 관리 화면은 TASK-025에서 **새 파일 `JS_Items.html`**로 만들었다 — 이 파일을 되살리지 않는다 |
 | `UploadCsv.html` | 🟢 활성 (SPA 아님) | `Code.gs:36`이 스프레드시트 메뉴에서 모달로 직접 띄운다 |
 
-**품목 마스터는 웹앱 화면이 존재하지 않는다.** 구글 스프레드시트 `🗂️ 품목 마스터` 시트에서 100% 직접 관리하며,
-웹앱에서 품목 현재고가 노출되는 유일한 곳은 **대시보드의 '위험·발주필요 품목' 테이블**(`JS_UI.html`)이다.
-`JS_Master.html`은 향후 웹 UI 복원 가능성을 위해 파일만 보존 중이다.
+**품목 마스터 관리는 웹앱 `품목 관리` 탭(`#tab-items`, `JS_Items.html`)이 전담한다 (TASK-025).** admin과 구매팀(manager)만 쓰고,
+등록·수정(diff 확인 + 변경사유 필수)·미사용/재사용 전환·변경이력 조회·CSV 일괄 등록이 전부 `ItemService.gs` API를 거쳐
+9열 변경이력을 남긴다. 구매팀은 `🗂️ 품목 마스터` 시트를 **뷰어로만** 본다(시트 직접 편집은 onEdit이 이력만 남기는 예외 경로).
+웹앱에서 품목 현재고가 노출되는 곳은 **대시보드의 '위험·발주필요 품목' 테이블**(`JS_UI.html`)이다.
 
 **웹앱 진입점 사실 (근거 라인)**
-- 사이드바 탭 7개 — `Index.html:81-101`: `dashboard` / `transactions` / `shop` / `season` / `user` / `basedata` / `mysettings`
-- include되는 스크립트 5개 — `Index.html:522-527`: `JS_Auth` / `JS_UI` / `JS_Tx` / `JS_Config` / `JS_BaseData`
+- 사이드바 탭 9개 — `Index.html` `<nav class="sidebar-nav">`: `dashboard` / `transactions` / `shop` / `season` / `user` / `basedata` / `vendor` / `items` / `mysettings`
+  (`shop`~`vendor`는 `.admin-only`, `items`는 `.admin-manager-only` — JS_Auth `applyRolePermissions`)
+- include되는 스크립트 7개 — `Index.html` 하단: `JS_Auth` / `JS_UI` / `JS_Tx` / `JS_Config` / `JS_BaseData` / `JS_Vendor` / `JS_Items`
 
 > 검증 절차는 `.agents/skills/gas-tasks/SKILL.md`의 **Step 2.5 아키텍처 진입점 역추적 게이트**,
 > 도메인별 관리 주체는 `.agents/rules/00_roles-and-workflow.md`의 **3. 시스템 물리적 경계**를 따른다.
@@ -34,7 +36,9 @@
 │  ├── JS_Config.html (설정 UI)                    │
 │  ├── JS_Tx.html (입출고 UI)                      │
 │  ├── JS_UI.html (공통 UI)                        │
-│  └── JS_BaseData.html (기초데이터 UI)            │
+│  ├── JS_BaseData.html (기초데이터 UI)            │
+│  ├── JS_Vendor.html (거래처 UI, TASK-018)        │
+│  └── JS_Items.html (품목 관리 UI, TASK-025)      │
 │         │                                        │
 │         │ google.script.run.함수명()              │
 │         ▼                                        │
@@ -122,11 +126,28 @@ Web App: JS_Tx.html openBulkUploadModal() → 안내문 → 파일 선택 → Sh
     (캐시를 지우지 않는다 — 단건 등록과 같은 이유)
 ```
 
+### 품목 관리 흐름 (TASK-025)
+```
+Web App: JS_Items.html — 탭 진입 queryItems(token, {q, category, usage, page, pageSize:25, withCatalog}) 1회
+  → ItemService.gs: queryItems()
+    → validateSession() / staff 거부
+    → _getItemIndex(): 캐시 ITEM_INDEX(사람이 고치는 13개 필드, 미사용 포함, 배열로 압축 저장) — 미스면 마스터 1회 스캔
+    → 서버에서 검색(코드·품목명 부분 일치)·카테고리·사용유무 필터, 정렬(사용 → 미사용, 코드순), 한 페이지 slice
+    → { total, totalAll, page, items[25], catalog? }   // 마스터 4,300행을 화면에 내리지 않는다
+  검색어 입력은 350ms 디바운스 → 1회 호출, 늦게 온 옛 응답은 버림(reqSeq). "더 보기" = 다음 page를 받아 뒤에 붙임.
+  등록 addNewItem / 수정 updateItem(diff 확인 → reason 필수) / 미사용 disableItemMaster / 재사용 updateItem({usageStatus:'사용'})
+    → 응답 item(갱신된 행)으로 화면을 고친다 — 목록 재조회 없음
+    → 서버는 invalidateAll() 뒤 같은 요청 안에서 ITEM_INDEX를 다시 채운다(_refreshItemIndexAfterWrite) — 다음 조회가 웜 히트
+  CSV: 파일(SheetJS, JS_Tx readBulkFile 재사용) → 형식 검사 → uploadItemMasterCSV(rows, {dryRun:true}) 미리보기(신규/건너뜀/오류, 무쓰기)
+    → 확인 → uploadItemMasterCSV(rows) (백업 스냅샷 → 등록 → 이력 → 서식 → 재계산). 상한 ITEM_CSV_MAX_ROWS.
+  화면 상수(필드 라벨·기본값·페이지 크기)는 Index.html이 getItemUiConfigJson()으로 주입 — Config.gs SSOT.
+```
+
 ### 캐시 계층 (TASK-027)
 ```
 CacheService(스크립트 캐시) ← CacheManager (90KB 청크 분할, 기본 TTL 10분 = Config.gs TTL.DEFAULT)
   키: Config.gs CACHE_INVALIDATE_KEYS — 마스터 목록·코드·품목맵, 업장(SHOP_LIST), 설정(CONFIG_DATA_역할),
-      기초데이터(BASE_DATA_역할), 거래처(VENDOR_LIST), 대시보드(DASHBOARD_DATA)
+      기초데이터(BASE_DATA_역할), 거래처(VENDOR_LIST), 대시보드(DASHBOARD_DATA), 품목 관리 인덱스(ITEM_INDEX — TASK-025)
   무효화: invalidateAll() = getAll 1회 + removeAll 1회. 부르는 곳 — 마스터/업장/시즌/사용자/기초데이터/거래처 쓰기 API,
       시트 직접 편집(onEdit, 시스템 시트 어디든), 통합 갱신, 월마감, 마이그레이션, 웹앱 「시트 동기화」
   거래 등록은 캐시를 지우지 않는다. 마감 기준일이 없는 환경은 CLOSING_CUTOFF_NONE 부정 캐시로 통합 시트 풀 스캔을 막는다.

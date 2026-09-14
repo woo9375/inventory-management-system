@@ -87,6 +87,8 @@
 - 같은 시트를 한 요청 안에서 두 번 읽지 않는다. 업장관리 시트는 `_getActiveShops()`로만 읽는다.
 - 화면 쪽은 `loadWithTabCache(key, force, render, fetch)`(JS_UI.html) 패턴으로 탭 응답을 세션 동안 보관하고, 쓰기 직후에는 `force=true`로 다시 받는다.
 - `google.script.run` 왕복은 빈 함수도 약 1초다(DEV 실측). 화면 하나가 여러 호출을 순서대로 쏘지 말고, 서버에서 묶어 1회로 돌려준다(`getBootstrapData` 참고).
+- **큰 목록은 화면에 통째로 내리지 않는다.** 품목 마스터(4,300행)는 서버 페이징(`queryItems` — 인덱스 캐시 `ITEM_INDEX`에서 검색·필터·정렬 후 25건)으로만 조회한다. 검색어는 디바운스 뒤 1회 호출하고 늦게 온 옛 응답은 버린다(`reqSeq`). 쓰기 API는 갱신된 행(`item`)을 돌려주고 화면이 그 행만 고친다 — 목록을 다시 받지 않는다 (TASK-025).
+- 인덱스처럼 쓰기 직후 곧바로 다시 읽히는 캐시는 `invalidateAll()` 뒤 같은 요청 안에서 다시 채운다(`_refreshItemIndexAfterWrite`). 캐시 실패는 삼키고 다음 조회가 콜드 미스로 채운다 — 쓰기 성공을 뒤집지 않는다.
 
 ## 커밋 메시지
 ```

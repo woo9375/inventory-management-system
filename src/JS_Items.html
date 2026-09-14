@@ -1,0 +1,964 @@
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  [TASK-025] 품목 관리
+//
+//  품목 마스터는 4,300행이라 거래처 화면처럼 전부 받아 두고 거르지 않는다(2MB 전송 2.6초 — TASK-027 실측).
+//  검색·카테고리·사용유무·정렬은 서버(ItemService.gs queryItems)가 인덱스 캐시에서 끝내고 한 페이지(25건)만 준다.
+//  화면은 지금 보이는 페이지들만 들고 있다(itemState.items). "더 보기"는 다음 페이지를 받아 뒤에 붙인다.
+//
+//  왕복은 빈 함수도 약 1초라, 검색어는 350ms 디바운스 뒤 1회만 보내고 늦게 도착한 옛 응답은 버린다(reqSeq).
+//  탭 진입은 queryItems 1회(withCatalog로 필터·모달 드롭다운 선택지까지)로 끝난다.
+//  등록·수정·상태 전환 뒤에는 서버가 돌려준 행(item)으로 화면을 고치고 목록을 다시 받지 않는다.
+//
+//  순수 함수(itemQueryParams · computeItemDiff · validateItemForm · normalizeItemCsvRows …)는 DOM을 만지지 않는다 —
+//  tests/unit/items-client-logic.test.js가 이 파일의 <script>를 그대로 실행해 검증한다.
+// ═══════════════════════════════════════════════════════════════
+
+// Index.html이 주입하는 ITEM_UI(Config.gs getItemUiConfigJson)가 없을 때의 폴백 — 값은 Config.gs와 같아야 한다
+var ITEM_UI_FALLBACK = {
+  fieldLabels: { name: '품목명', category: '카테고리', grade: '규격', unit: '단위', initStock: '초기재고', leadTime: '리드타임',
+                 safetyDays: '안전재고일수', targetDays: '목표유지일수', vendorCode: '거래처', taxType: '과세구분',
+                 unitPrice: '매입단가', usageStatus: '사용유무' },
+  numericDefaults: { initStock: 0, unitPrice: 0, leadTime: 3, safetyDays: 5, targetDays: 30 },
+  taxTypes: ['과세', '비과세'],
+  usageStatuses: ['사용', '미사용'],
+  pageSize: 25,
+  csvMaxRows: 1000
+};
+/** 서버 결과 문구 앞의 이모지(✅·❌ 등 기존 API 문구)는 떼어 낸다 — 토스트·모달에 이모지를 쓰지 않는다 (UIGuidelines §3) */
+function itemMsg(message) {
+  return String(message == null ? '' : message).replace(/^[\u2600-\u27BF\u{1F300}-\u{1FAFF}\uFE0F]+\s*/u, '');
+}
+
+function itemUi() { return (typeof ITEM_UI === 'object' && ITEM_UI) ? ITEM_UI : ITEM_UI_FALLBACK; }
+
+// 수정 폼이 다루는 필드(diff 대상). 사용유무는 전환 모달이 따로 바꾼다. 품목코드는 바꿀 수 없다.
+var ITEM_FORM_FIELDS = ['name', 'category', 'grade', 'unit', 'vendorCode', 'taxType', 'initStock', 'unitPrice', 'leadTime', 'safetyDays', 'targetDays'];
+var ITEM_NUMERIC_FIELDS = ['initStock', 'unitPrice', 'leadTime', 'safetyDays', 'targetDays'];
+// CSV 열 순서 — 서버 uploadItemMasterCSV의 dataRows 계약과 같다
+var ITEM_CSV_COLUMNS = ['품목코드', '품목명', '카테고리', '규격', '단위', '초기재고', '리드타임', '안전재고일수', '목표유지일수', '과세구분', '매입단가'];
+var ITEM_FILTER_DEBOUNCE_MS = 350;
+
+var itemState = {
+  items: [], total: 0, totalAll: 0, page: 1, pageSize: 25, loaded: false,
+  filters: { q: '', category: '', usage: '사용' },
+  catalog: null,          // { categories, units, vendors:[{code,name,shortName}] }
+  editing: null,          // 수정 모달의 원본 행 (queryItems 응답의 항목)
+  pendingUpdates: null,   // diff 확인 단계에서 들고 있는 수정 값
+  usageTarget: null,      // 상태 전환 모달 { code, name, next }
+  reqSeq: 0,
+  filterTimer: null,
+  csv: { fileName: '', rows: [], check: null, running: false }
+};
+
+
+// ═══════════════════════════════════════════════════════════════
+//  순수 함수 — 조회 인자 · diff · 검증 · CSV 파싱 (DOM 없음)
+// ═══════════════════════════════════════════════════════════════
+
+/** 서버 queryItems 인자 */
+function itemQueryParams(filters, page, withCatalog) {
+  var f = filters || {};
+  return {
+    q: String(f.q == null ? '' : f.q).trim(),
+    category: String(f.category == null ? '' : f.category).trim(),
+    usage: f.usage || '사용',
+    page: page > 1 ? page : 1,
+    pageSize: itemUi().pageSize,
+    withCatalog: !!withCatalog
+  };
+}
+
+/** 값 정규화 — 숫자 필드는 Number, 나머지는 trim 문자열. 빈 숫자는 ''(서버가 기본값을 넣는다) */
+function normalizeItemValue(field, value) {
+  var s = String(value == null ? '' : value).trim();
+  if (ITEM_NUMERIC_FIELDS.indexOf(field) >= 0) return s === '' ? '' : Number(s);
+  return s;
+}
+
+/**
+ * 원본과 폼 값을 비교해 실제로 달라진 필드만 돌려준다.
+ * 숫자 3과 "3"은 같은 값이다. 빈 숫자 입력은 서버 기본값과 같으면 변경이 아니다.
+ * @returns {Array<{field, label, oldValue, newValue}>}
+ */
+function computeItemDiff(original, edited) {
+  var ui = itemUi();
+  var out = [];
+  ITEM_FORM_FIELDS.forEach(function(field) {
+    if (!edited || !Object.prototype.hasOwnProperty.call(edited, field)) return;
+    var oldV = normalizeItemValue(field, original ? original[field] : '');
+    var newV = normalizeItemValue(field, edited[field]);
+    if (ITEM_NUMERIC_FIELDS.indexOf(field) >= 0) {
+      if (newV === '') newV = ui.numericDefaults[field];
+      if (oldV === '') oldV = ui.numericDefaults[field];
+      if (Number(oldV) === Number(newV)) return;
+    } else if (oldV === newV) {
+      return;
+    }
+    out.push({ field: field, label: ui.fieldLabels[field] || field, oldValue: oldV, newValue: newV });
+  });
+  return out;
+}
+
+/**
+ * 폼 값 검증 — 서버(_validateItemFields)가 최종 판정하지만, 왕복 1초를 아끼려고 빈 필수값·숫자 형식은 화면에서 먼저 막는다.
+ * @param {string} mode 'add' | 'edit'  add일 때만 품목코드를 본다
+ */
+function validateItemForm(data, mode) {
+  var ui = itemUi();
+  var d = data || {};
+  var fail = function(m) { return { valid: false, message: m }; };
+  if (mode === 'add') {
+    var code = String(d.code == null ? '' : d.code).trim();
+    if (!code) return fail('품목코드를 입력해주세요.');
+    if (/\s/.test(code)) return fail('품목코드에는 공백을 넣을 수 없습니다.');
+  }
+  if (!String(d.name == null ? '' : d.name).trim()) return fail('품목명을 입력해주세요.');
+  if (!String(d.category == null ? '' : d.category).trim()) return fail('카테고리를 선택해주세요.');
+  if (!String(d.unit == null ? '' : d.unit).trim()) return fail('단위를 선택해주세요.');
+  if (d.taxType && ui.taxTypes.indexOf(d.taxType) < 0) return fail('과세구분은 ' + ui.taxTypes.join('/') + ' 중 하나여야 합니다.');
+  for (var i = 0; i < ITEM_NUMERIC_FIELDS.length; i++) {
+    var f = ITEM_NUMERIC_FIELDS[i];
+    var raw = String(d[f] == null ? '' : d[f]).trim();
+    if (raw === '') continue;
+    var n = Number(raw);
+    if (!isFinite(n) || n < 0) return fail((ui.fieldLabels[f] || f) + '은(는) 0 이상의 숫자여야 합니다.');
+  }
+  return { valid: true };
+}
+
+/** CSV 제목 행이면 열 이름 → 인덱스 매핑, 아니면 null (그때는 ITEM_CSV_COLUMNS 고정 순서) */
+function detectItemCsvHeader(firstRow) {
+  if (!firstRow) return null;
+  var aliases = {
+    code: ['품목코드', '코드', 'code', 'itemcode'],
+    name: ['품목명', '이름', 'name', 'itemname'],
+    category: ['카테고리', '분류', 'category'],
+    grade: ['규격', 'grade', 'spec'],
+    unit: ['단위', 'unit'],
+    initStock: ['초기재고', 'initstock', 'stock'],
+    leadTime: ['리드타임', 'leadtime'],
+    safetyDays: ['안전재고일수', 'safetydays'],
+    targetDays: ['목표유지일수', 'targetdays'],
+    taxType: ['과세구분', '과세', 'taxtype', 'tax'],
+    unitPrice: ['매입단가', '단가', 'unitprice', 'price']
+  };
+  var map = {};
+  firstRow.forEach(function(cell, idx) {
+    var key = String(cell == null ? '' : cell).replace(/\s+/g, '').toLowerCase();
+    if (!key) return;
+    Object.keys(aliases).forEach(function(field) {
+      if (map[field] === undefined && aliases[field].indexOf(key) >= 0) map[field] = idx;
+    });
+  });
+  if (map.code === undefined || map.name === undefined) return null;
+  return map;
+}
+
+/**
+ * SheetJS aoa → { rows: [[11열]…], rowNos: [파일 행 번호], errors: [{row, message}], hasHeader }
+ * 빈 행은 건너뛴다. 여기서는 형식만 본다(코드·품목명 필수, 숫자 형식, 과세구분 값) — 카테고리·단위·중복은 서버(dryRun)가 판정한다.
+ */
+function normalizeItemCsvRows(aoa) {
+  var ui = itemUi();
+  var fields = ['code', 'name', 'category', 'grade', 'unit', 'initStock', 'leadTime', 'safetyDays', 'targetDays', 'taxType', 'unitPrice'];
+  var header = detectItemCsvHeader(aoa && aoa[0]);
+  var col = header;
+  if (!col) { col = {}; fields.forEach(function(f, i) { col[f] = i; }); }
+  var start = header ? 1 : 0;
+  var rows = [], rowNos = [], errors = [];
+
+  for (var i = start; i < (aoa ? aoa.length : 0); i++) {
+    var r = aoa[i];
+    if (!r || r.every(function(c) { return c === '' || c === null || c === undefined; })) continue;
+    var rowNo = i + 1;
+    var cell = function(f) { var idx = col[f]; return (idx !== undefined && idx >= 0 && idx < r.length) ? r[idx] : ''; };
+    var values = fields.map(function(f) { return String(cell(f) == null ? '' : cell(f)).trim(); });
+    var problems = [];
+    if (!values[0]) problems.push('품목코드 누락');
+    if (!values[1]) problems.push('품목명 누락');
+    ITEM_NUMERIC_FIELDS.forEach(function(f) {
+      var v = values[fields.indexOf(f)];
+      if (v === '') return;
+      var n = Number(v.replace(/,/g, ''));
+      if (!isFinite(n) || n < 0) problems.push((ui.fieldLabels[f] || f) + '은(는) 0 이상의 숫자');
+      else values[fields.indexOf(f)] = String(n);
+    });
+    if (values[9] && ui.taxTypes.indexOf(values[9]) < 0) problems.push('과세구분은 ' + ui.taxTypes.join('/') + ' 중 하나');
+
+    if (problems.length) errors.push({ row: rowNo, message: problems.join(', ') });
+    else { rows.push(values); rowNos.push(rowNo); }
+  }
+  return { rows: rows, rowNos: rowNos, errors: errors, hasHeader: !!header };
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  목록 조회 · 렌더링
+// ═══════════════════════════════════════════════════════════════
+
+function readItemFilters() {
+  var q = document.getElementById('itemSearch');
+  var cat = document.getElementById('itemCategoryFilter');
+  var usage = document.getElementById('itemUsageFilter');
+  itemState.filters = {
+    q: q ? q.value : '',
+    category: cat ? cat.value : '',
+    usage: usage ? usage.value : '사용'
+  };
+  return itemState.filters;
+}
+
+/** 카드 헤더 캡션 — 지금 무엇을 보고 있는지 / 서버를 기다리는 중인지 */
+function setItemQueryState(text, busy) {
+  var el = document.getElementById('itemQueryState');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('is-busy', !!busy);
+}
+
+function describeItemFilters() {
+  var f = itemState.filters;
+  var parts = [];
+  parts.push(f.usage === 'all' ? '전체 품목' : f.usage + ' 품목');
+  if (f.category) parts.push(f.category);
+  if (f.q) parts.push('검색 "' + f.q + '"');
+  parts.push('코드순');
+  return parts.join(' · ');
+}
+
+/**
+ * 탭 진입. [TASK-027] 탭 캐시 규칙과 같다 — 1분 안 재방문은 그대로 두고, 그보다 오래됐으면 보이는 채로 1페이지를 조용히 다시 받는다.
+ * 쓰기 직후·「시트 동기화」는 force=true(clearTabData가 'items' 표식을 지운다).
+ */
+function loadItems(force) {
+  var entry = getTabData('items');
+  if (!force && itemState.loaded && entry && isTabDataFresh(entry)) return;
+  queryItemsPage(1, { overlay: force || !itemState.loaded, refreshCatalog: force || !itemState.catalog });
+}
+
+/**
+ * 한 페이지를 받는다. page=1이면 목록을 바꿔 끼우고, 그 뒤는 뒤에 붙인다.
+ * @param {{overlay?: boolean, refreshCatalog?: boolean}} opts
+ */
+function queryItemsPage(page, opts) {
+  opts = opts || {};
+  var seq = ++itemState.reqSeq;
+  var params = itemQueryParams(itemState.filters, page, !itemState.catalog || opts.refreshCatalog);
+  if (opts.overlay) showLoading();
+  setItemQueryState(page > 1 ? '다음 ' + params.pageSize + '건 불러오는 중…' : '검색 중…', true);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (opts.overlay) hideLoading();
+      if (seq !== itemState.reqSeq) return; // 늦게 도착한 옛 응답 — 더 새 요청이 이미 나갔다
+      if (!res || !res.success) {
+        setItemQueryState(describeItemFilters(), false);
+        showToast(itemMsg((res && res.message) || '품목 목록을 불러오지 못했습니다'), 'error');
+        return;
+      }
+      if (res.catalog) applyItemCatalog(res.catalog);
+      itemState.items = page > 1 ? itemState.items.concat(res.items || []) : (res.items || []);
+      itemState.page = res.page || page;
+      itemState.pageSize = res.pageSize || params.pageSize;
+      itemState.total = res.total || 0;
+      itemState.totalAll = res.totalAll || 0;
+      itemState.loaded = true;
+      setTabData('items', true);
+      renderItems();
+    })
+    .withFailureHandler(function(err) {
+      if (opts.overlay) hideLoading();
+      if (seq !== itemState.reqSeq) return;
+      setItemQueryState(describeItemFilters(), false);
+      showToast('품목 목록 로드 실패: ' + err.message, 'error');
+    })
+    .queryItems(getToken(), params);
+}
+
+/** 검색어 입력 — 디바운스 뒤 1페이지부터 다시 */
+function onItemFilterInput() {
+  if (itemState.filterTimer) clearTimeout(itemState.filterTimer);
+  itemState.filterTimer = setTimeout(onItemFilterChange, ITEM_FILTER_DEBOUNCE_MS);
+}
+
+function onItemFilterChange() {
+  if (itemState.filterTimer) { clearTimeout(itemState.filterTimer); itemState.filterTimer = null; }
+  readItemFilters();
+  queryItemsPage(1, {});
+}
+
+function showMoreItems() {
+  queryItemsPage(itemState.page + 1, {});
+}
+
+/** 카탈로그(카테고리·단위·거래처) 반영 — 필터 드롭다운은 선택값을 지키며 다시 채운다 */
+function applyItemCatalog(catalog) {
+  itemState.catalog = {
+    categories: (catalog && catalog.categories) || [],
+    units: (catalog && catalog.units) || [],
+    vendors: (catalog && catalog.vendors) || []
+  };
+  setTabData('itemCatalog', true);
+  var sel = document.getElementById('itemCategoryFilter');
+  if (!sel) return;
+  var current = sel.value;
+  sel.replaceChildren();
+  var all = document.createElement('option'); all.value = ''; all.textContent = '전체'; sel.appendChild(all);
+  itemState.catalog.categories.forEach(function(c) {
+    var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+  });
+  sel.value = current;
+  if (sel.value !== current) sel.value = '';
+}
+
+function itemVendorName(code) {
+  if (!code || !itemState.catalog) return '';
+  var v = itemState.catalog.vendors.find(function(x) { return x.code === code; });
+  return v ? v.name : '';
+}
+
+function formatItemPrice(v) {
+  var n = Number(v);
+  return isFinite(n) ? n.toLocaleString('ko-KR') : '—';
+}
+
+/** 목록 아래 "더 보기" 푸터 — 남은 건이 없으면 지운다 (거래처 화면과 같은 모양) */
+function renderItemMore() {
+  var wrap = document.getElementById('itemMoreWrap');
+  var remaining = itemState.total - itemState.items.length;
+  if (remaining <= 0) { if (wrap) wrap.remove(); return; }
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'itemMoreWrap';
+    wrap.className = 'card-footer card-footer--center';
+    var body = document.querySelector('#tab-items .card .card-body');
+    body.parentNode.insertBefore(wrap, body.nextSibling);
+  }
+  wrap.innerHTML = '<button type="button" class="btn btn-outline btn-sm" onclick="showMoreItems()">더 보기 (' +
+    Math.min(itemState.pageSize, remaining) + '건 더보기 / 검색 결과 ' + itemState.total + '건)</button>';
+}
+
+function renderItems() {
+  var tbody = document.getElementById('itemTableBody');
+  if (!tbody) return;
+  tbody.replaceChildren();
+
+  document.getElementById('itemCount').textContent =
+    itemState.total === itemState.totalAll ? itemState.total + '건' : itemState.total + ' / ' + itemState.totalAll + '건';
+  setItemQueryState(describeItemFilters(), false);
+  renderItemMore();
+
+  if (itemState.items.length === 0) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 10;
+    td.className = 'empty-state';
+    var icon = document.createElement('span');
+    icon.className = 'empty-icon';
+    icon.innerHTML = iconSvg('inbox');
+    var p = document.createElement('p');
+    p.textContent = itemState.totalAll === 0 ? '등록된 품목이 없습니다' : '검색 조건에 맞는 품목이 없습니다';
+    td.appendChild(icon); td.appendChild(p);
+    tr.appendChild(td); tbody.appendChild(tr);
+    return;
+  }
+
+  var fragment = document.createDocumentFragment();
+  itemState.items.forEach(function(it) { fragment.appendChild(buildItemRow(it)); });
+  tbody.replaceChildren(fragment);
+}
+
+/** 한 행 — 열 정렬: 코드·거래처 mono, 단가 num, 과세/사용유무/관리 ctr (UIGuidelines §5) */
+function buildItemRow(it) {
+  var tr = document.createElement('tr');
+  tr.setAttribute('data-code', it.code);
+
+  var cells = [
+    [it.code, 'mono'], [it.name, ''], [it.category, ''], [it.grade, ''], [it.unit, ''],
+    [it.vendorCode, 'mono'], [it.taxType, 'ctr'], [formatItemPrice(it.unitPrice), 'num']
+  ];
+  cells.forEach(function(c, i) {
+    var td = document.createElement('td');
+    if (c[1]) td.className = c[1];
+    td.textContent = cellText(c[0]);
+    if (i === 5 && it.vendorCode) td.title = itemVendorName(it.vendorCode) || it.vendorCode;
+    tr.appendChild(td);
+  });
+
+  var usageCell = document.createElement('td');
+  usageCell.className = 'ctr';
+  var badge = document.createElement('span');
+  var disabled = it.usageStatus === '미사용';
+  badge.className = 'status-badge ' + (disabled ? 'muted' : 'normal');
+  badge.textContent = it.usageStatus || '사용';
+  usageCell.appendChild(badge);
+  tr.appendChild(usageCell);
+
+  var actionCell = document.createElement('td');
+  actionCell.className = 'ctr actions';
+  actionCell.appendChild(actionButton('edit', 'pencil', '수정', function() { openEditItemModal(it.code); }));
+  actionCell.appendChild(actionButton('history', 'clock', '이력', function() { openItemChangelogModal(it.code); }));
+  var toggle = document.createElement('button');
+  toggle.className = 'action-btn action-btn--text ' + (disabled ? 'enable' : 'disable');
+  toggle.textContent = disabled ? '재사용' : '미사용';
+  toggle.title = disabled ? '다시 사용 품목으로 되돌립니다' : '미사용으로 전환합니다 (입출고·발주 대상에서 제외)';
+  toggle.addEventListener('click', function() { openItemUsageModal(it.code, disabled ? '사용' : '미사용'); });
+  actionCell.appendChild(toggle);
+  tr.appendChild(actionCell);
+  return tr;
+}
+
+/**
+ * 서버가 돌려준 행으로 화면을 고친다 — 목록을 다시 받지 않는다.
+ * 지금 필터에 맞지 않게 됐으면(미사용 전환 등) 목록에서 뺀다.
+ */
+function applyItemPatch(item) {
+  if (!item || !item.code) return;
+  var f = itemState.filters;
+  var idx = itemState.items.findIndex(function(x) { return x.code === item.code; });
+  var matches = (f.usage === 'all' || item.usageStatus === f.usage) &&
+    (!f.category || item.category === f.category) &&
+    (!f.q || item.code.toLowerCase().indexOf(f.q.toLowerCase()) >= 0 || item.name.toLowerCase().indexOf(f.q.toLowerCase()) >= 0);
+  if (idx >= 0 && matches) {
+    itemState.items[idx] = item;
+  } else if (idx >= 0) {
+    itemState.items.splice(idx, 1);
+    itemState.total = Math.max(0, itemState.total - 1);
+  } else if (matches) {
+    itemState.items.unshift(item);
+    itemState.total += 1;
+  }
+  renderItems();
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  등록 / 수정 모달
+// ═══════════════════════════════════════════════════════════════
+
+/** 값은 HTML에 박지 않고 fillItemForm이 .value로 넣는다 (escapeHtml은 큰따옴표를 막지 않는다 — JS_Vendor와 같은 이유) */
+function itemFormHtml(mode) {
+  var ui = itemUi();
+  var ph = function(f) { return ' placeholder="기본 ' + ui.numericDefaults[f] + '"'; };
+  return '<div class="form-grid">' +
+    '<div class="form-group"><label>품목코드 ' + (mode === 'add' ? '<span class="req">*</span>' : '') + '</label>' +
+      '<input type="text" id="itemCode"' + (mode === 'add' ? ' placeholder="예: HK-TW-0001" autocomplete="off"' : ' readonly') + '>' +
+      (mode === 'add' ? '<small class="form-help">입출고 기록의 키입니다. 등록 뒤에는 바꿀 수 없고, 이미 있는 코드는 거절됩니다.</small>'
+                      : '<small class="form-help">품목코드는 입출고 기록이 참조하는 키라 수정할 수 없습니다.</small>') + '</div>' +
+    '<div class="form-group"><label>품목명 <span class="req">*</span></label><input type="text" id="itemName" placeholder="예: 타월 40수"></div>' +
+    '<div class="form-group"><label>카테고리 <span class="req">*</span></label><select id="itemCategory"></select></div>' +
+    '<div class="form-group"><label>단위 <span class="req">*</span></label><select id="itemUnit"></select></div>' +
+    '<div class="form-group"><label>규격</label><input type="text" id="itemGrade" placeholder="예: 40수"></div>' +
+    '<div class="form-group"><label>거래처</label><select id="itemVendorCode"></select></div>' +
+    '<div class="form-group"><label>과세구분</label><select id="itemTaxType"></select></div>' +
+    '<div class="form-group"><label>매입단가</label><input type="number" id="itemUnitPrice" min="0"' + ph('unitPrice') + '></div>' +
+    '<div class="form-group"><label>초기재고</label><input type="number" id="itemInitStock" min="0"' + ph('initStock') + '></div>' +
+    '<div class="form-group"><label>리드타임(일)</label><input type="number" id="itemLeadTime" min="0"' + ph('leadTime') + '></div>' +
+    '<div class="form-group"><label>안전재고일수</label><input type="number" id="itemSafetyDays" min="0"' + ph('safetyDays') + '></div>' +
+    '<div class="form-group"><label>목표유지일수</label><input type="number" id="itemTargetDays" min="0"' + ph('targetDays') + '></div>' +
+    (mode === 'add'
+      ? '<div class="form-group form-group--full"><label>사유 <span class="hint">(선택)</span></label><input type="text" id="itemAddReason" placeholder="신규 등록"></div>'
+      : '') +
+    '</div>';
+}
+
+/** select 채우기 — 현재 값이 목록에 없으면(미사용 거래처 등) "(현재 값)"으로 남겨 두어 저장이 값을 몰래 바꾸지 않게 한다 */
+function fillItemSelect(id, options, current, emptyLabel) {
+  var sel = document.getElementById(id);
+  if (!sel) return;
+  sel.replaceChildren();
+  if (emptyLabel !== undefined) {
+    var e = document.createElement('option'); e.value = ''; e.textContent = emptyLabel; sel.appendChild(e);
+  }
+  var seen = false;
+  options.forEach(function(opt) {
+    var value = typeof opt === 'string' ? opt : opt.value;
+    var label = typeof opt === 'string' ? opt : opt.label;
+    var o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o);
+    if (value === current) seen = true;
+  });
+  if (current && !seen) {
+    var keep = document.createElement('option'); keep.value = current; keep.textContent = current + ' (현재 값)'; sel.appendChild(keep);
+  }
+  sel.value = current || '';
+}
+
+function fillItemForm(item) {
+  var ui = itemUi();
+  var d = item || {};
+  var cat = itemState.catalog || { categories: [], units: [], vendors: [] };
+  var set = function(id, value) { var el = document.getElementById(id); if (el) el.value = value == null ? '' : String(value); };
+
+  set('itemCode', d.code);
+  set('itemName', d.name);
+  set('itemGrade', d.grade);
+  fillItemSelect('itemCategory', cat.categories, d.category || '', '선택...');
+  fillItemSelect('itemUnit', cat.units, d.unit || '', '선택...');
+  fillItemSelect('itemVendorCode', cat.vendors.map(function(v) { return { value: v.code, label: v.code + ' · ' + v.name }; }), d.vendorCode || '', '선택 안 함');
+  fillItemSelect('itemTaxType', ui.taxTypes, d.taxType || ui.taxTypes[0]);
+  set('itemUnitPrice', d.unitPrice);
+  set('itemInitStock', d.initStock);
+  set('itemLeadTime', d.leadTime);
+  set('itemSafetyDays', d.safetyDays);
+  set('itemTargetDays', d.targetDays);
+}
+
+function collectItemForm() {
+  var val = function(id) { var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+  return {
+    code: val('itemCode'), name: val('itemName'), category: val('itemCategory'), grade: val('itemGrade'), unit: val('itemUnit'),
+    vendorCode: val('itemVendorCode'), taxType: val('itemTaxType'), unitPrice: val('itemUnitPrice'), initStock: val('itemInitStock'),
+    leadTime: val('itemLeadTime'), safetyDays: val('itemSafetyDays'), targetDays: val('itemTargetDays')
+  };
+}
+
+/** 카탈로그가 아직 없으면(목록보다 모달을 먼저 연 경우) 받아 온 뒤 이어서 한다 */
+function ensureItemCatalog(cb) {
+  if (itemState.catalog) return cb();
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || !res.success) return showToast((res && res.message) || '선택 목록을 불러오지 못했습니다', 'error');
+      applyItemCatalog(res);
+      cb();
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('선택 목록 로드 실패: ' + e.message, 'error'); })
+    .getItemCatalog(getToken());
+}
+
+function openAddItemModal() {
+  ensureItemCatalog(function() {
+    itemState.editing = null;
+    var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+      '<button class="btn btn-primary" id="btnItemAddSubmit" onclick="submitAddItem()">등록</button>';
+    openModal('품목 등록', itemFormHtml('add'), footer);
+    fillItemForm(null);
+    var code = document.getElementById('itemCode');
+    if (code) code.focus({ preventScroll: true });
+  });
+}
+
+function submitAddItem() {
+  var data = collectItemForm();
+  var checked = validateItemForm(data, 'add');
+  if (!checked.valid) return showToast(checked.message, 'warning');
+  var reasonEl = document.getElementById('itemAddReason');
+  data.reason = reasonEl ? reasonEl.value.trim() : '';
+
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) {
+      hideLoading();
+      showToast(itemMsg(r.message), r.success ? 'success' : 'error');
+      if (!r.success) return;
+      closeModal();
+      if (r.item) { itemState.totalAll += 1; applyItemPatch(r.item); }
+      else loadItems(true);
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
+    .addNewItem(getToken(), data);
+}
+
+function openEditItemModal(code, pending) {
+  var item = itemState.items.find(function(x) { return x.code === code; });
+  if (!item) return showToast('품목을 찾을 수 없습니다', 'error');
+  ensureItemCatalog(function() {
+    itemState.editing = item;
+    var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+      '<button class="btn btn-primary" id="btnItemEditSubmit" onclick="submitEditItem()">저장</button>';
+    openModal('품목 수정 — ' + item.code, itemFormHtml('edit'), footer);
+    // diff 확인에서 [뒤로]로 돌아오면 입력하던 값을 그대로 보여 준다
+    fillItemForm(pending ? Object.assign({}, item, pending, { code: item.code }) : item);
+  });
+}
+
+/** 1단계 [저장] — 바로 쓰지 않고 달라진 필드를 확인받는다 */
+function submitEditItem() {
+  var original = itemState.editing;
+  if (!original) return;
+  var data = collectItemForm();
+  var checked = validateItemForm(data, 'edit');
+  if (!checked.valid) return showToast(checked.message, 'warning');
+
+  var diff = computeItemDiff(original, data);
+  if (diff.length === 0) return showToast('변경된 내용이 없습니다', 'info');
+
+  var updates = {};
+  diff.forEach(function(d) { updates[d.field] = d.newValue; });
+  itemState.pendingUpdates = updates;
+  openItemDiffModal(original, diff);
+}
+
+function itemDiffValueText(field, v) {
+  if (v === '' || v === null || v === undefined) return '—';
+  if (field === 'vendorCode') { var n = itemVendorName(v); return n ? v + ' · ' + n : String(v); }
+  if (field === 'unitPrice') return formatItemPrice(v);
+  return String(v);
+}
+
+/** 2단계 — 변경 전/후 표 + 변경사유(필수). 사유가 비어 있으면 [최종 저장]이 눌리지 않는다 */
+function openItemDiffModal(original, diff) {
+  var body =
+    '<p class="mb-12">품목 <strong>' + escapeHtml(original.name) + '</strong> <span class="mono text-secondary">' + escapeHtml(original.code) + '</span>의 ' +
+      '변경 내용 <strong>' + diff.length + '건</strong>입니다. 확인 후 변경사유를 적어 주세요.</p>' +
+    '<div class="data-table-wrapper mb-12"><table class="data-table diff-table"><thead><tr><th>필드</th><th>변경 전</th><th>변경 후</th></tr></thead>' +
+      '<tbody id="itemDiffBody"></tbody></table></div>' +
+    '<div class="form-group"><label>변경사유 <span class="req">*</span></label>' +
+      '<input type="text" id="itemEditReason" placeholder="예: 단가 인상 반영 (거래처 공문 9/10)" oninput="onItemReasonInput(\'itemEditReason\', \'btnItemSaveConfirm\')">' +
+      '<small class="form-help">변경이력 시트에 변경자·변경 전후 값과 함께 남습니다.</small></div>';
+  var footer =
+    '<button class="btn btn-outline" onclick="backToItemEdit()">뒤로</button>' +
+    '<button class="btn btn-primary" id="btnItemSaveConfirm" onclick="submitItemUpdate()" disabled>최종 저장</button>';
+  openModal('변경 내용 확인', body, footer);
+
+  var tbody = document.getElementById('itemDiffBody');
+  diff.forEach(function(d) {
+    var tr = document.createElement('tr');
+    var tdF = document.createElement('td'); tdF.textContent = d.label;
+    var tdO = document.createElement('td'); tdO.className = 'old'; tdO.textContent = itemDiffValueText(d.field, d.oldValue);
+    var tdN = document.createElement('td'); tdN.className = 'new'; tdN.textContent = itemDiffValueText(d.field, d.newValue);
+    tr.appendChild(tdF); tr.appendChild(tdO); tr.appendChild(tdN); tbody.appendChild(tr);
+  });
+}
+
+function onItemReasonInput(inputId, buttonId) {
+  var input = document.getElementById(inputId);
+  var btn = document.getElementById(buttonId);
+  if (input && btn) btn.disabled = !input.value.trim();
+}
+
+function backToItemEdit() {
+  var original = itemState.editing;
+  if (!original) return closeModal();
+  openEditItemModal(original.code, itemState.pendingUpdates);
+}
+
+function submitItemUpdate() {
+  var original = itemState.editing;
+  var updates = itemState.pendingUpdates;
+  var reasonEl = document.getElementById('itemEditReason');
+  var reason = reasonEl ? reasonEl.value.trim() : '';
+  if (!original || !updates) return closeModal();
+  if (!reason) return showToast('변경사유를 입력해주세요', 'warning');
+
+  var payload = Object.assign({}, updates, { reason: reason });
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r) {
+      hideLoading();
+      if (!r.success) {
+        if (r.noChanges) { closeModal(); return showToast(itemMsg(r.message), 'info'); }
+        return showToast(itemMsg(r.message), 'error');
+      }
+      showToast(itemMsg(r.message), 'success');
+      closeModal();
+      itemState.editing = null; itemState.pendingUpdates = null;
+      if (r.item) applyItemPatch(r.item); else loadItems(true);
+    })
+    .withFailureHandler(function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); })
+    .updateItem(getToken(), original.code, payload);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  사용유무 전환 (미사용 ↔ 재사용) — 사유 필수
+// ═══════════════════════════════════════════════════════════════
+
+function openItemUsageModal(code, next) {
+  var item = itemState.items.find(function(x) { return x.code === code; });
+  if (!item) return showToast('품목을 찾을 수 없습니다', 'error');
+  itemState.usageTarget = { code: code, name: item.name, next: next };
+  var toDisable = next === '미사용';
+  var inputId = toDisable ? 'disableReason' : 'enableReason';
+  var body =
+    '<p class="modal-msg--lg">품목 <strong>' + escapeHtml(item.name) + '</strong> <span class="mono text-secondary">' + escapeHtml(item.code) + '</span>을(를) ' +
+      (toDisable ? '<strong class="text-risk">미사용</strong>으로 전환합니다.' : '<strong class="text-normal">사용</strong>으로 되돌립니다.') + '</p>' +
+    '<p class="modal-help">' + (toDisable
+      ? '미사용 품목은 입출고 검색·발주 계산·대시보드에서 빠집니다. 삭제가 아니므로 기록은 남고 언제든 재사용할 수 있습니다.'
+      : '다시 입출고 검색·발주 계산·대시보드에 포함됩니다.') + '</p>' +
+    '<div class="form-group"><label>변경사유 <span class="req">*</span></label>' +
+      '<input type="text" id="' + inputId + '" placeholder="' + (toDisable ? '예: 단종 (거래처 공급 중단)' : '예: 공급 재개') + '" oninput="onItemReasonInput(\'' + inputId + '\', \'btnItemUsageConfirm\')"></div>';
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn ' + (toDisable ? 'btn-danger' : 'btn-primary') + '" id="btnItemUsageConfirm" onclick="submitItemUsage()" disabled>' +
+      (toDisable ? '미사용 처리' : '재사용 처리') + '</button>';
+  openModal(toDisable ? '미사용 전환' : '재사용 전환', body, footer);
+  var input = document.getElementById(inputId);
+  if (input) input.focus({ preventScroll: true });
+}
+
+function submitItemUsage() {
+  var t = itemState.usageTarget;
+  if (!t) return closeModal();
+  var input = document.getElementById(t.next === '미사용' ? 'disableReason' : 'enableReason');
+  var reason = input ? input.value.trim() : '';
+  if (!reason) return showToast('변경사유를 입력해주세요', 'warning');
+
+  var done = function(r) {
+    hideLoading();
+    showToast(itemMsg(r.message), r.success ? 'success' : 'error');
+    if (!r.success) return;
+    closeModal();
+    itemState.usageTarget = null;
+    if (r.item) applyItemPatch(r.item); else loadItems(true);
+  };
+  var failed = function(e) { hideLoading(); showToast('오류: ' + e.message, 'error'); };
+
+  showLoading();
+  if (t.next === '미사용') {
+    google.script.run.withSuccessHandler(done).withFailureHandler(failed).disableItemMaster(getToken(), t.code, reason);
+  } else {
+    google.script.run.withSuccessHandler(done).withFailureHandler(failed).updateItem(getToken(), t.code, { usageStatus: '사용', reason: reason });
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  변경이력 모달 (9열 — 변경사유 H · 경로 I)
+// ═══════════════════════════════════════════════════════════════
+
+function openItemChangelogModal(code) {
+  var item = itemState.items.find(function(x) { return x.code === code; });
+  var title = '변경이력 — ' + (item ? item.name + ' (' + code + ')' : code);
+  var body = '<div class="data-table-wrapper scroll-box"><table class="data-table"><thead><tr>' +
+    '<th>변경일시</th><th>변경자</th><th>변경필드</th><th>변경 전</th><th>변경 후</th><th>변경사유</th><th class="ctr">경로</th>' +
+    '</tr></thead><tbody id="itemChangelogBody"><tr><td colspan="7" class="empty-state"><p>불러오는 중...</p></td></tr></tbody></table></div>';
+  openModal(title, body, '<button class="btn btn-outline" onclick="closeModal()">닫기</button>');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var tbody = document.getElementById('itemChangelogBody');
+      if (!tbody) return;
+      tbody.replaceChildren();
+      var records = (res && res.records) || [];
+      if (!res || res.success === false || records.length === 0) {
+        var tr = document.createElement('tr');
+        var td = document.createElement('td'); td.colSpan = 7; td.className = 'empty-state';
+        var icon = document.createElement('span'); icon.className = 'empty-icon'; icon.innerHTML = iconSvg('inbox');
+        var p = document.createElement('p'); p.textContent = (res && res.success === false) ? '이력을 불러오지 못했습니다' : '변경이력이 없습니다';
+        td.appendChild(icon); td.appendChild(p); tr.appendChild(td); tbody.appendChild(tr);
+        return;
+      }
+      var fragment = document.createDocumentFragment();
+      records.forEach(function(r) {
+        var tr = document.createElement('tr');
+        [r.date, r.user, r.field, r.oldValue, r.newValue, r.reason].forEach(function(v, i) {
+          var td = document.createElement('td');
+          if (i === 0) td.className = 'mono nowrap';
+          else if (i < 3) td.className = 'nowrap';
+          td.textContent = cellText(v);
+          tr.appendChild(td);
+        });
+        var routeCell = document.createElement('td'); routeCell.className = 'ctr';
+        var badge = document.createElement('span');
+        badge.className = 'status-badge ' + (r.route === '웹앱' ? 'primary' : (r.route === 'CSV' ? 'order' : 'muted'));
+        badge.textContent = r.route || '—';
+        routeCell.appendChild(badge); tr.appendChild(routeCell);
+        fragment.appendChild(tr);
+      });
+      tbody.replaceChildren(fragment);
+    })
+    .withFailureHandler(function(e) { showToast('이력 로드 실패: ' + e.message, 'error'); })
+    .getItemChangelog(getToken(), code);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  CSV 일괄 등록 — 안내 → 파일 → 형식 검사 → 서버 사전 검증(dryRun) → 미리보기 → 등록
+//  파일 읽기는 JS_Tx.html의 readBulkFile/decodeBulkCsv(SheetJS)를 그대로 쓴다.
+// ═══════════════════════════════════════════════════════════════
+
+function openItemCsvUploadModal() {
+  itemState.csv = { fileName: '', rows: [], check: null, running: false };
+  var action = getSystemActionConfig('uploadItemCsv');
+  var ui = itemUi();
+  var guide = action ? systemActionGuideHtml(action) : '';
+  var body =
+    '<div class="bulk-guide">' + guide +
+      '<div class="callout"><strong>파일 형식</strong> — CSV 또는 엑셀(XLSX), 첫 번째 시트만 읽습니다. ' +
+        '첫 행은 제목 행으로 두세요(제목이 있으면 열 순서가 달라도 이름으로 찾습니다).</div>' +
+      '<div class="data-table-wrapper mb-12"><table class="data-table"><thead><tr><th>열</th><th class="ctr">필수</th><th>규칙</th></tr></thead><tbody>' +
+        '<tr><td><strong>품목코드</strong></td><td class="ctr">필수</td><td>이미 있는 코드는 건너뜁니다 (수정되지 않습니다)</td></tr>' +
+        '<tr><td><strong>품목명</strong></td><td class="ctr">필수</td><td></td></tr>' +
+        '<tr><td><strong>카테고리 · 단위</strong></td><td class="ctr">필수</td><td>기초데이터에 등록된 값만</td></tr>' +
+        '<tr><td>규격</td><td></td><td>선택</td></tr>' +
+        '<tr><td>초기재고 · 리드타임 · 안전재고일수 · 목표유지일수 · 매입단가</td><td></td><td>0 이상 숫자. 비우면 기본값 ' +
+          ui.numericDefaults.initStock + ' · ' + ui.numericDefaults.leadTime + ' · ' + ui.numericDefaults.safetyDays + ' · ' + ui.numericDefaults.targetDays + ' · ' + ui.numericDefaults.unitPrice + '</td></tr>' +
+        '<tr><td>과세구분</td><td></td><td>' + ui.taxTypes.join(' / ') + ' (비우면 ' + ui.taxTypes[0] + ')</td></tr>' +
+      '</tbody></table></div>' +
+      '<p class="text-secondary">거래처는 파일에 없습니다 — 등록 뒤 품목 수정에서 고릅니다. 한 번에 최대 <strong>' + ui.csvMaxRows.toLocaleString('ko-KR') + '건</strong>.</p>' +
+    '</div>';
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn btn-outline" onclick="downloadItemCsvTemplate()">' + iconSvg('download') + ' 양식 다운로드</button>' +
+    '<button class="btn btn-primary" id="btnItemCsvStart" onclick="startItemCsvSelect()">' + iconSvg('upload') + ' 파일 선택 후 검증</button>';
+  openModal(action ? action.title : '품목마스터 CSV 업로드', body, footer);
+}
+
+function downloadItemCsvTemplate() {
+  if (typeof XLSX === 'undefined') return showToast('엑셀 라이브러리를 불러오지 못했습니다. 페이지를 새로고침해 주세요.', 'error');
+  var ws = XLSX.utils.aoa_to_sheet([
+    ITEM_CSV_COLUMNS,
+    ['HK-TW-0001', '타월 40수 (예시 행 — 지우고 입력)', '소모품', '40수', '장', 0, 3, 5, 30, '과세', 1500]
+  ]);
+  ws['!cols'] = [{ wch: 14 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '품목');
+  XLSX.writeFile(wb, '품목마스터_일괄등록_양식.xlsx');
+}
+
+function startItemCsvSelect() {
+  var input = document.getElementById('itemCsvFile');
+  input.value = '';
+  input.click();
+}
+
+function onItemCsvFileSelected(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  itemState.csv.fileName = file.name;
+  var ui = itemUi();
+
+  showLoading();
+  readBulkFile(file, function(err, aoa) {
+    if (err) { hideLoading(); return showToast(err.message, 'error'); }
+    var parsed = normalizeItemCsvRows(aoa);
+    var totalRows = parsed.rows.length + parsed.errors.length;
+    if (totalRows === 0) { hideLoading(); return showToast('데이터 행이 없습니다. 제목 행 아래에 내용을 입력했는지 확인하세요.', 'warning'); }
+    if (totalRows > ui.csvMaxRows) {
+      hideLoading();
+      return showToast('한 번에 최대 ' + ui.csvMaxRows.toLocaleString('ko-KR') + '건까지 등록할 수 있습니다. (파일: ' + totalRows + '건)', 'error');
+    }
+    if (parsed.errors.length > 0) {
+      hideLoading();
+      return showItemCsvErrors(totalRows, parsed.errors.map(function(e) { return e.row + '행: ' + e.message; }), '파일 형식 검사에서 오류가 발견되었습니다.');
+    }
+
+    // 서버 사전 검증 — 카테고리·단위·중복 코드는 시트를 알아야 한다. 아무것도 쓰지 않는다.
+    google.script.run
+      .withSuccessHandler(function(r) {
+        hideLoading();
+        if (!r || !r.success) {
+          return showItemCsvErrors(totalRows, (r && r.errors) || [], itemMsg((r && r.message) || '서버 검증에 실패했습니다.'));
+        }
+        itemState.csv.rows = parsed.rows;
+        itemState.csv.check = r;
+        showItemCsvPreview(r, parsed.hasHeader);
+      })
+      .withFailureHandler(function(e) { hideLoading(); showToast('검증 실패: ' + e.message, 'error'); })
+      .uploadItemMasterCSV(getToken(), parsed.rows, { dryRun: true });
+  });
+}
+
+function showItemCsvErrors(total, errors, headline) {
+  var body =
+    '<p class="mb-8">' + escapeHtml(headline || '') + '</p>' +
+    '<p class="mb-12 text-secondary">파일 <strong>' + escapeHtml(itemState.csv.fileName) + '</strong> · 전체 ' + total + '건 중 오류 <strong class="text-risk">' + errors.length + '건</strong>. <strong>아무것도 등록하지 않았습니다.</strong></p>' +
+    '<div class="data-table-wrapper scroll-box"><table class="data-table"><thead><tr><th>오류</th></tr></thead><tbody id="itemCsvErrorBody"></tbody></table></div>';
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">닫기</button>' +
+    '<button class="btn btn-primary" onclick="startItemCsvSelect()">다른 파일 선택</button>';
+  openModal('검증 실패 — 등록하지 않았습니다', body, footer);
+
+  var tbody = document.getElementById('itemCsvErrorBody');
+  var MAX = 50;
+  errors.slice(0, MAX).forEach(function(msg) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td'); td.textContent = itemMsg(msg);
+    tr.appendChild(td); tbody.appendChild(tr);
+  });
+  if (errors.length > MAX) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td'); td.className = 'muted'; td.textContent = '… 외 ' + (errors.length - MAX) + '건';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+}
+
+/** 미리보기 — 신규/건너뜀 집계 칩 + 신규 상위 20건 표. 신규가 0건이면 실행 버튼을 잠근다 */
+function showItemCsvPreview(check, hasHeader) {
+  var added = check.added || 0;
+  var ignored = check.ignored || 0;
+  var body =
+    '<p class="mb-8">파일 <strong>' + escapeHtml(itemState.csv.fileName) + '</strong>' +
+      (hasHeader ? '' : ' <span class="text-secondary">(제목 행 없음 — 고정 열 순서로 읽음)</span>') + '</p>' +
+    '<div class="stat-chips">' +
+      '<span class="stat-chip normal">신규 등록 <span class="n">' + added + '</span>건</span>' +
+      '<span class="stat-chip">건너뜀(기존 코드) <span class="n">' + ignored + '</span>건</span>' +
+      '<span class="stat-chip">오류 <span class="n">0</span>건</span>' +
+    '</div>' +
+    '<div class="data-table-wrapper scroll-box scroll-box--sm mb-12"><table class="data-table table-nowrap"><thead><tr>' +
+      '<th class="mono">품목코드</th><th>품목명</th><th>카테고리</th><th>규격</th><th>단위</th><th class="num">초기재고</th><th class="ctr">과세</th><th class="num">매입단가</th>' +
+      '</tr></thead><tbody id="itemCsvPreviewBody"></tbody></table></div>' +
+    (ignored > 0 && check.ignoredCodes && check.ignoredCodes.length
+      ? '<p class="text-secondary text-sm mb-8">건너뜀: <span id="itemCsvIgnored" class="mono"></span></p>' : '') +
+    '<p class="warn-text">등록을 시작하면 되돌릴 수 없습니다(미사용 전환만 가능). 등록 직전 마스터 스냅샷이 드라이브에 백업됩니다.</p>';
+  var footer =
+    '<button class="btn btn-outline" onclick="closeModal()">취소</button>' +
+    '<button class="btn btn-primary" id="btnItemCsvRun" onclick="runItemCsvUpload()"' + (added > 0 ? '' : ' disabled') + '>' + added + '건 등록 실행</button>';
+  openModal('업로드 확인', body, footer);
+
+  var tbody = document.getElementById('itemCsvPreviewBody');
+  var CLASS = ['mono', '', '', '', '', 'num', 'ctr', 'num'];
+  (check.preview || []).forEach(function(p) {
+    var tr = document.createElement('tr');
+    [p.code, p.name, p.category, p.grade, p.unit, p.initStock, p.taxType, formatItemPrice(p.unitPrice)].forEach(function(v, i) {
+      var td = document.createElement('td');
+      if (CLASS[i]) td.className = CLASS[i];
+      td.textContent = cellText(v);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  if (added > (check.preview || []).length) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td'); td.colSpan = 8; td.className = 'muted'; td.textContent = '… 외 ' + (added - check.preview.length) + '건';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+  var ig = document.getElementById('itemCsvIgnored');
+  if (ig) ig.textContent = check.ignoredCodes.join(', ') + (ignored > check.ignoredCodes.length ? ' …' : '');
+}
+
+function runItemCsvUpload() {
+  if (itemState.csv.running) return;
+  var rows = itemState.csv.rows;
+  if (!rows.length) return showToast('등록할 데이터가 없습니다. 파일을 다시 선택하세요.', 'warning');
+  itemState.csv.running = true;
+  var closeBtn = document.querySelector('#modalOverlay .modal-close');
+  if (closeBtn) closeBtn.hidden = true;
+
+  openModal('등록 중…',
+    '<p class="mb-8 text-bold">' + rows.length + '건을 검증·백업 후 등록하고 있습니다.</p>' +
+    '<p class="warn-text">완료될 때까지 이 창을 닫거나 새로고침하지 마세요.</p>', '');
+
+  var finish = function(r, err) {
+    itemState.csv.running = false;
+    if (closeBtn) closeBtn.hidden = false;
+    itemState.csv.rows = [];
+    if (err) {
+      showToast('등록 실패: ' + err.message, 'error');
+      openModal('등록 중단',
+        '<p class="mb-8 text-risk">' + escapeHtml('통신 오류: ' + err.message) + '</p>' +
+        '<p class="text-secondary">서버가 등록을 끝냈는데 응답만 유실됐을 수 있습니다. 목록에서 파일의 품목코드를 검색해 확인한 뒤, 없는 행만 다시 업로드하세요.</p>',
+        '<button class="btn btn-primary" onclick="closeModal(); loadItems(true)">확인</button>');
+      return;
+    }
+    if (!r || !r.success) {
+      showToast(itemMsg((r && r.message) || '등록에 실패했습니다'), 'error');
+      return showItemCsvErrors(rows.length, (r && r.errors) || [(r && r.message) || '알 수 없는 오류'], '서버 검증에 실패했습니다.');
+    }
+    var msg = itemMsg(r.message);
+    showToast(msg, 'success');
+    openModal('등록 완료',
+      '<p class="text-lg mb-8">' + escapeHtml(msg) + '</p>' +
+      '<p class="text-secondary">등록된 품목마다 변경이력에 "신규 등록"(경로 CSV)이 남았습니다. 재고 수치는 통합 갱신 때 반영됩니다.</p>',
+      '<button class="btn btn-primary" onclick="closeModal(); loadItems(true)">확인</button>');
+  };
+
+  google.script.run
+    .withSuccessHandler(function(r) { finish(r, null); })
+    .withFailureHandler(function(e) { finish(null, e); })
+    .uploadItemMasterCSV(getToken(), rows, { dryRun: false });
+}
+</script>
