@@ -8,35 +8,59 @@
 //  CSV 백업 유틸리티
 // ═══════════════════════════════════════════════════════════════════
 
+const BACKUP_FOLDER_NAME = "시스템_데이터_백업";
+
+/**
+ * [TASK-024] 백업 폴더 — 스프레드시트와 같은 폴더 아래 "시스템_데이터_백업" (없으면 만든다).
+ * backupToCSV(전체 백업)와 backupMasterSnapshot(CSV 업로드 전 스냅샷)이 같은 곳에 쓴다.
+ */
+function _getBackupFolder(ss) {
+  const mainFile = DriveApp.getFileById(ss.getId());
+  const parentFolder = mainFile.getParents().hasNext() ? mainFile.getParents().next() : DriveApp.getRootFolder();
+  const folders = parentFolder.getFoldersByName(BACKUP_FOLDER_NAME);
+  return folders.hasNext() ? folders.next() : parentFolder.createFolder(BACKUP_FOLDER_NAME);
+}
+
+/** 2차원 배열 → CSV 문자열 (셀은 큰따옴표로 감싸고 날짜는 yyyy-MM-dd) */
+function _toCsvString(data, tz) {
+  return data.map(row =>
+    row.map(cell => {
+      if (cell instanceof Date) {
+        return Utilities.formatDate(cell, tz, "yyyy-MM-dd");
+      }
+      return `"${String(cell).replace(/"/g, '""')}"`;
+    }).join(",")
+  ).join("\n");
+}
+
+/**
+ * [TASK-024] 품목 마스터 스냅샷 1장을 백업 폴더에 남긴다. 헤더부터 마지막 열까지 그대로.
+ * CSV 업로드처럼 마스터를 한 번에 여러 행 바꾸는 경로가 쓰기 **전에** 부른다 — 되돌릴 근거.
+ * @param {string} tag 파일명에 들어갈 꼬리표 (예: "업로드전") → 품목마스터_업로드전_<timestamp>.csv
+ * @returns {string} 만든 파일 이름. 실패하면 throw (호출자가 작업을 중단한다).
+ */
+function backupMasterSnapshot(tag) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tz = Session.getScriptTimeZone();
+  const timestamp = Utilities.formatDate(new Date(), tz, "yyyyMMdd_HHmmss");
+  const masterSheet = ss.getSheetByName(SHEET_MASTER);
+  if (!masterSheet) throw new Error("품목 마스터 시트가 없습니다.");
+  const lastRow = Math.max(masterSheet.getLastRow(), 2);
+  const data = masterSheet.getRange(1, 1, lastRow, masterSheet.getLastColumn() || MASTER_COL_COUNT).getValues();
+  const fileName = "품목마스터_" + (tag ? tag + "_" : "") + timestamp + ".csv";
+  _getBackupFolder(ss).createFile(fileName, _toCsvString(data, tz), MimeType.CSV);
+  console.log("[Backup] 품목 마스터 스냅샷: " + fileName);
+  return fileName;
+}
+
 function backupToCSV() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tz = Session.getScriptTimeZone();
   const timestamp = Utilities.formatDate(new Date(), tz, "yyyyMMdd_HHmmss");
-  
-  // 1. Get Folder
-  const mainFile = DriveApp.getFileById(ss.getId());
-  const parentFolder = mainFile.getParents().hasNext() ? mainFile.getParents().next() : DriveApp.getRootFolder();
-  
-  const FOLDER_NAME = "시스템_데이터_백업";
-  let backupFolder;
-  const folders = parentFolder.getFoldersByName(FOLDER_NAME);
-  if (folders.hasNext()) {
-    backupFolder = folders.next();
-  } else {
-    backupFolder = parentFolder.createFolder(FOLDER_NAME);
-  }
 
-  // 2. Helper function to generate CSV from 2D array
-  const generateCSV = (data) => {
-    return data.map(row => 
-      row.map(cell => {
-        if (cell instanceof Date) {
-          return Utilities.formatDate(cell, tz, "yyyy-MM-dd");
-        }
-        return `"${String(cell).replace(/"/g, '""')}"`;
-      }).join(",")
-    ).join("\n");
-  };
+  // 1. Get Folder — [TASK-024] 공용 헬퍼
+  const backupFolder = _getBackupFolder(ss);
+  const generateCSV = (data) => _toCsvString(data, tz);
 
   // 3. Backup INOUT Sheet
   const consolidated = ss.getSheetByName(SHEET_INOUT);

@@ -312,18 +312,19 @@ function resetDevEnvironment() {
       }
     });
 
-    // 2) 변경이력 정리 — 품목코드는 3번째 열
+    // 2) 변경이력 정리 — 품목코드는 3번째 열. [TASK-024] 9열(v19). v19 이전 시트면 있는 열만큼만 다룬다
     const clSheet = ss.getSheetByName(SHEET_CHANGELOG);
     if (clSheet && clSheet.getLastRow() >= 3) {
       const n = clSheet.getLastRow() - 2;
-      const data = clSheet.getRange(3, 1, n, 7).getValues();
+      const clCols = Math.min(CHANGELOG_COL_COUNT, clSheet.getMaxColumns());
+      const data = clSheet.getRange(3, 1, n, clCols).getValues();
       const kept = data.filter(function(r) {
-        return String(r[2] || "").indexOf(DEV_TEST_ITEM_PREFIX) !== 0;
+        return String(r[CHANGELOG_COLS.CODE] || "").indexOf(DEV_TEST_ITEM_PREFIX) !== 0;
       });
       const removed = data.length - kept.length;
       if (removed > 0) {
-        clSheet.getRange(3, 1, n, 7).clearContent();
-        if (kept.length > 0) clSheet.getRange(3, 1, kept.length, 7).setValues(kept);
+        clSheet.getRange(3, 1, n, clCols).clearContent();
+        if (kept.length > 0) clSheet.getRange(3, 1, kept.length, clCols).setValues(kept);
         report.push("변경이력: " + removed + "행 삭제");
       }
     }

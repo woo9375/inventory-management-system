@@ -232,25 +232,15 @@ function onEdit(e) {
   }
 
   // [TASK-003] 품목 마스터 시트 직접 편집 시 변경이력 자동 기록 (다중 셀/붙여넣기/Clear 지원)
+  //   [TASK-024] 품목 관리가 웹앱 API로 일원화된 뒤 이 블록은 **소유자가 시트에서 직접 고친 것**을 잡는 안전망이다.
+  //   기록은 ItemService의 _appendChangelog(9열)로 — 경로 "시트편집". 추적 열은 MASTER_FIELD_COLS(웹앱과 같은 목록).
   if (sheetName === SHEET_MASTER && row >= 3) {
     const startCol = e.range.getColumn();
     const numRows = e.range.getNumRows();
     const numCols = e.range.getNumColumns();
-    // 변경 추적 대상 컬럼 (1-based 열 번호 → 필드명, MASTER_COLS는 0-based)
-    // B(NAME+1), C(CATEGORY+1), D(GRADE+1), E(UNIT+1), G(INIT_STOCK+1),
-    // K(LEAD_TIME+1), L(SAFETY_DAYS+1), M(TARGET_DAYS+1),
-    // [TASK-017] S(VENDOR_CODE+1), T(TAX_TYPE+1), U(UNIT_PRICE+1), Y(USAGE_STATUS+1)
-    const TRACKED_COLS = {
-      [MASTER_COLS.NAME + 1]: "품목명", [MASTER_COLS.CATEGORY + 1]: "카테고리",
-      [MASTER_COLS.GRADE + 1]: "규격", [MASTER_COLS.UNIT + 1]: "단위",
-      [MASTER_COLS.INIT_STOCK + 1]: "초기재고",
-      [MASTER_COLS.LEAD_TIME + 1]: "리드타임", [MASTER_COLS.SAFETY_DAYS + 1]: "안전재고일수",
-      [MASTER_COLS.TARGET_DAYS + 1]: "목표유지일수",
-      // [TASK-017] 매입처 변경은 발주·정산의 근거가 바뀌는 일이라 이력이 남아야 한다
-      [MASTER_COLS.VENDOR_CODE + 1]: "거래처",
-      [MASTER_COLS.TAX_TYPE + 1]: "과세구분", [MASTER_COLS.UNIT_PRICE + 1]: "매입단가",
-      [MASTER_COLS.USAGE_STATUS + 1]: "사용유무"
-    };
+    // 변경 추적 대상 컬럼 (1-based 열 번호 → 필드명). MASTER_FIELD_COLS는 0-based
+    const TRACKED_COLS = {};
+    Object.keys(MASTER_FIELD_COLS).forEach(function (key) { TRACKED_COLS[MASTER_FIELD_COLS[key] + 1] = MASTER_FIELD_LABELS[key]; });
 
     // 편집 범위가 추적 대상 컬럼을 하나라도 포함하는지 확인
     let touchesTrackedCol = false;
@@ -272,7 +262,6 @@ function onEdit(e) {
         const newValues = e.range.getValues();
         const codeNamePairs = sheet.getRange(row, 1, numRows, 2).getValues();
 
-        const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
         const editor = Session.getActiveUser().getEmail() || "시트편집";
         const changeRecords = [];
 
@@ -293,26 +282,23 @@ function onEdit(e) {
             // 다중 셀 편집은 이전 값을 알 수 없으므로 대상 컬럼에 값이 있으면 기록(과다 기록 가능성은 Task에서 인지된 한계)
             if (isSingleCell && String(oldValue) === String(newValue)) continue;
 
-            changeRecords.push([timestamp, editor, itemCode, itemName, fieldName, oldValue, newValue]);
+            changeRecords.push({ itemCode: itemCode, itemName: itemName, fieldName: fieldName, oldValue: oldValue, newValue: newValue });
           }
         }
 
         if (changeRecords.length > 0) {
-          const changelogSheet = ss.getSheetByName(SHEET_CHANGELOG);
-          if (changelogSheet) {
-            // [TASK-003] 동시 편집 충돌 방지 — 여러 사용자가 동시에 붙여넣기해도 로그 행이 서로 덮어써지지 않도록 락 사용
-            const clLock = LockService.getScriptLock();
-            try {
-              clLock.waitLock(5000);
-              const startRow = changelogSheet.getLastRow() + 1;
-              changelogSheet.getRange(startRow, 1, changeRecords.length, 7).setValues(changeRecords)
-                .setHorizontalAlignment("center");
-              changelogSheet.getRange(startRow, 1, changeRecords.length, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-            } catch (lockErr) {
-              console.error("[onEdit ChangeLog] 락 획득 실패로 이력 기록 건너뜀: " + lockErr.message);
-            } finally {
-              clLock.releaseLock();
-            }
+          // [TASK-003] 동시 편집 충돌 방지 — 여러 사용자가 동시에 붙여넣기해도 로그 행이 서로 덮어써지지 않도록 락 사용
+          const clLock = LockService.getScriptLock();
+          try {
+            clLock.waitLock(5000);
+            _appendChangelog(changeRecords, {
+              actor: editor, route: CHANGELOG_ROUTES.SHEET,
+              reason: isSingleCell ? "(시트 직접편집)" : "(시트 붙여넣기/일괄편집)"
+            });
+          } catch (lockErr) {
+            console.error("[onEdit ChangeLog] 이력 기록 실패(락 또는 시트): " + lockErr.message);
+          } finally {
+            clLock.releaseLock();
           }
         }
       } catch(clErr) {

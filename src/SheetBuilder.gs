@@ -165,9 +165,9 @@ function applyItemMasterFormatting(ss, sheet) {
       SpreadsheetApp.newDataValidation().requireValueInRange(_vendorActiveCodeRange(vendorSheet), true).setAllowInvalid(false).build());
   }
 
-  sheet.getRange(3, MASTER_COLS.TAX_TYPE + 1, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["과세", "비과세"]).setAllowInvalid(false).build());
+  sheet.getRange(3, MASTER_COLS.TAX_TYPE + 1, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(ITEM_TAX_TYPES).setAllowInvalid(false).build());
   // [v9.0] 사용유무 드롭다운 ([TASK-017] X열 → Y열 = 25번째 열)
-  sheet.getRange(3, MASTER_COLS.USAGE_STATUS + 1, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(["사용", "미사용"]).setAllowInvalid(false).build());
+  sheet.getRange(3, MASTER_COLS.USAGE_STATUS + 1, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(ITEM_USAGE_STATUSES).setAllowInvalid(false).build());
 
   // Number format — 매입단가·공급단가·단위세액·재고합계금액(U~X)
   sheet.getRange(3, MASTER_COLS.UNIT_PRICE + 1, rows, 4).setNumberFormat("#,##0");
@@ -621,19 +621,35 @@ function buildBaseDataSheet(ss) {
 
 function buildChangelogSheet(ss) {
   const sheet = ss.insertSheet(SHEET_CHANGELOG);
-  sheet.getRange("A1:G1").merge().setValue("📋 품목 마스터 변경 이력").setBackground(COLORS.grayBg).setFontStyle("italic");
-
-  sheet.getRange("A2:G2").setValues([["변경일시", "변경자", "품목코드", "품목명", "변경필드", "변경 전", "변경 후"]])
-       .setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+  applyChangelogFormatting(sheet);
   sheet.setFrozenRows(2);
-
-  sheet.getRange("A3:G500").setBackground(COLORS.autoBg).setHorizontalAlignment("center");
-  sheet.getRange("A3:A500").setNumberFormat("yyyy-mm-dd hh:mm:ss");
-
-  sheet.setColumnWidth(1, 160); sheet.setColumnWidth(2, 100); sheet.setColumnWidth(3, 100);
-  sheet.setColumnWidth(4, 150); sheet.setColumnWidth(5, 120); sheet.setColumnWidth(6, 150); sheet.setColumnWidth(7, 150);
-
   sheet.protect().setDescription("변경이력 보호").setWarningOnly(true);
+  return sheet;
+}
+
+/**
+ * [TASK-024] 📋 변경이력 헤더·서식 — 9열(A~I). 빌더(buildChangelogSheet)와 마이그레이션(v19)이 함께 쓴다.
+ *
+ * 헤더·열 너비·데이터 영역 서식을 **현재** 구조(CHANGELOG_HEADERS)대로 다시 굽는다. 데이터 행은 건드리지 않는다
+ * (setValues/clearContent 없음). 7열짜리 옛 시트에 돌리면 H·I 헤더가 채워지고 열이 모자라면 늘린다 — 멱등.
+ */
+function applyChangelogFormatting(sheet) {
+  _ensureMinColumns(sheet, CHANGELOG_COL_COUNT);
+  const lastColLetter = String.fromCharCode(64 + CHANGELOG_COL_COUNT); // I
+  const rows = _formatRowCount(sheet);
+
+  // 1행 타이틀 — 옛 병합(A1:G1)이 남아 있으면 넓힐 수 없으므로 먼저 푼다
+  sheet.getRange(1, 1, 1, CHANGELOG_COL_COUNT).breakApart();
+  sheet.getRange("A1:" + lastColLetter + "1").merge().setValue("📋 품목 마스터 변경 이력").setBackground(COLORS.grayBg).setFontStyle("italic");
+
+  sheet.getRange(2, 1, 1, CHANGELOG_COL_COUNT).setValues([CHANGELOG_HEADERS])
+       .setBackground(COLORS.headerBg).setFontColor(COLORS.headerText).setFontWeight("bold").setHorizontalAlignment("center");
+
+  sheet.getRange(3, 1, rows, CHANGELOG_COL_COUNT).setBackground(COLORS.autoBg).setHorizontalAlignment("center");
+  sheet.getRange(3, 1, rows, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+
+  const widths = [160, 100, 100, 150, 120, 150, 150, 200, 90]; // A~I
+  widths.forEach(function (w, i) { sheet.setColumnWidth(i + 1, w); });
 }
 
 

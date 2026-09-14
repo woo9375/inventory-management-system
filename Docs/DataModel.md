@@ -109,6 +109,8 @@ Season (시즌) ──── affects ── SafetyStock calculation
 | field | String | 변경필드 |
 | oldValue | String | 변경 전 |
 | newValue | String | 변경 후 |
+| reason | String | 변경사유 — [TASK-024] 웹앱 수정·비활성화는 필수, 등록·CSV는 기본 문구 |
+| route | String | 경로 — `웹앱` / `CSV` / `시트편집` ([TASK-024]) |
 
 ### SystemLog (시스템 로그)
 | 속성 | 타입 | 설명 |

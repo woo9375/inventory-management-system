@@ -1013,6 +1013,33 @@ MIGRATIONS[18] = function migrate_to_v18(ss) {
   console.log("[Migration v18] 완료");
 };
 
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-024] v19: 📋 변경이력 7열 → 9열 (H 변경사유, I 경로)
+//
+// 왜: 이력에 "무엇이 바뀌었나"만 있고 "왜"와 "어느 문으로"가 없었다. 품목 관리가 웹앱 API로
+// 일원화되면(TASK-025) 사유는 사람이 적고 경로는 코드가 적는다. 소유자가 시트에서 직접 고친
+// 것(onEdit)은 경로 "시트편집"으로 남아 웹앱 밖의 변경을 감사에서 바로 골라낼 수 있다.
+//
+// 하는 일: 헤더 2행에 H·I를 채우고 타이틀 병합을 A1:I1로 넓히고 열 너비·서식을 다시 굽는다.
+// 기존 데이터 행은 손대지 않는다 — 옛 이력의 H·I는 빈 값으로 남는다(그때는 사유를 받지 않았다).
+// 멱등: applyChangelogFormatting은 현재 구조대로 헤더를 덮어쓸 뿐이라 두 번 돌려도 같다.
+// 시트가 없으면 빌더로 새로 만든다.
+// ═══════════════════════════════════════════════════════════════════
+MIGRATIONS[19] = function migrate_to_v19(ss) {
+  console.log("[Migration v19] 변경이력 9열 확장 시작...");
+  let sheet = ss.getSheetByName(SHEET_CHANGELOG);
+  if (!sheet) {
+    sheet = buildChangelogSheet(ss);
+    console.log("[Migration v19] " + SHEET_CHANGELOG + " 시트가 없어 새로 생성 (9열)");
+  } else {
+    const before = sheet.getMaxColumns();
+    applyChangelogFormatting(sheet);
+    console.log("[Migration v19] 헤더·서식 재적용 완료 — 열 " + before + " → " + sheet.getMaxColumns());
+  }
+  SpreadsheetApp.flush();
+  console.log("[Migration v19] 완료");
+};
+
 /**
  * [v18] 품목코드가 있는 행 중 사용유무가 사용/미사용이 아닌 것을 "사용"으로 되돌린다.
  *

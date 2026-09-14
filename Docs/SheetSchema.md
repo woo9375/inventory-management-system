@@ -39,7 +39,13 @@
 | X | 23 | `MASTER_COLS.TOTAL_VALUE` | Number | | 재고 합계금액 (FIFO) |
 | Y | 24 | `MASTER_COLS.USAGE_STATUS` | String | | 사용유무 (사용/미사용) |
 
-**수식 열** (코드에서 빈 값으로 설정): N, O, P, Q, V, W, X
+**수식 열**: N, O, P, Q, V, W, X — ARRAYFORMULA가 **3행**에 살고 열 전체로 흐른다. X는 `StockEngine.recalcStockAndUsage`가 행별 값으로 덮어쓴다.
+
+**마스터 쓰기 규칙 ([TASK-024])** — 코드가 마스터에 행을 쓸 때는 25열을 통째로 쓰지 않고 `ItemService.gs`의
+`MASTER_DATA_BLOCKS`(A:E · G:M · S:U · Y)만 `_writeMasterRows()`로 쓴다. 3행에 25열을 쓰면(빈 값이라도) ARRAYFORMULA가
+지워지고, 큰 `setValues`는 Sheets가 3000행 단위로 나눠 적용하므로 뒤 덩어리가 데이터 검증(`setAllowInvalid(false)`)에
+걸리면 앞 덩어리만 남는다. 전체 되쓰기가 필요한 정렬(`_sortMasterByUsageStatus`)은 검증을 걷어낸 뒤 블록으로 쓰고
+`applyItemMasterFormatting`으로 검증을 되살린다. `clearContent()`를 먼저 부르지 않는다(DEV에서 1291행 유실 사고, 2026-09-12).
 
 **거래처 참조 규칙** — S열은 거래처 **코드만** 담는다. 거래처명을 VLOOKUP으로 복제하지 않는
 이유는 거래처명이 바뀌었을 때 품목 마스터를 함께 고치지 않으면 두 시트가 갈라지기 때문이다.
@@ -193,16 +199,23 @@
 
 **Purpose**: 품목 마스터 변경 감사 이력
 **Data Start Row**: 3
+**Total Columns**: 9 (`CHANGELOG_COL_COUNT`) — [TASK-024, v19] H 변경사유·I 경로 추가
 
-| Column | Type | Description |
-|--------|------|-------------|
-| A | DateTime | 변경일시 |
-| B | String | 변경자 |
-| C | String | 품목코드 |
-| D | String | 품목명 |
-| E | String | 변경필드 |
-| F | String | 변경 전 |
-| G | String | 변경 후 |
+| Column | Index (0-based) | Constant | Type | Description |
+|--------|-----------------|----------|------|-------------|
+| A | 0 | `CHANGELOG_COLS.DATE` | DateTime | 변경일시 |
+| B | 1 | `CHANGELOG_COLS.USER` | String | 변경자 (웹앱: 세션 이름 / 시트편집: 편집자 이메일 / 시트 CSV 모달: "시트 CSV") |
+| C | 2 | `CHANGELOG_COLS.CODE` | String | 품목코드 |
+| D | 3 | `CHANGELOG_COLS.NAME` | String | 품목명 |
+| E | 4 | `CHANGELOG_COLS.FIELD` | String | 변경필드 — `MASTER_FIELD_LABELS` 값. 등록은 `신규 등록`(`CHANGELOG_NEW_ITEM_FIELD`) |
+| F | 5 | `CHANGELOG_COLS.OLD` | String | 변경 전 (등록은 `-`, 시트 다중 셀 편집은 `(이전값 없음)`) |
+| G | 6 | `CHANGELOG_COLS.NEW` | String | 변경 후 |
+| H | 7 | `CHANGELOG_COLS.REASON` | String | 변경사유 — 웹앱 수정·비활성화는 사람이 적는 필수 값, 등록·CSV는 선택(기본 "신규 등록" / "CSV 일괄 등록"). v19 이전 행은 빈 값 |
+| I | 8 | `CHANGELOG_COLS.ROUTE` | String | 경로 — `CHANGELOG_ROUTES`: `웹앱` / `CSV` / `시트편집`. v19 이전 행은 빈 값 |
+
+**기록 규칙** — 마스터에 쓰는 모든 서버 경로(`addNewItem`·`updateItem`·`disableItemMaster`·`uploadItemMasterCSV`)와 시트 `onEdit`은
+`ItemService.gs`의 `_appendChangelog()` 한 곳을 거친다. API 경로는 이력 기록이 실패하면 마스터 쓰기를 되돌린다(이력 없는 변경을 남기지 않는다).
+`onEdit` 경로는 소유자가 시트에서 직접 고친 것의 안전망이며, 실패해도 편집을 막지 않는다(로그만 남긴다).
 
 ---
 

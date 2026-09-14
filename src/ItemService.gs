@@ -3,13 +3,23 @@
 
 // ═══════════════════════════════════════════════════════════════════
 //  API: 품목 마스터
+//
+//  [TASK-024] 쓰기 경로(addNewItem · updateItem · disableItemMaster · uploadItemMasterCSV)는 전부
+//    검증(_validateItemFields) → 마스터 쓰기 → 이력(_appendChangelog) → 이력 실패 시 마스터 되돌림
+//  순서를 지킨다. 이력 없이 마스터만 바뀐 상태를 남기지 않기 위해서다. 시트 드롭다운이 막아 주던
+//  카테고리·단위·거래처·과세 검증을 웹앱 경로에서는 API가 맡는다 (구매팀은 시트를 뷰어로만 본다).
 // ═══════════════════════════════════════════════════════════════════
 
-function getItemMasterData(token) {
+/**
+ * 품목 목록. 기본은 '미사용' 제외(기존 호출부 — 기초데이터·입출고 화면 — 의 계약).
+ * [TASK-024] options.includeDisabled=true면 미사용까지 돌려준다 (품목 관리 화면용). 캐시 키도 따로 둔다.
+ */
+function getItemMasterData(token, options) {
   const session = validateSession(token);
   if (!session) return [];
 
-  const CACHE_KEY = 'ITEM_MASTER_DATA';
+  const includeDisabled = !!(options && options.includeDisabled);
+  const CACHE_KEY = includeDisabled ? 'ITEM_MASTER_DATA_ALL' : 'ITEM_MASTER_DATA';
   let items = CacheManager.get(CACHE_KEY);
   if (items) return items;
 
@@ -24,7 +34,7 @@ function getItemMasterData(token) {
   data.forEach(row => {
     if (!row[MASTER_COLS.CODE]) return;
     // 상태(사용여부)가 '미사용'인 품목은 제외
-    if (row[MASTER_COLS.USAGE_STATUS] === '미사용') return;
+    if (!includeDisabled && row[MASTER_COLS.USAGE_STATUS] === '미사용') return;
 
     items.push({
       code: row[MASTER_COLS.CODE], name: row[MASTER_COLS.NAME], category: row[MASTER_COLS.CATEGORY],
@@ -38,7 +48,8 @@ function getItemMasterData(token) {
       vendorCode: row[MASTER_COLS.VENDOR_CODE], // [TASK-017] 거래처명이 아니라 코드만 실어 보낸다
       taxType: row[MASTER_COLS.TAX_TYPE], unitPrice: row[MASTER_COLS.UNIT_PRICE],
       supplyPrice: row[MASTER_COLS.SUPPLY_PRICE],
-      taxAmount: row[MASTER_COLS.TAX_AMOUNT], totalValue: row[MASTER_COLS.TOTAL_VALUE]
+      taxAmount: row[MASTER_COLS.TAX_AMOUNT], totalValue: row[MASTER_COLS.TOTAL_VALUE],
+      usageStatus: row[MASTER_COLS.USAGE_STATUS] || "사용" // [TASK-024] 관리 화면이 사용/미사용을 구분해 보여준다
     });
   });
 
@@ -63,7 +74,7 @@ function getItemCodes(token) {
 
   const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
   codes = data.filter(r => r[MASTER_COLS.CODE] && r[MASTER_COLS.USAGE_STATUS] !== '미사용').map(r => ({ code: r[MASTER_COLS.CODE], name: r[MASTER_COLS.NAME] }));
-  
+
   CacheManager.set(CACHE_KEY, codes);
   return codes;
 }
@@ -77,32 +88,297 @@ function searchItemCodes(token, query) {
   if (!query || query.trim().length < 1) return [];
 
   const q = query.toLowerCase().trim();
-  
+
   // 캐시된 전체 리스트가 있으면 그것을 사용
   const CACHE_KEY = 'ITEM_CODES';
   let allCodes = CacheManager.get(CACHE_KEY);
-  
+
   if (!allCodes) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const masterSheet = ss.getSheetByName(SHEET_MASTER);
     const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
     if (masterLastRow < 3) return [];
-    
+
     const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
     allCodes = data.filter(r => r[MASTER_COLS.CODE] && r[MASTER_COLS.USAGE_STATUS] !== '미사용').map(r => ({ code: r[MASTER_COLS.CODE], name: r[MASTER_COLS.NAME] }));
     CacheManager.set(CACHE_KEY, allCodes);
   }
-  
+
   // 서버에서 필터링 후 상위 15건만 반환
   const matches = allCodes.filter(function(item) {
     return item.name.toLowerCase().indexOf(q) > -1 || item.code.toLowerCase().indexOf(q) > -1;
   }).slice(0, 15);
-  
+
   return matches;
 }
 
 
 
+// ═══════════════════════════════════════════════════════════════════
+//  [TASK-024] 공통 헬퍼 — 검증 · 행 조립 · 변경이력
+// ═══════════════════════════════════════════════════════════════════
+
+const ITEM_BUSY_MESSAGE = "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요.";
+
+/** 문자열 정규화 — null/undefined는 빈 문자열, 나머지는 trim */
+function _itemStr(v) {
+  return (v === undefined || v === null) ? "" : String(v).trim();
+}
+
+/**
+ * 검증에 쓰는 허용 목록. 시트 드롭다운(applyItemMasterFormatting)이 보는 것과 같은 소스다:
+ *   카테고리 = 📂 기초데이터 C열, 단위 = B열, 거래처코드 = 🤝 거래처관리에서 사용 중인 코드.
+ * 호출마다 시트를 읽는다(배치 2회). 캐시를 두면 기초데이터·거래처를 고친 직후 낡은 목록으로 거절하는 결함이 생긴다.
+ */
+function _loadItemCatalog(ss) {
+  const categories = new Set();
+  const units = new Set();
+  const baseSheet = ss.getSheetByName(SHEET_BASE_DATA);
+  if (baseSheet) {
+    const last = Math.max(baseSheet.getLastRow(), 3);
+    baseSheet.getRange(3, 2, last - 2, 2).getValues().forEach(function (r) { // B 단위 · C 카테고리
+      const unit = _itemStr(r[0]); if (unit) units.add(unit);
+      const cat = _itemStr(r[1]); if (cat) categories.add(cat);
+    });
+  }
+
+  const vendorCodes = new Set();
+  const vendorSheet = ss.getSheetByName(SHEET_VENDORS);
+  if (vendorSheet && typeof _readVendors === "function") {
+    _readVendors(vendorSheet).forEach(function (v) { if (v.usageStatus !== "미사용") vendorCodes.add(v.code); });
+  }
+  return { categories: categories, units: units, vendorCodes: vendorCodes };
+}
+
+/**
+ * 품목 필드 검증 + 정규화. 추가·수정·CSV가 같은 규칙을 탄다.
+ *
+ * @param {Object} fields  API 필드명 키 — code, name, category, grade, unit, initStock, leadTime, safetyDays,
+ *                         targetDays, vendorCode, taxType, unitPrice, usageStatus
+ * @param {{partial?: boolean, catalog?: Object, existingCodes?: Set}} options
+ *   partial=true(수정)면 fields에 **있는 키만** 검사한다. false(등록)면 전 필드를 검사하고 빈 값에 기본값을 넣는다.
+ *   existingCodes가 있으면 code 중복을 거절한다.
+ * @returns {{valid: boolean, message?: string, values?: Object}}  values = 시트에 쓸 정규화 값
+ */
+function _validateItemFields(fields, options) {
+  const o = options || {};
+  const partial = !!o.partial;
+  const catalog = o.catalog || _loadItemCatalog(SpreadsheetApp.getActiveSpreadsheet());
+  const f = fields || {};
+  const has = function (k) { return !partial || Object.prototype.hasOwnProperty.call(f, k); };
+  const fail = function (m) { return { valid: false, message: m }; };
+  const values = {};
+
+  if (has("code")) {
+    const code = _itemStr(f.code);
+    if (!code) return fail("품목코드를 입력해주세요.");
+    if (o.existingCodes && o.existingCodes.has(code)) return fail("품목코드 '" + code + "'는 이미 존재합니다.");
+    values.code = code;
+  }
+  if (has("name")) {
+    const name = _itemStr(f.name);
+    if (!name) return fail("품목명을 입력해주세요.");
+    values.name = name;
+  }
+  if (has("category")) {
+    const cat = _itemStr(f.category);
+    if (!cat) return fail("카테고리를 선택해주세요.");
+    if (!catalog.categories.has(cat)) return fail("카테고리 '" + cat + "'는 기초데이터에 없습니다.");
+    values.category = cat;
+  }
+  if (has("grade")) values.grade = _itemStr(f.grade);
+  if (has("unit")) {
+    const unit = _itemStr(f.unit);
+    if (!unit) return fail("단위를 선택해주세요.");
+    if (!catalog.units.has(unit)) return fail("단위 '" + unit + "'는 기초데이터에 없습니다.");
+    values.unit = unit;
+  }
+  if (has("vendorCode")) {
+    // 거래처는 선택 입력이다 — 빈 값 허용, 있으면 사용 중인 거래처여야 한다
+    const vc = _itemStr(f.vendorCode);
+    if (vc && !catalog.vendorCodes.has(vc)) return fail("거래처코드 '" + vc + "'는 거래처관리에 없거나 미사용입니다.");
+    values.vendorCode = vc;
+  }
+  if (has("taxType")) {
+    const tax = _itemStr(f.taxType) || ITEM_TAX_TYPES[0];
+    if (ITEM_TAX_TYPES.indexOf(tax) === -1) return fail("과세구분은 " + ITEM_TAX_TYPES.join("/") + " 중 하나여야 합니다.");
+    values.taxType = tax;
+  }
+  const numericKeys = Object.keys(ITEM_NUMERIC_DEFAULTS);
+  for (let i = 0; i < numericKeys.length; i++) {
+    const k = numericKeys[i];
+    if (!has(k)) continue;
+    const raw = f[k];
+    if (_itemStr(raw) === "") { values[k] = ITEM_NUMERIC_DEFAULTS[k]; continue; } // 빈 값 → 기본값
+    const n = Number(raw);
+    if (!isFinite(n) || n < 0) return fail(MASTER_FIELD_LABELS[k] + "은(는) 0 이상의 숫자여야 합니다.");
+    values[k] = n;
+  }
+  if (has("usageStatus")) {
+    const us = _itemStr(f.usageStatus) || ITEM_USAGE_STATUSES[0];
+    if (ITEM_USAGE_STATUSES.indexOf(us) === -1) return fail("사용유무는 " + ITEM_USAGE_STATUSES.join("/") + " 중 하나여야 합니다.");
+    values.usageStatus = us;
+  }
+  return { valid: true, values: values };
+}
+
+/** 정규화된 값 → 마스터 25열 행. 수식 열은 빈 값(ARRAYFORMULA가 채운다). */
+function _buildMasterRow(v) {
+  const row = new Array(MASTER_COL_COUNT).fill("");
+  row[MASTER_COLS.CODE] = v.code;
+  row[MASTER_COLS.NAME] = v.name;
+  row[MASTER_COLS.CATEGORY] = v.category;
+  row[MASTER_COLS.GRADE] = v.grade || "";
+  row[MASTER_COLS.UNIT] = v.unit;
+  row[MASTER_COLS.INIT_STOCK] = v.initStock;
+  row[MASTER_COLS.CURRENT_STOCK] = v.initStock; // 현재고 = 초기재고로 시작 (recalcStockAndUsage가 이후 갱신)
+  row[MASTER_COLS.DAILY_USAGE] = 0;
+  row[MASTER_COLS.LEAD_TIME] = v.leadTime;
+  row[MASTER_COLS.SAFETY_DAYS] = v.safetyDays;
+  row[MASTER_COLS.TARGET_DAYS] = v.targetDays;
+  row[MASTER_COLS.VENDOR_CODE] = v.vendorCode || "";
+  row[MASTER_COLS.TAX_TYPE] = v.taxType;
+  row[MASTER_COLS.UNIT_PRICE] = v.unitPrice;
+  row[MASTER_COLS.USAGE_STATUS] = v.usageStatus || ITEM_USAGE_STATUSES[0];
+  return row;
+}
+
+/**
+ * 품목코드(A열)가 있는 마지막 행. getLastRow()는 시트 끝까지 흐르는 ARRAYFORMULA 탓에
+ * 빈 행을 포함할 수 있어 쓰지 않는다. 데이터가 없으면 2(헤더).
+ */
+function _findMasterLastRow(masterSheet) {
+  const maxRows = masterSheet.getMaxRows();
+  if (maxRows < 3) return 2;
+  const codes = masterSheet.getRange(3, 1, maxRows - 2, 1).getValues();
+  for (let i = codes.length - 1; i >= 0; i--) {
+    if (_itemStr(codes[i][0]) !== "") return i + 3;
+  }
+  return 2;
+}
+
+/** 마스터에 있는 품목코드 집합 (문자열) */
+function _existingMasterCodes(masterSheet, lastRow) {
+  const codes = new Set();
+  if (lastRow >= 3) {
+    masterSheet.getRange(3, 1, lastRow - 2, 1).getValues().forEach(function (r) {
+      const c = _itemStr(r[0]); if (c) codes.add(c);
+    });
+  }
+  return codes;
+}
+
+/**
+ * [TASK-024] 마스터에 사람이 쓰는 데이터 열 블록 — [시작열(0-based), 열 수].
+ * 수식 열(N~Q, V~X)과 스페이서(F, J, R)는 뺀다. ARRAYFORMULA는 **3행**에 살기 때문에 25열을 통째로 쓰면
+ * 3행을 건드리는 순간 수식이 사라진다 — 마스터에 행을 쓰는 모든 코드는 이 블록으로만 쓴다.
+ * X(재고 합계금액)는 StockEngine이 행별 값으로 쓰는 열이라 여기 없다 — 행이 움직이면 recalcStockAndUsage로 맞춘다.
+ */
+const MASTER_DATA_BLOCKS = [
+  [MASTER_COLS.CODE, 5],          // A:E 코드·품목명·카테고리·규격·단위
+  [MASTER_COLS.INIT_STOCK, 7],    // G:M 초기재고·현재고·일평균·(J 스페이서)·리드타임·안전재고일수·목표유지일수
+  [MASTER_COLS.VENDOR_CODE, 3],   // S:U 거래처코드·과세구분·매입단가
+  [MASTER_COLS.USAGE_STATUS, 1]   // Y   사용유무
+];
+
+/** 25열 행 배열(들)을 데이터 블록 단위로 쓴다 (블록당 setValues 1회 = 총 4회). 수식 열은 건드리지 않는다. */
+function _writeMasterRows(masterSheet, startRow, rows) {
+  MASTER_DATA_BLOCKS.forEach(function (b) {
+    const values = rows.map(function (r) { return r.slice(b[0], b[0] + b[1]); });
+    masterSheet.getRange(startRow, b[0] + 1, rows.length, b[1]).setValues(values);
+  });
+}
+
+/** 데이터 블록만 비운다 — 등록/CSV 되돌리기용. clearContent를 25열에 걸면 3행 수식까지 지운다. */
+function _clearMasterRows(masterSheet, startRow, numRows) {
+  MASTER_DATA_BLOCKS.forEach(function (b) {
+    masterSheet.getRange(startRow, b[0] + 1, numRows, b[1]).clearContent();
+  });
+}
+
+/**
+ * 마스터 끝에 행을 덧붙인다 (행 확충 포함). 검증·중복 검사는 호출자가 끝낸 뒤다.
+ * @returns {number} 첫 번째로 쓴 행 번호 — 이력 기록이 실패하면 호출자가 이 행부터 되돌린다
+ */
+function _appendMasterRows(masterSheet, rows) {
+  const lastRow = _findMasterLastRow(masterSheet);
+  const startRow = lastRow + 1;
+  // [TASK-016] 남은 행보다 많이 쓰면 setValues가 시트 밖을 가리켜 실패한다 — 먼저 확충
+  _ensureMinRows(masterSheet, lastRow + rows.length);
+  _writeMasterRows(masterSheet, startRow, rows);
+  return startRow;
+}
+
+/** 등록 이력 1건 — 필드가 아니라 "품목이 생겼다"는 사건이므로 E열은 CHANGELOG_NEW_ITEM_FIELD */
+function _newItemRecord(v) {
+  return { itemCode: v.code, itemName: v.name, fieldName: CHANGELOG_NEW_ITEM_FIELD, oldValue: "-", newValue: v.name };
+}
+
+/** 변경이력 시트. 없으면 throw — 이력을 못 남기는 쓰기는 하지 않는다. */
+function _requireChangelogSheet(ss) {
+  const sheet = ss.getSheetByName(SHEET_CHANGELOG);
+  if (!sheet) throw new Error("변경이력 시트(" + SHEET_CHANGELOG + ")가 없어 작업을 중단했습니다.");
+  return sheet;
+}
+
+/**
+ * [TASK-024] 변경이력 기록 — 마스터에 쓰는 모든 경로가 이 한 곳을 거친다.
+ *
+ * @param {Array<{itemCode, itemName, fieldName, oldValue, newValue}>} records
+ * @param {{actor: string, route: string, reason?: string, when?: Date}} options
+ *   route는 CHANGELOG_ROUTES 값. reason은 사람이 적은 사유(없으면 빈 값).
+ * @returns {number} 기록한 행 수
+ *
+ * 실패하면 throw한다 — 호출자는 잡아서 마스터를 되돌린다.
+ * 락은 잡지 않는다: 호출자가 이미 ScriptLock 안에 있다(addNewItem·updateItem·CSV·onEdit 모두). 같은 실행이
+ * 락을 두 번 잡는 재진입 동작에 기대지 않기 위해서다.
+ */
+function _appendChangelog(records, options) {
+  if (!records || records.length === 0) return 0;
+  const o = options || {};
+  const sheet = _requireChangelogSheet(SpreadsheetApp.getActiveSpreadsheet());
+  const when = o.when || new Date();
+  const actor = o.actor || "시스템";
+  const route = o.route || CHANGELOG_ROUTES.WEBAPP;
+  const reason = _itemStr(o.reason);
+  const cell = function (v) { return (v === undefined || v === null) ? "" : v; };
+
+  const rows = records.map(function (r) {
+    return [when, actor, cell(r.itemCode), cell(r.itemName), cell(r.fieldName), cell(r.oldValue), cell(r.newValue), reason, route];
+  });
+
+  _ensureMinColumns(sheet, CHANGELOG_COL_COUNT); // v19 이전 시트(7열)에서도 죽지 않는다
+  const startRow = Math.max(sheet.getLastRow() + 1, 3);
+  _ensureMinRows(sheet, startRow + rows.length - 1);
+  sheet.getRange(startRow, 1, rows.length, CHANGELOG_COL_COUNT).setValues(rows)
+       .setHorizontalAlignment("center").setBackground(COLORS.autoBg);
+  sheet.getRange(startRow, 1, rows.length, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+  return rows.length;
+}
+
+/** 시트 값 비교 — 숫자 3과 "3", 빈 값과 null을 같은 것으로 본다 */
+function _sameCellValue(a, b) {
+  const s = function (v) { return (v === undefined || v === null) ? "" : String(v); };
+  return s(a) === s(b);
+}
+
+/** 마스터 구조가 v17(25열)이 아니면 쓰지 않는다 — 코드 배포와 마이그레이션 사이 창에서 열이 밀린 채 쓰는 사고 방지 */
+function _masterSchemaFailure(masterSheet, where) {
+  if (_isMasterSchemaCurrent(masterSheet)) return null;
+  _warnMasterSchemaStale(where);
+  return { success: false, message: "❌ 품목 마스터 구조가 최신이 아닙니다. 스키마 마이그레이션을 먼저 실행해주세요." };
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  쓰기 API
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 품목 등록 (웹앱). itemData: code·name·category·unit 필수, grade·initStock·leadTime·safetyDays·targetDays·
+ * vendorCode·taxType·unitPrice 선택(기본값 적용), reason 선택(빈 값이면 "신규 등록").
+ */
 function addNewItem(token, itemData) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "인증이 필요합니다." };
@@ -113,46 +389,40 @@ function addNewItem(token, itemData) {
   try {
     lock.waitLock(10000);
   } catch (e) {
-    return { success: false, message: "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요." };
+    return { success: false, message: ITEM_BUSY_MESSAGE };
   }
 
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const masterSheet = ss.getSheetByName(SHEET_MASTER);
-    const lastRow = masterSheet.getLastRow();
-    
-    // [FIX] 품목코드 중복 검증
-    if (lastRow >= 3) {
-      const existingCodes = masterSheet.getRange(3, 1, lastRow - 2, 1).getValues().flat();
-      if (existingCodes.includes(itemData.code)) {
-        return { success: false, message: `❌ 품목코드 '${itemData.code}'는 이미 존재합니다.` };
-      }
+    const stale = _masterSchemaFailure(masterSheet, "품목 등록");
+    if (stale) return stale;
+    _requireChangelogSheet(ss);
+
+    const lastRow = _findMasterLastRow(masterSheet);
+    const checked = _validateItemFields(itemData || {}, {
+      catalog: _loadItemCatalog(ss), existingCodes: _existingMasterCodes(masterSheet, lastRow)
+    });
+    if (!checked.valid) return { success: false, message: "❌ " + checked.message };
+    const values = checked.values;
+
+    const startRow = _appendMasterRows(masterSheet, [_buildMasterRow(values)]);
+    try {
+      _appendChangelog([_newItemRecord(values)], {
+        actor: session.name, route: CHANGELOG_ROUTES.WEBAPP,
+        reason: _itemStr(itemData && itemData.reason) || CHANGELOG_NEW_ITEM_FIELD
+      });
+    } catch (clErr) {
+      _clearMasterRows(masterSheet, startRow, 1);
+      console.error("[TASK-024] addNewItem 이력 기록 실패 → 등록 취소: " + clErr.message);
+      return { success: false, message: "❌ 변경이력을 기록하지 못해 등록을 취소했습니다: " + clErr.message };
     }
 
-    const newRow = Math.max(lastRow + 1, 3);
-
-    // [v10.0] 배치 쓰기: setValue() 6회 → setValues() 1회로 통합
-    const newRowData = new Array(MASTER_COL_COUNT).fill("");
-    newRowData[MASTER_COLS.CODE] = itemData.code;
-    newRowData[MASTER_COLS.NAME] = itemData.name;
-    newRowData[MASTER_COLS.CATEGORY] = itemData.category;
-    newRowData[MASTER_COLS.GRADE] = itemData.grade;
-    newRowData[MASTER_COLS.UNIT] = itemData.unit;
-    newRowData[MASTER_COLS.INIT_STOCK] = itemData.initStock || 0;
-    newRowData[MASTER_COLS.CURRENT_STOCK] = itemData.initStock || 0;
-    newRowData[MASTER_COLS.DAILY_USAGE] = 0;
-    newRowData[MASTER_COLS.LEAD_TIME] = itemData.leadTime || 3;
-    newRowData[MASTER_COLS.SAFETY_DAYS] = itemData.safetyDays || 5;
-    newRowData[MASTER_COLS.TARGET_DAYS] = itemData.targetDays || 30;
-    // [TASK-017] 거래처는 선택 입력이다. 미지정이면 빈 값으로 두고 나중에 시트에서 고르게 한다.
-    newRowData[MASTER_COLS.VENDOR_CODE] = itemData.vendorCode || "";
-    newRowData[MASTER_COLS.TAX_TYPE] = itemData.taxType || "과세";
-    newRowData[MASTER_COLS.UNIT_PRICE] = itemData.unitPrice || 0;
-    newRowData[MASTER_COLS.USAGE_STATUS] = "사용";
-    masterSheet.getRange(newRow, 1, 1, MASTER_COL_COUNT).setValues([newRowData]);
-
     CacheManager.invalidateAll();
-    return { success: true, message: `✅ 품목 '${itemData.name}' 등록 완료` };
+    return { success: true, message: "✅ 품목 '" + values.name + "' 등록 완료", code: values.code };
+  } catch (err) {
+    console.error("[TASK-024] addNewItem 실패: " + err.message);
+    return { success: false, message: "❌ " + err.message };
   } finally {
     lock.releaseLock();
   }
@@ -160,217 +430,217 @@ function addNewItem(token, itemData) {
 
 
 
-// [v7.0] 변경이력 기록 추가
-
+/**
+ * CSV 일괄 등록. 신규 코드만 추가하고 기존 코드는 건너뛴다(기존 품목 일괄 수정은 2차 과제).
+ * dataRows 열 순서: [품목코드, 품목명, 카테고리, 규격, 단위, 초기재고, 리드타임, 안전재고일수, 목표유지일수, 과세구분, 매입단가]
+ * [TASK-024] 행마다 _validateItemFields를 타고(한 행이라도 실패하면 전체 중단), 쓰기 전 마스터 스냅샷을 Drive에 남기며,
+ *   추가된 품목마다 '신규 등록' 이력을 남긴다.
+ */
 function uploadItemMasterCSV(token, dataRows) {
+  let actor = "시트 CSV";
   if (token !== 'SHEET_UI') {
     const session = validateSession(token);
     if (!session || session.role === 'staff') return { success: false, message: "권한이 없습니다." };
+    actor = session.name;
+  }
+  if (!Array.isArray(dataRows) || dataRows.length === 0) return { success: false, message: "❌ 업로드할 데이터가 없습니다." };
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { success: false, message: ITEM_BUSY_MESSAGE };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  
-  // [FIX] ARRAYFORMULA 등으로 인해 getLastRow()가 빈 행을 포함하는 문제 해결 (A열 기준 실제 마지막 행 탐색)
-  const maxRows = masterSheet.getMaxRows();
-  let masterLastRow = 2; // 헤더 2행
-  if (maxRows >= 3) {
-    const allCodes = masterSheet.getRange(3, 1, maxRows - 2, 1).getValues();
-    for (let i = allCodes.length - 1; i >= 0; i--) {
-      if (allCodes[i][0] !== "") {
-        masterLastRow = i + 3;
-        break;
-      }
-    }
-  }
-  
-  // 기존 코드 가져오기 (O(1) 조회를 위해 Set 사용)
-  const existingCodes = new Set();
-  if (masterLastRow >= 3) {
-    const codeValues = masterSheet.getRange(3, 1, masterLastRow - 2, 1).getValues();
-    codeValues.forEach(row => { if (row[0]) existingCodes.add(row[0].toString()); });
-  }
-  
-  // 기초데이터 카테고리 유효성 검사를 위한 준비
-  const baseSheet = ss.getSheetByName(SHEET_BASE_DATA);
-  const baseLastRow = Math.max(baseSheet.getLastRow(), 3);
-  const validCategories = new Set(baseSheet.getRange(3, 3, baseLastRow - 2, 1).getValues().flat().filter(v => v));
-  
-  const newRows = [];
-  let ignoredCount = 0;
-  const errors = [];
-  
-  // CSV 데이터(dataRows) 포맷: [품목코드, 품목명, 카테고리, ABC등급, 단위, ... ]
-  // 최소 품목코드(0)와 품목명(1)이 있어야 함
-  dataRows.forEach(row => {
-    if (!row || row.length < 2) return;
-    const code = row[0].toString().trim();
-    if (!code) return;
-    
-    if (existingCodes.has(code)) {
-      ignoredCount++;
-    } else {
-      const cat = row[2] ? row[2].toString().trim() : "";
-      if (cat && !validCategories.has(cat)) {
-        errors.push(`[${code}] '${cat}'`);
-      } else {
-        // [v10.0] MASTER_COLS 상수 사용으로 매직 넘버 제거
-        const newRow = new Array(MASTER_COL_COUNT).fill("");
-        newRow[MASTER_COLS.CODE] = code;
-        newRow[MASTER_COLS.NAME] = row[1] || "";
-        newRow[MASTER_COLS.CATEGORY] = cat;
-        newRow[MASTER_COLS.GRADE] = row[3] || ""; // [FIX] 규격은 빈 값 허용 (과거 ABC등급의 "C" 기본값 제거)
-        newRow[MASTER_COLS.UNIT] = row[4] || "";
-        const initStock = Number(row[5]) || 0;
-        newRow[MASTER_COLS.INIT_STOCK] = initStock;
-        newRow[MASTER_COLS.CURRENT_STOCK] = initStock; // [FIX] 현재고 = 초기재고로 동기화
-        newRow[MASTER_COLS.DAILY_USAGE] = 0;
-        newRow[MASTER_COLS.LEAD_TIME] = Number(row[6]) || 3;
-        newRow[MASTER_COLS.SAFETY_DAYS] = Number(row[7]) || 5;
-        newRow[MASTER_COLS.TARGET_DAYS] = Number(row[8]) || 30;
-        // [TASK-017] CSV 열 순서(row[N])는 파일 포맷이라 그대로 두고, 거래처코드는 빈 값으로 남긴다.
-        //   MASTER_COLS로 목적지를 잡으므로 열이 하나 늘어도 매핑이 밀리지 않는다
-        //   (newRow는 fill("")로 만들어져 VENDOR_CODE 자리는 이미 빈 값이다).
-        newRow[MASTER_COLS.TAX_TYPE] = row[9] || "과세";
-        newRow[MASTER_COLS.UNIT_PRICE] = Number(row[10]) || 0;
-        newRow[MASTER_COLS.USAGE_STATUS] = "사용";
-        
-        newRows.push(newRow);
-        existingCodes.add(code); // 같은 CSV 내 중복 방지
-      }
-    }
-  });
-  
-  // [v9.0 FIX] throw 대신 return으로 에러 전달 (withFailureHandler 대신 withSuccessHandler에서 처리)
-  if (errors.length > 0) {
-    return { 
-      success: false, 
-      message: `❌ 미등록 카테고리가 포함된 품목이 있어 업로드가 중단되었습니다. (총 ${errors.length}건)\n기초데이터에 먼저 추가하시거나 올바른 카테고리를 입력해주세요.\n오류 항목: ${errors.join(', ')}`
-    };
-  }
-  
-  if (newRows.length > 0) {
-    // [TASK-016] 쓰기 전에 행을 확충한다.
-    //   남은 행보다 CSV가 크면 setValues가 시트 밖을 가리켜 업로드 자체가 실패했다.
-    _ensureMinRows(masterSheet, masterLastRow + newRows.length);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const masterSheet = ss.getSheetByName(SHEET_MASTER);
+    const stale = _masterSchemaFailure(masterSheet, "CSV 업로드");
+    if (stale) return stale;
+    _requireChangelogSheet(ss);
 
-    // [v10.0] MASTER_COL_COUNT 상수 사용
-    masterSheet.getRange(masterLastRow + 1, 1, newRows.length, MASTER_COL_COUNT).setValues(newRows);
+    const masterLastRow = _findMasterLastRow(masterSheet);
+    const existingCodes = _existingMasterCodes(masterSheet, masterLastRow);
+    const catalog = _loadItemCatalog(ss);
+
+    const newValues = [];
+    let ignoredCount = 0;
+    const errors = [];
+
+    dataRows.forEach(function (row) {
+      if (!row || row.length < 2) return;
+      const code = _itemStr(row[0]);
+      if (!code) return;
+      if (existingCodes.has(code)) { ignoredCount++; return; }
+
+      const checked = _validateItemFields({
+        code: code, name: row[1], category: row[2], grade: row[3], unit: row[4],
+        initStock: row[5], leadTime: row[6], safetyDays: row[7], targetDays: row[8],
+        taxType: row[9], unitPrice: row[10]
+        // 거래처코드는 CSV 포맷에 없다 — 빈 값으로 두고 나중에 웹앱에서 고른다 (TASK-017)
+      }, { catalog: catalog, existingCodes: existingCodes });
+      if (!checked.valid) { errors.push("[" + code + "] " + checked.message); return; }
+
+      newValues.push(checked.values);
+      existingCodes.add(code); // 같은 CSV 내 중복 방지
+    });
+
+    // [v9.0 FIX] throw 대신 return으로 에러 전달 (withFailureHandler 대신 withSuccessHandler에서 처리)
+    if (errors.length > 0) {
+      return {
+        success: false,
+        message: "❌ 검증에 실패한 행이 있어 업로드를 중단했습니다. (총 " + errors.length + "건)\n" + errors.join("\n"),
+        errors: errors
+      };
+    }
+    if (newValues.length === 0) {
+      return { success: true, message: "CSV 업로드 완료: 0건 신규 등록, " + ignoredCount + "건 무시(중복)", added: 0, ignored: ignoredCount };
+    }
+
+    // 쓰기 전 스냅샷 — 되돌릴 근거. 백업이 안 되면 올리지 않는다.
+    let backupName;
+    try {
+      backupName = backupMasterSnapshot("업로드전");
+    } catch (bErr) {
+      console.error("[TASK-024] CSV 업로드 전 백업 실패: " + bErr.message);
+      return { success: false, message: "❌ 업로드 전 백업에 실패해 중단했습니다: " + bErr.message };
+    }
+
+    const rows = newValues.map(_buildMasterRow);
+    const startRow = _appendMasterRows(masterSheet, rows);
+    try {
+      _appendChangelog(newValues.map(_newItemRecord), { actor: actor, route: CHANGELOG_ROUTES.CSV, reason: "CSV 일괄 등록" });
+    } catch (clErr) {
+      _clearMasterRows(masterSheet, startRow, rows.length);
+      console.error("[TASK-024] CSV 업로드 이력 기록 실패 → 업로드 취소: " + clErr.message);
+      return { success: false, message: "❌ 변경이력을 기록하지 못해 업로드를 취소했습니다: " + clErr.message };
+    }
 
     // [TASK-016] CSV 업로드는 서식 적용 범위를 넘겨 행이 늘어나는 대표 경로다.
     //   신규 행에도 배경색·정렬·드롭다운·숫자서식이 즉시 적용되도록 재적용한다.
     applyItemMasterFormatting(ss, masterSheet);
-
     SpreadsheetApp.flush();
     recalcStockAndUsage(ss); // 재고 다시 계산
+
+    CacheManager.invalidateAll();
+    return {
+      success: true,
+      message: "CSV 업로드 완료: " + rows.length + "건 신규 등록, " + ignoredCount + "건 무시(중복) · 업로드 전 백업: " + backupName,
+      added: rows.length, ignored: ignoredCount, backupFile: backupName
+    };
+  } catch (err) {
+    console.error("[TASK-024] uploadItemMasterCSV 실패: " + err.message);
+    return { success: false, message: "❌ " + err.message };
+  } finally {
+    lock.releaseLock();
   }
-  
-  CacheManager.invalidateAll();
-  return { 
-    success: true, 
-    message: "CSV 업로드 완료: " + newRows.length + "건 신규 등록, " + ignoredCount + "건 무시(중복)"
-  };
 }
 
 
 
+/**
+ * 품목 수정 (웹앱). updates: MASTER_FIELD_COLS의 키 중 바꿀 것 + reason(필수).
+ * 품목코드는 바꿀 수 없다(입출고 기록의 키). 실제로 달라진 필드만 쓰고 이력에 남긴다.
+ * usageStatus를 '미사용'↔'사용'으로 바꾸면 정렬(_sortMasterByUsageStatus)까지 한다.
+ */
 function updateItem(token, itemCode, updates) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "인증이 필요합니다." };
   if (session.role === ROLES.STAFF) return { success: false, message: "품목 수정 권한이 없습니다." };
+
+  const u = updates || {};
+  const reason = _itemStr(u.reason);
+  if (!reason) return { success: false, message: "❌ 변경사유를 입력해주세요." };
+  if (u.code !== undefined && _itemStr(u.code) !== _itemStr(itemCode)) {
+    return { success: false, message: "❌ 품목코드는 변경할 수 없습니다. (입출고 기록이 참조하는 키입니다)" };
+  }
+  const fields = {};
+  Object.keys(MASTER_FIELD_COLS).forEach(function (k) {
+    if (Object.prototype.hasOwnProperty.call(u, k)) fields[k] = u[k];
+  });
+  if (Object.keys(fields).length === 0) return { success: false, message: "❌ 수정할 항목이 없습니다." };
 
   // [v10.0] LockService 도입: 품목 수정 동시 충돌 방지
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
   } catch (e) {
-    return { success: false, message: "⏳ 다른 사용자가 작업 중입니다. 잠시 후 다시 시도해주세요." };
+    return { success: false, message: ITEM_BUSY_MESSAGE };
   }
 
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const masterSheet = ss.getSheetByName(SHEET_MASTER);
-    const masterLastRow = Math.max(masterSheet.getLastRow(), 3);
-    const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
-    
-    let targetRowIdx = -1;
-    let oldValues = null;
-    data.forEach((row, idx) => {
-      if (row[MASTER_COLS.CODE] === itemCode) {
-        targetRowIdx = idx;
-        oldValues = row;
-      }
-    });
+    const stale = _masterSchemaFailure(masterSheet, "품목 수정");
+    if (stale) return stale;
+    _requireChangelogSheet(ss);
 
+    const masterLastRow = _findMasterLastRow(masterSheet);
+    if (masterLastRow < 3) return { success: false, message: "❌ 품목코드를 찾을 수 없습니다." };
+    const data = masterSheet.getRange(3, 1, masterLastRow - 2, MASTER_COL_COUNT).getValues();
+
+    let targetRowIdx = -1;
+    for (let i = 0; i < data.length; i++) {
+      if (_itemStr(data[i][MASTER_COLS.CODE]) === _itemStr(itemCode)) { targetRowIdx = i; break; }
+    }
     if (targetRowIdx === -1) return { success: false, message: "❌ 품목코드를 찾을 수 없습니다." };
     const targetRow = targetRowIdx + 3;
-
-    // [v10.0] MASTER_COLS 기반 열 매핑 (1-based, getRange용)
-    const colMap = {
-      name: MASTER_COLS.NAME + 1, category: MASTER_COLS.CATEGORY + 1,
-      grade: MASTER_COLS.GRADE + 1, unit: MASTER_COLS.UNIT + 1,
-      initStock: MASTER_COLS.INIT_STOCK + 1, leadTime: MASTER_COLS.LEAD_TIME + 1,
-      safetyDays: MASTER_COLS.SAFETY_DAYS + 1, targetDays: MASTER_COLS.TARGET_DAYS + 1,
-      vendorCode: MASTER_COLS.VENDOR_CODE + 1, // [TASK-017]
-      taxType: MASTER_COLS.TAX_TYPE + 1, unitPrice: MASTER_COLS.UNIT_PRICE + 1
-    };
-    
-    // [v7.0] 변경이력 기록용 매핑
-    const fieldNameMap = {
-      name: "품목명", category: "카테고리", grade: "규격", unit: "단위",
-      initStock: "초기재고", leadTime: "리드타임", safetyDays: "안전재고일수",
-      targetDays: "목표유지일수", vendorCode: "거래처", taxType: "과세구분", unitPrice: "매입단가"
-    };
-    // [v10.0] MASTER_COLS 기반 oldValue 인덱스 매핑 (0-based, 배열 접근용)
-    const oldColMap = {
-      name: MASTER_COLS.NAME, category: MASTER_COLS.CATEGORY,
-      grade: MASTER_COLS.GRADE, unit: MASTER_COLS.UNIT,
-      initStock: MASTER_COLS.INIT_STOCK, leadTime: MASTER_COLS.LEAD_TIME,
-      safetyDays: MASTER_COLS.SAFETY_DAYS, targetDays: MASTER_COLS.TARGET_DAYS,
-      vendorCode: MASTER_COLS.VENDOR_CODE, // [TASK-017]
-      taxType: MASTER_COLS.TAX_TYPE, unitPrice: MASTER_COLS.UNIT_PRICE
-    };
-
-    const changeRecords = [];
-    const now = new Date();
+    const oldValues = data[targetRowIdx];
     const itemName = oldValues[MASTER_COLS.NAME];
 
-    // [v10.0] 배치 쓰기: 행 데이터를 메모리에서 업데이트 후 한 번에 쓰기
-    const updatedRow = oldValues.slice(); // 복사
-    Object.keys(updates).forEach(key => {
-      if (colMap[key]) {
-        const oldVal = oldValues[oldColMap[key]];
-        const newVal = updates[key];
-        
-        // 실제 변경이 있는 경우만 이력 기록
-        if (String(oldVal) !== String(newVal)) {
-          changeRecords.push([now, session.name, itemCode, itemName, fieldNameMap[key] || key, oldVal, newVal]);
-        }
-        
-        updatedRow[oldColMap[key]] = newVal;
-      }
+    const checked = _validateItemFields(fields, { partial: true, catalog: _loadItemCatalog(ss) });
+    if (!checked.valid) return { success: false, message: "❌ " + checked.message };
+
+    // 실제 변경이 있는 필드만 이력 기록 — 값이 같은데 저장을 누른 것은 변경이 아니다
+    const changeRecords = [];
+    const updatedRow = oldValues.slice();
+    Object.keys(checked.values).forEach(function (key) {
+      const col = MASTER_FIELD_COLS[key];
+      const oldVal = oldValues[col];
+      const newVal = checked.values[key];
+      if (_sameCellValue(oldVal, newVal)) return;
+      changeRecords.push({ itemCode: _itemStr(itemCode), itemName: itemName, fieldName: MASTER_FIELD_LABELS[key], oldValue: oldVal, newValue: newVal });
+      updatedRow[col] = newVal;
     });
+    if (changeRecords.length === 0) return { success: false, noChanges: true, message: "변경된 내용이 없습니다." };
 
-    // 수식 열은 빈 값으로 (ARRAYFORMULA가 자동 채움)
-    updatedRow[MASTER_COLS.SAFETY_STOCK] = "";
-    updatedRow[MASTER_COLS.ROP] = "";
-    updatedRow[MASTER_COLS.ORDER_QTY] = "";
-    updatedRow[MASTER_COLS.STATUS] = "";
-    updatedRow[MASTER_COLS.SUPPLY_PRICE] = "";
-    updatedRow[MASTER_COLS.TAX_AMOUNT] = "";
-    updatedRow[MASTER_COLS.TOTAL_VALUE] = "";
-    masterSheet.getRange(targetRow, 1, 1, MASTER_COL_COUNT).setValues([updatedRow]);
+    const usageChanged = changeRecords.some(function (r) { return r.fieldName === MASTER_FIELD_LABELS.usageStatus; });
+    const initStockChanged = changeRecords.some(function (r) { return r.fieldName === MASTER_FIELD_LABELS.initStock; });
 
-    // [v7.0] 변경이력 시트에 기록
-    if (changeRecords.length > 0) {
-      const changelogSheet = ss.getSheetByName(SHEET_CHANGELOG);
-      const clLastRow = Math.max(changelogSheet.getLastRow() + 1, 3);
-      changelogSheet.getRange(clLastRow, 1, changeRecords.length, 7).setValues(changeRecords)
-        .setHorizontalAlignment("center").setBackground(COLORS.autoBg);
+    // [v10.0] 배치 쓰기: 행 데이터를 메모리에서 갱신한 뒤 데이터 블록만 쓴다 (수식 열은 건드리지 않는다 — 3행이면 ARRAYFORMULA가 지워진다)
+    _writeMasterRows(masterSheet, targetRow, [updatedRow]);
+    try {
+      _appendChangelog(changeRecords, { actor: session.name, route: CHANGELOG_ROUTES.WEBAPP, reason: reason });
+    } catch (clErr) {
+      _writeMasterRows(masterSheet, targetRow, [oldValues]);
+      console.error("[TASK-024] updateItem 이력 기록 실패 → 수정 취소: " + clErr.message);
+      return { success: false, message: "❌ 변경이력을 기록하지 못해 수정을 취소했습니다: " + clErr.message };
     }
 
+    // 여기부터는 변경과 이력이 이미 저장된 뒤다 — 정렬·재계산이 실패해도 "수정 실패"로 보고하지 않는다
+    let note = "";
+    let moved = false;
+    if (usageChanged) {
+      // [v9.0] 미사용 품목을 시트 최하단으로 정렬 (데이터 가독성 개선)
+      try {
+        moved = _sortMasterByUsageStatus(masterSheet);
+      } catch (sortErr) {
+        console.error("[TASK-024] updateItem 정렬 실패 (변경·이력은 저장됨): " + sortErr.message);
+        note = " (변경은 저장됐지만 시트 정렬에 실패했습니다: " + sortErr.message + ")";
+      }
+    }
+    // 초기재고가 바뀌면 현재고·상태가, 행이 움직였으면 StockEngine이 행별로 쓰는 X열이 달라진다 — 바로 다시 계산
+    if (initStockChanged || moved) recalcStockAndUsage(ss);
+
     CacheManager.invalidateAll();
-    return { success: true, message: `✅ 품목 '${itemCode}' 수정 완료` };
+    return {
+      success: true,
+      message: "✅ 품목 '" + itemCode + "' 수정 완료" + note,
+      changes: changeRecords.map(function (r) { return { field: r.fieldName, oldValue: r.oldValue, newValue: r.newValue }; })
+    };
+  } catch (err) {
+    console.error("[TASK-024] updateItem 실패: " + err.message);
+    return { success: false, message: "❌ " + err.message };
   } finally {
     lock.releaseLock();
   }
@@ -378,131 +648,131 @@ function updateItem(token, itemCode, updates) {
 
 
 
-// [v7.0] 변경이력 조회 API
+// [v7.0] 변경이력 조회 API — [TASK-024] 9열(H 변경사유, I 경로) 포함
 function getItemChangelog(token, itemCode) {
   const session = validateSession(token);
   if (!session) return { success: false, records: [] };
-  
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const changelogSheet = ss.getSheetByName(SHEET_CHANGELOG);
+  if (!changelogSheet) return { success: true, records: [] };
   const lastRow = changelogSheet.getLastRow();
   if (lastRow < 3) return { success: true, records: [] };
-  
-  const data = changelogSheet.getRange(3, 1, lastRow - 2, 7).getValues();
+
+  // v19 이전 시트(7열)라면 있는 만큼만 읽는다 — H·I는 빈 값으로 온다
+  const numCols = Math.min(CHANGELOG_COL_COUNT, changelogSheet.getMaxColumns());
+  const data = changelogSheet.getRange(3, 1, lastRow - 2, numCols).getValues();
   const tz = Session.getScriptTimeZone();
   const records = [];
-  
+  const target = _itemStr(itemCode);
+
   data.forEach(row => {
-    if (row[2] === itemCode) {
-      records.push({
-        date: row[0] instanceof Date ? Utilities.formatDate(row[0], tz, "yyyy-MM-dd HH:mm") : row[0],
-        user: row[1],
-        code: row[2],
-        name: row[3],
-        field: row[4],
-        oldValue: row[5],
-        newValue: row[6]
-      });
-    }
+    if (_itemStr(row[CHANGELOG_COLS.CODE]) !== target) return;
+    const d = row[CHANGELOG_COLS.DATE];
+    records.push({
+      date: d instanceof Date ? Utilities.formatDate(d, tz, "yyyy-MM-dd HH:mm") : d,
+      user: row[CHANGELOG_COLS.USER],
+      code: row[CHANGELOG_COLS.CODE],
+      name: row[CHANGELOG_COLS.NAME],
+      field: row[CHANGELOG_COLS.FIELD],
+      oldValue: row[CHANGELOG_COLS.OLD],
+      newValue: row[CHANGELOG_COLS.NEW],
+      reason: row[CHANGELOG_COLS.REASON] === undefined ? "" : row[CHANGELOG_COLS.REASON],
+      route: row[CHANGELOG_COLS.ROUTE] === undefined ? "" : row[CHANGELOG_COLS.ROUTE]
+    });
   });
-  
+
   records.reverse(); // 최근순
   return { success: true, records: records };
 }
 
 
 
-
-
-function disableItemMaster(token, code) {
-  const session = validateSession(token);
-  if (!session) return { success: false, message: "인증이 필요합니다." };
-  if (session.role === ROLES.STAFF) return { success: false, message: "삭제 권한이 없습니다." };
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  const data = masterSheet.getRange(1, 1, masterSheet.getLastRow(), MASTER_COL_COUNT).getValues();
-  
-  let targetRow = -1;
-  for (let i = 2; i < data.length; i++) { // Header rows
-    if (data[i][0] === code) {
-      targetRow = i + 1;
-      break;
-    }
+/**
+ * 품목 비활성화(논리 삭제) — 사용유무를 '미사용'으로. 물리 삭제는 없다.
+ * [TASK-024] updateItem을 거치므로 검증·이력·정렬이 같은 경로를 탄다 (예전의 미정의 logChange 호출로
+ *   이력이 항상 빠지던 결함 수정). reason은 선택(기본 "(품목 비활성화)").
+ * 시그니처 (token, code)는 그대로 — 세 번째 인자는 선택.
+ */
+function disableItemMaster(token, code, reason) {
+  const result = updateItem(token, code, { usageStatus: "미사용", reason: _itemStr(reason) || "(품목 비활성화)" });
+  if (!result.success) {
+    if (result.noChanges) return { success: false, message: "이미 미사용 상태인 품목입니다." };
+    return result;
   }
-
-  if (targetRow === -1) return { success: false, message: "품목을 찾을 수 없습니다." };
-
-  // 사용유무 열([TASK-017] Y열)을 '미사용'으로
-  masterSheet.getRange(targetRow, MASTER_COLS.USAGE_STATUS + 1).setValue("미사용");
-  
-  // [NF-02 FIX] 캐시 무효화 누락 수정 — 비활성화된 품목이 캐시에서 즉시 제거되도록
-  CacheManager.invalidateAll();
-
-  // Log change if logChange exists
-  if (typeof logChange === "function") {
-    logChange(session.username, code, data[targetRow-1][MASTER_COLS.NAME], "상태(사용여부)", data[targetRow-1][MASTER_COLS.USAGE_STATUS] || "사용", "미사용");
-  }
-
-  // [v9.0] 미사용 품목을 시트 최하단으로 정렬 (데이터 가독성 개선)
-  _sortMasterByUsageStatus(masterSheet);
-
   return { success: true, message: "품목이 성공적으로 삭제(비활성화)되었습니다." };
 }
 
 
 
-// [v9.0] 품목 마스터 사용/미사용 정렬 헬퍼 (수식 보호하면서 데이터만 정렬)
+// ═══════════════════════════════════════════════════════════════════
+//  [v9.0 → TASK-024] 품목 마스터 사용/미사용 정렬 — 사용 → 미사용, 같은 상태 안에서는 품목코드 순
+//
+//  TASK-024 DEV 검증에서 옛 구현의 결함 두 가지가 실제로 터졌다.
+//   1) 전체 데이터를 clearContent()한 뒤 25열로 되썼다. Sheets는 큰 setValues를 3000행 단위로 나눠 적용하는데,
+//      뒤 덩어리가 데이터 검증(setAllowInvalid(false))에 걸리자 — 옛 단위 값 하나 때문에 — 앞 3000행만 쓰이고
+//      나머지는 지워진 채 끝났다 (DEV 마스터 4292행 → 3001행).
+//   2) 수식 열(N~Q, V~X)에 ""를 썼다. ARRAYFORMULA는 3행에 살기 때문에 3행을 되쓰는 순간 수식이 사라진다.
+//
+//  그래서 지금 구현은
+//   · 수식 열은 아예 건드리지 않는다 — 데이터 열 블록(MASTER_DATA_BLOCKS: A:E · G:M · S:U · Y)만 쓴다.
+//   · clearContent 없이 같은 크기 범위를 덮어쓴다 (정렬 전후 행 수가 같다).
+//   · 쓰기 전에 데이터 검증을 걷어내고 끝나면 applyItemMasterFormatting으로 되살린다 — 이미 시트에 있던 값을
+//     자리만 바꾸는 일이 검증에 거절당하면 안 된다.
+//   · 쓰다 실패하면 원래 값을 같은 블록으로 되돌린다.
+//   · 이미 정렬돼 있으면 한 글자도 쓰지 않는다.
+//  H·I(현재고·일평균)는 블록에 실려 함께 움직이지만 X(재고 합계금액)는 StockEngine이 행별 값으로 쓰는 열이라
+//  블록 밖이다 — 호출자(updateItem)가 정렬 뒤 recalcStockAndUsage로 다시 맞춘다.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * @returns {boolean} 실제로 행을 옮겼으면 true (이미 정렬돼 있었으면 false)
+ * 실패하면 원복을 시도한 뒤 throw — 호출자는 "변경은 저장됐지만 정렬은 실패" 로 다룬다.
+ */
 function _sortMasterByUsageStatus(masterSheet) {
-  // [TASK-017] 정렬은 데이터 전체를 clearContent 후 25열로 되쓴다.
-  //   마이그레이션 전 시트(24열)에서 돌면 지우는 열과 쓰는 열이 한 칸씩 어긋나 사용유무가 날아간다.
+  // [TASK-017] 마이그레이션 전 시트(24열)에서 돌면 열이 한 칸씩 어긋나 사용유무가 날아간다.
   if (!_isMasterSchemaCurrent(masterSheet)) {
     _warnMasterSchemaStale("품목 마스터 정렬");
-    return;
+    return false;
   }
 
-  const lastRow = masterSheet.getLastRow();
-  if (lastRow < 4) return; // 데이터 2행 이하면 정렬 불필요
-  
+  const lastRow = _findMasterLastRow(masterSheet);
+  if (lastRow < 4) return false; // 데이터 1행 이하면 정렬 불필요
   const numRows = lastRow - 2;
-  // 수식이 아닌 데이터 열만 읽기 ([TASK-017] A~E: 1~5, G~M: 7~13, S~U: 19~21, Y: 25)
-  // ARRAYFORMULA가 N,O,P,Q,U,V,W열에 걸려있으므로 이 열들은 수식이 자동 계산
   const data = masterSheet.getRange(3, 1, numRows, MASTER_COL_COUNT).getValues();
-  
-  // 빈 행 제외 후 정렬: 사용 → 미사용 순서, 같은 상태 내에서는 품목코드 순
-  const filledRows = data.filter(r => r[MASTER_COLS.CODE]); // 품목코드가 있는 행만
-  const emptyRows = data.filter(r => !r[MASTER_COLS.CODE]); // 빈 행
-  
-  filledRows.sort(function(a, b) {
-    const aDisabled = (a[MASTER_COLS.USAGE_STATUS] === '미사용') ? 1 : 0;
-    const bDisabled = (b[MASTER_COLS.USAGE_STATUS] === '미사용') ? 1 : 0;
+
+  // 코드 없는 빈 행은 자리를 지키고, 코드 있는 행만 정렬한다
+  const indexed = data.map(function (row, i) { return { row: row, i: i }; });
+  const filled = indexed.filter(function (x) { return _itemStr(x.row[MASTER_COLS.CODE]) !== ""; });
+  const empty = indexed.filter(function (x) { return _itemStr(x.row[MASTER_COLS.CODE]) === ""; });
+  filled.sort(function (a, b) {
+    const aDisabled = (a.row[MASTER_COLS.USAGE_STATUS] === "미사용") ? 1 : 0;
+    const bDisabled = (b.row[MASTER_COLS.USAGE_STATUS] === "미사용") ? 1 : 0;
     if (aDisabled !== bDisabled) return aDisabled - bDisabled;
-    // 같은 상태 내에서는 품목코드 순
-    return String(a[MASTER_COLS.CODE]).localeCompare(String(b[MASTER_COLS.CODE]));
+    return String(a.row[MASTER_COLS.CODE]).localeCompare(String(b.row[MASTER_COLS.CODE]));
   });
-  
-  const sorted = filledRows.concat(emptyRows);
-  
-  // 수식 열([TASK-017] N,O,P,Q,V,W,X)의 값은 ARRAYFORMULA가 자동 계산하므로
-  // 데이터 열(A~E, G~M, S~U, Y)만 재기록
-  // 하지만 ARRAYFORMULA는 A3부터 전체 범위를 참조하므로 전체 25열을 쓰되 수식 열은 빈 값으로
-  const writeData = sorted.map(function(row) {
-    const newRow = row.slice(); // 복사
-    // 수식 열은 빈 값으로 (수식이 자동 채움)
-    newRow[MASTER_COLS.SAFETY_STOCK] = ""; // N: 안전재고
-    newRow[MASTER_COLS.ROP] = ""; // O: 발주점
-    newRow[MASTER_COLS.ORDER_QTY] = ""; // P: 적정발주량
-    newRow[MASTER_COLS.STATUS] = ""; // Q: 재고 상태
-    newRow[MASTER_COLS.SUPPLY_PRICE] = ""; // V: 공급단가
-    newRow[MASTER_COLS.TAX_AMOUNT] = ""; // W: 단위 세액
-    newRow[MASTER_COLS.TOTAL_VALUE] = ""; // X: 재고 합계금액
-    return newRow;
-  });
-  
-  if (writeData.length > 0) {
-    masterSheet.getRange(3, 1, numRows, MASTER_COL_COUNT).clearContent();
-    masterSheet.getRange(3, 1, writeData.length, MASTER_COL_COUNT).setValues(writeData);
+  const sorted = filled.concat(empty);
+  if (sorted.every(function (x, i) { return x.i === i; })) return false; // 이미 정렬됨 — 쓰지 않는다
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const dataRange = masterSheet.getRange(3, 1, numRows, MASTER_COL_COUNT);
+  const writeBlocks = function (rows) { _writeMasterRows(masterSheet, 3, rows); };
+
+  dataRange.clearDataValidations(); // 자리만 바꾸는 값이 드롭다운 검증에 거절당하지 않게
+  try {
+    writeBlocks(sorted.map(function (x) { return x.row; }));
+  } catch (writeErr) {
+    console.error("[TASK-024] 품목 마스터 정렬 쓰기 실패 → 원복 시도: " + writeErr.message);
+    try {
+      writeBlocks(data);
+    } catch (restoreErr) {
+      console.error("[TASK-024] 정렬 원복도 실패 — 수동 확인 필요 (Drive 백업/버전 기록): " + restoreErr.message);
+    }
+    throw writeErr;
+  } finally {
+    applyItemMasterFormatting(ss, masterSheet); // 드롭다운 검증·서식 복원
   }
+  return true;
 }
 
 /**
@@ -518,7 +788,7 @@ function processCsvUploadFromSheet(csvString) {
       const cols = [];
       let current = '';
       let inQuotes = false;
-      
+
       for (let j = 0; j < line.length; j++) {
         const char = line[j];
         if (char === '"' && line[j+1] === '"') {
@@ -534,16 +804,16 @@ function processCsvUploadFromSheet(csvString) {
         }
       }
       cols.push(current.trim());
-      
+
       if (cols.length >= 2) {
         dataRows.push(cols);
       }
     }
-    
+
     if (dataRows.length === 0) {
       throw new Error("유효한 데이터가 없습니다.");
     }
-    
+
     const result = uploadItemMasterCSV("SHEET_UI", dataRows);
     if (result.success) {
       return result.message;

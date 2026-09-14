@@ -331,11 +331,16 @@ check('onOpen 메뉴에 서식 복구 항목이 등록되어 있다', () => {
 });
 
 // ── CSV 업로드: 행 부족 시 쓰기 실패 방지 + 신규 행 서식 ──────────────
-const run7 = buildContext(NAMES, SHOPS, 3, ['ItemService.gs']); // 남은 데이터 행이 1행뿐인 시트
+// [TASK-024] 업로드는 변경이력 시트에 9열을 쓰므로 시트를 하나 더 둔다. 이 모킹은 셀 값을 저장하지 않아
+//   기초데이터 목록·스키마 판정·Drive 백업은 스텁으로 대신한다 — 여기서 보는 것은 행 확충과 서식 재적용뿐이다.
+const run7 = buildContext(NAMES.concat(['📋 변경이력']), SHOPS, 3, ['ItemService.gs']); // 남은 데이터 행이 1행뿐인 시트
+run7.sandbox._isMasterSchemaCurrent = () => true;
+run7.sandbox._loadItemCatalog = () => ({ categories: new Set(['소모품']), units: new Set(['개']), vendorCodes: new Set() });
+run7.sandbox.backupMasterSnapshot = () => '품목마스터_업로드전_stub.csv';
 const master7 = run7.sheets['🗂️ 품목 마스터'];
 const csvRows = [
-  ['CHE-262', '신규품목1'], ['CHE-263', '신규품목2'],
-  ['CHE-264', '신규품목3'], ['CHE-265', '신규품목4']
+  ['CHE-262', '신규품목1', '소모품', '', '개'], ['CHE-263', '신규품목2', '소모품', '', '개'],
+  ['CHE-264', '신규품목3', '소모품', '', '개'], ['CHE-265', '신규품목4', '소모품', '', '개']
 ];
 let uploadResult = null;
 check('CSV 업로드: 남은 행보다 CSV가 커도 쓰기가 실패하지 않는다 (선제 행 확충)', () => {

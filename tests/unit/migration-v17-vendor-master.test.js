@@ -296,8 +296,11 @@ console.log('\n[3] MASTER_COLS 소비자 회귀 확인');
     if (/row\[19\]/.test(src)) throw new Error('row[19] 하드코딩이 남아 있다');
   });
   check('onEdit 변경이력이 거래처(S열)를 추적한다', () => {
+    // [TASK-024] onEdit의 TRACKED_COLS는 Config.gs MASTER_FIELD_COLS/LABELS에서 파생된다 (웹앱 updateItem과 같은 목록)
+    eq(vm.runInContext('MASTER_FIELD_COLS.vendorCode === MASTER_COLS.VENDOR_CODE', ctx), true, 'MASTER_FIELD_COLS.vendorCode');
+    eq(vm.runInContext('MASTER_FIELD_LABELS.vendorCode', ctx), '거래처');
     const src = fs.readFileSync(path.join(SRC, 'Code.gs'), 'utf8');
-    if (!/MASTER_COLS\.VENDOR_CODE \+ 1\]: "거래처"/.test(src)) throw new Error('TRACKED_COLS에 거래처 없음');
+    if (!/TRACKED_COLS\[MASTER_FIELD_COLS\[key\] \+ 1\] = MASTER_FIELD_LABELS\[key\]/.test(src)) throw new Error('onEdit이 MASTER_FIELD_COLS에서 추적 열을 만들지 않음');
   });
   check('Dashboard.refreshDashboard가 25열 배열에서 동작한다', () => {
     vm.runInContext('refreshDashboard(ss0)', ctx);

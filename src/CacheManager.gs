@@ -105,6 +105,7 @@ const CacheManager = {
   invalidateAll: function() {
     const ROLE_SUFFIXES = ['_admin', '_manager', '_staff'];
     this.remove('ITEM_MASTER_DATA');
+    this.remove('ITEM_MASTER_DATA_ALL'); // [TASK-024] 미사용 포함 목록(품목 관리 화면)
     this.remove('ITEM_CODES');
     this.remove('CONFIG_DATA');
     this.remove('BASE_DATA');

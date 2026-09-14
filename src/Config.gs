@@ -94,7 +94,7 @@ const VALIDATION_ROWS = 5000; // 서식/검증을 미리 구워 두는 최소 �
 
 // [TASK-002] v9 → v11로 상향: 기존 v10(System_Logs) 마이그레이션이 이 상수가
 // 9에 머물러 있어 runMigrations()에서 한 번도 실행되지 않았던 것을 함께 바로잡음.
-const CURRENT_SCHEMA_VERSION = 18; // [v12] 서식/검증 행 범위 확장(TASK-009) + [v13] 단위 목록 CASE 삭제 + [v14] 음수 재고 수식/서식(TASK-011) + [v15] 단위 '조', '줄' 추가 + [v16] 서식 범위 동적 확장(TASK-016) + [v17] 거래처 마스터 신설(TASK-017) + [v18] 사용유무 손상 복구 + 거래처 드롭다운 소스 열 정리
+const CURRENT_SCHEMA_VERSION = 19; // [v12] 서식/검증 행 범위 확장(TASK-009) + [v13] 단위 목록 CASE 삭제 + [v14] 음수 재고 수식/서식(TASK-011) + [v15] 단위 '조', '줄' 추가 + [v16] 서식 범위 동적 확장(TASK-016) + [v17] 거래처 마스터 신설(TASK-017) + [v18] 사용유무 손상 복구 + 거래처 드롭다운 소스 열 정리 + [v19] 변경이력 9열(변경사유·경로) 확장(TASK-024)
 
 // [v8.0] 성능 최적화용 캐시 키 & TTL 상수
 const CACHE_KEYS = {
@@ -329,6 +329,34 @@ const MASTER_COLS = {
   USAGE_STATUS: 24  // Y열: 사용유무
 };
 const MASTER_COL_COUNT = 25; // 총 열 수 (getRange 호출 시 사용) — [TASK-017] 24 → 25
+
+// [TASK-024] 품목 마스터의 "사람이 고치는" 필드 — 웹앱 API(updateItem)와 시트 onEdit이 같은 목록·같은 이름으로 이력을 남긴다.
+//   키는 API 필드명, 값은 MASTER_COLS 인덱스(0-based). 수식·계산 열(H·I·N~Q·V~X)은 여기 없다 — 사람이 고칠 수 없고 이력도 남기지 않는다.
+const MASTER_FIELD_COLS = {
+  name: MASTER_COLS.NAME, category: MASTER_COLS.CATEGORY, grade: MASTER_COLS.GRADE, unit: MASTER_COLS.UNIT,
+  initStock: MASTER_COLS.INIT_STOCK, leadTime: MASTER_COLS.LEAD_TIME, safetyDays: MASTER_COLS.SAFETY_DAYS,
+  targetDays: MASTER_COLS.TARGET_DAYS, vendorCode: MASTER_COLS.VENDOR_CODE, taxType: MASTER_COLS.TAX_TYPE,
+  unitPrice: MASTER_COLS.UNIT_PRICE, usageStatus: MASTER_COLS.USAGE_STATUS
+};
+// 변경이력 E열(변경필드)에 적는 이름. 화면 라벨과도 같다.
+const MASTER_FIELD_LABELS = {
+  name: "품목명", category: "카테고리", grade: "규격", unit: "단위",
+  initStock: "초기재고", leadTime: "리드타임", safetyDays: "안전재고일수", targetDays: "목표유지일수",
+  vendorCode: "거래처", taxType: "과세구분", unitPrice: "매입단가", usageStatus: "사용유무"
+};
+// [TASK-024] 품목 필드 도메인 — 시트 드롭다운(SheetBuilder)과 API 검증(ItemService)이 같은 목록을 본다.
+//   카테고리·단위는 📂 기초데이터, 거래처코드는 🤝 거래처관리에서 읽으므로 여기 없다.
+const ITEM_TAX_TYPES = ["과세", "비과세"];
+const ITEM_USAGE_STATUSES = ["사용", "미사용"];
+const ITEM_NUMERIC_DEFAULTS = { initStock: 0, unitPrice: 0, leadTime: 3, safetyDays: 5, targetDays: 30 }; // 빈 값일 때
+const CHANGELOG_NEW_ITEM_FIELD = "신규 등록"; // 등록 이력의 E열 값 — 필드가 아니라 사건이다
+
+// [TASK-024] 📋 변경이력 시트 열 구조 — 9열 (v19에서 H 변경사유, I 경로 추가)
+const CHANGELOG_COLS = { DATE: 0, USER: 1, CODE: 2, NAME: 3, FIELD: 4, OLD: 5, NEW: 6, REASON: 7, ROUTE: 8 };
+const CHANGELOG_COL_COUNT = 9;
+const CHANGELOG_HEADERS = ["변경일시", "변경자", "품목코드", "품목명", "변경필드", "변경 전", "변경 후", "변경사유", "경로"];
+// I열(경로) 값 — 어느 문으로 들어온 변경인지. 감사 시 "웹앱 밖에서 바뀐 것"을 걸러내는 기준이 된다.
+const CHANGELOG_ROUTES = { WEBAPP: "웹앱", CSV: "CSV", SHEET: "시트편집" };
 
 // [TASK-017] 🤝 거래처관리 시트 열 인덱스 매핑 (0-based, getValues() 배열용)
 //

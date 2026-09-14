@@ -39,6 +39,7 @@ class Range {
         fn(this.sheet.cell(this.row + r, this.col + c), r, c);
     return this;
   }
+  getSheet() { return this.sheet; } // onEdit(e)의 e.range.getSheet()
   getRow() { return this.row; }
   getColumn() { return this.col; }
   getNumRows() { return this.numRows; }
@@ -78,6 +79,7 @@ class Range {
   setNumberFormat(v) { return this._each(cell => { cell.numberFormat = v; }); }
   getDataValidation() { return this.sheet.cell(this.row, this.col).validation; }
   setDataValidation(v) { return this._each(cell => { cell.validation = v; }); }
+  clearDataValidations() { return this._each(cell => { cell.validation = null; }); }
   setNote(v) { return this._each(cell => { cell.note = v; }); }
   clearContent() { return this._each(cell => { cell.value = ''; cell.formula = ''; }); }
   merge() { this.sheet.merges.push(this.getA1Notation()); return this; }
@@ -393,10 +395,28 @@ function buildEnv(activeSpreadsheet) {
     getUuid: () => 'mock-uuid',
     sleep: () => {}
   };
-  env.DriveApp = {
-    getFolderById: () => ({ createFile: () => ({ getUrl: () => 'x' }), getName: () => 'mock' }),
-    createFile: () => ({ getUrl: () => 'x' })
+  // [TASK-024] Drive 백업 경로(Archive.gs _getBackupFolder / backupMasterSnapshot)가 실제로 돌게 한다.
+  //   만든 파일은 env.__driveFiles에 쌓인다 — "업로드 전 스냅샷이 남았는가"를 검증할 수 있다.
+  const driveFiles = [];
+  const makeFolder = (name) => {
+    const folder = {
+      _name: name, _subfolders: [],
+      getName: () => name,
+      createFile: (fileName, content, mime) => { const f = { name: fileName, content, mime, folder: name, getUrl: () => 'x' }; driveFiles.push(f); return f; },
+      getFoldersByName: (n) => { const hits = folder._subfolders.filter(x => x._name === n); let i = 0; return { hasNext: () => i < hits.length, next: () => hits[i++] }; },
+      createFolder: (n) => { const sub = makeFolder(n); folder._subfolders.push(sub); return sub; }
+    };
+    return folder;
   };
+  const rootFolder = makeFolder('root');
+  env.DriveApp = {
+    getFolderById: () => rootFolder,
+    getRootFolder: () => rootFolder,
+    getFileById: () => ({ getParents: () => ({ hasNext: () => false, next: () => rootFolder }) }),
+    createFile: (fileName, content, mime) => rootFolder.createFile(fileName, content, mime)
+  };
+  env.__driveFiles = driveFiles;
+  env.MimeType = { CSV: 'text/csv', PLAIN_TEXT: 'text/plain' };
   env.MailApp = { sendEmail: () => {} };
   env.HtmlService = {
     createTemplateFromFile: () => ({ evaluate: () => ({ setTitle: () => ({ setXFrameOptionsMode: () => ({}) }) }) }),
