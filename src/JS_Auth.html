@@ -103,14 +103,12 @@ function onLoginSuccess() {
   // 역할별 UI 분기
   applyRolePermissions();
 
-  // 데이터 로드 — [TASK-027] 대시보드·업장 목록·마감 기준일·마지막 동기화 시각을 왕복 1회(getBootstrapData)로 받는다.
+  // 데이터 로드 — [TASK-027] 대시보드·업장 목록·마감 기준일을 왕복 1회(getBootstrapData)로 받는다.
   //   전에는 네 호출을 따로 쏘고(+ 품목 코드 150KB), 각각 약 1초의 왕복 비용을 냈다.
   //   품목 코드 목록은 서버 검색 폴백에만 쓰이므로 필요해질 때 받는다(JS_Tx ensureItemCodes).
+  //   마지막 취합 시각(LAST_SYNC_TIMESTAMP) 조회·1분 폴링은 없앴다 — 표시 요소 #lastSyncTimeText가 사이드바 정리
+  //   (83d3007)로 사라진 뒤 매분 서버만 부르는 헛호출이었고, 2026-09-15 핫픽스의 원인이기도 했다(applyBootstrap 참고).
   loadBootstrap();
-
-  // 마지막 취합 시간 폴링 (1분 간격 유지)
-  if (window.syncPollInterval) clearInterval(window.syncPollInterval);
-  window.syncPollInterval = setInterval(updateLastSyncTime, 60000);
 }
 
 function loadBootstrap() {
@@ -122,35 +120,34 @@ function loadBootstrap() {
         showToast((boot && boot.message) || '초기 데이터를 불러오지 못했습니다', 'error');
         return;
       }
-      applyShopList(boot.shops);
-      applyClosingCutoff(boot.closing);
-      applyLastSyncTime(boot.lastSync);
-      // staff는 대시보드 권한이 없어 success:false가 온다 — 탭 자체가 숨겨져 있으므로 조용히 넘긴다
-      if (boot.dashboard && boot.dashboard.success !== false) renderDashboard(boot.dashboard);
+      applyBootstrap(boot);
     })
     .withFailureHandler(function(err) {
       hideLoading();
       showToast('초기 데이터 로드 실패: ' + err.message, 'error');
       // 묶음 호출이 실패하면 예전 방식(개별 호출)으로 한 번 더 시도한다
-      loadDashboard(); loadShopList(); loadClosingCutoff(); updateLastSyncTime();
+      loadDashboard(); loadShopList(); loadClosingCutoff();
     })
     .getBootstrapData(getToken());
 }
 
-function updateLastSyncTime() {
-  google.script.run
-    .withSuccessHandler(applyLastSyncTime)
-    .getLastSyncTime(getToken());
-}
-
-function applyLastSyncTime(res) {
-  if (res && res.success && res.timestamp) {
-    var d = new Date(res.timestamp);
-    var timeStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    document.getElementById('lastSyncTimeText').textContent = timeStr;
-  } else {
-    document.getElementById('lastSyncTimeText').textContent = "기록 없음";
-  }
+/**
+ * 묶음 응답을 화면에 적용한다. 항목마다 따로 감싸서 하나가 예외를 내도 나머지는 그려지게 한다.
+ *   회귀 사례(2026-09-15 핫픽스): 옛 applyLastSyncTime이 사라진 요소(#lastSyncTimeText)에 쓰다 TypeError를 내서
+ *   뒤에 있던 renderDashboard가 실행되지 않았고, 로그인할 때마다 대시보드가 비어 「시트 동기화」를 눌러야 했다.
+ *   대시보드가 첫 화면이므로 가장 먼저 그린다. 실패한 항목은 console.error로 남긴다(E2E 콘솔 감시 대상).
+ */
+function applyBootstrap(boot) {
+  var steps = [
+    // staff는 대시보드 권한이 없어 success:false가 온다 — 탭 자체가 숨겨져 있으므로 조용히 넘긴다
+    ['dashboard', function() { if (boot.dashboard && boot.dashboard.success !== false) renderDashboard(boot.dashboard); }],
+    ['shops',     function() { applyShopList(boot.shops); }],
+    ['closing',   function() { applyClosingCutoff(boot.closing); }]
+  ];
+  steps.forEach(function(step) {
+    try { step[1](); }
+    catch (e) { console.error('[bootstrap] ' + step[0] + ' 적용 실패: ' + (e && e.message ? e.message : e)); }
+  });
 }
 
 function applyRolePermissions() {

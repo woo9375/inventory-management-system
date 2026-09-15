@@ -156,7 +156,8 @@ CacheService(스크립트 캐시) ← CacheManager (90KB 청크 분할, 기본 T
   거래 등록은 캐시를 지우지 않는다. 마감 기준일이 없는 환경은 CLOSING_CUTOFF_NONE 부정 캐시로 통합 시트 풀 스캔을 막는다.
 클라이언트(JS_UI loadWithTabCache): 업장·시즌·사용자(getConfigData)·기초데이터·거래처 응답을 세션 동안 보관.
   1분 안 재방문은 서버 호출 없음, 그 뒤는 먼저 그리고 뒤에서 갱신. 쓰기 직후 loadXxx(true), 「시트 동기화」는 clearTabData().
-로그인: getBootstrapData 1회 = 대시보드 + 업장 목록 + 마감 기준일 + 마지막 동기화 시각.
+로그인: getBootstrapData 1회 = 대시보드 + 업장 목록 + 마감 기준일. 클라이언트 applyBootstrap이 항목별 try/catch로 적용한다
+  (대시보드 먼저 — 한 항목의 DOM 오류가 첫 화면을 비우지 않도록. 2026-09-15 핫픽스: 사라진 #lastSyncTimeText 참조로 대시보드가 비던 회귀).
 ```
 
 ### 대시보드 갱신 흐름

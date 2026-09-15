@@ -284,15 +284,14 @@ check('staff는 여전히 거절된다 (캐시가 권한을 우회하지 않는�
 });
 
 console.log('\n[7] getBootstrapData — 로그인 직후 묶음 응답');
-check('대시보드·업장·마감·동기화 시각을 한 번에 돌려주고, 인증 없으면 거절한다', () => {
+check('대시보드·업장·마감 기준일을 한 번에 돌려주고, 인증 없으면 거절한다', () => {
   const t = makeCtx();
-  t.env.__scriptProps.set('LAST_SYNC_TIMESTAMP', '2026-09-14T00:00:00.000Z');
   const b = call(t, 'getBootstrapData("tok")');
   ok(b.success);
   eq(b.shops.map(s => s.name), [SHOP_A]);
   eq(b.dashboard.kpi.total, 2);
   eq(b.closing, { success: true, cutoff: null, minDate: null, nextClosable: null }); // [TASK-028] nextClosable 추가
-  eq(b.lastSync.timestamp, '2026-09-14T00:00:00.000Z');
+  eq(Object.keys(b).sort(), ['closing', 'dashboard', 'shops', 'success'], '2026-09-15 핫픽스: 표시 요소 없는 lastSync 제거');
   eq(call(t, 'getBootstrapData("nope").success'), false);
   const s = call(t, 'getBootstrapData("staff")');
   eq(s.dashboard.success, false, 'staff 대시보드 거절은 그대로');

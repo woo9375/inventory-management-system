@@ -191,6 +191,7 @@ function getLastSyncTime(token) {
  * [TASK-027] 로그인 직후 화면이 필요로 하는 것을 한 번에 돌려준다.
  *   google.script.run 왕복은 빈 함수도 약 1초라, 네 호출을 따로 쏘던 것을 1회로 묶었다.
  *   각 항목은 기존 API를 그대로 부르므로 권한 규칙(예: staff는 대시보드 불가)이 그대로 적용된다.
+ *   lastSync(getLastSyncTime)는 화면에 표시하는 곳이 없어 2026-09-15 핫픽스에서 뺐다 — 클라이언트 applyBootstrap 참고.
  */
 function getBootstrapData(token) {
   const session = validateSession(token);
@@ -199,7 +200,6 @@ function getBootstrapData(token) {
     success: true,
     dashboard: getDashboardData(token),
     shops: getShopList(token),
-    closing: getClosingCutoffInfo(token),
-    lastSync: getLastSyncTime(token)
+    closing: getClosingCutoffInfo(token)
   };
 }
