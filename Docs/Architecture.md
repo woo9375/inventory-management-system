@@ -171,6 +171,10 @@ refreshDashboard()   // 시트 메뉴에서는 menuRefreshDashboard() → 안내
 ```
 executeMonthlyClosing(token, year, month)
   → LockService 획득
+  → [TASK-028] 마감 대상 월 검증 _validateClosingTarget(year, month, 기준일, 오늘)
+       재마감 · 미종료 월 · 건너뛴 월이면 { success:false } — 시트/Drive 읽기·쓰기 전
+  → [TASK-028] 연도 폴더의 동명 파일([입출고마감]_YYYY_MM, 휴지통 제외) 검사 — 있으면 중단
+  → 음수 재고 가드 (TASK-011)
   → 마감 대상 데이터 분리
   → DriveApp: 아카이브 스프레드시트 생성
   → FIFO 이월 계산

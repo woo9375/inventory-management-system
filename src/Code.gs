@@ -407,7 +407,7 @@ function onEdit(e) {
         return Utilities.formatDate(d, _tz, "yyyy-MM-dd") <= _cutoff;
       });
       if (_violates) {
-        ss.toast(`⛔ ${_cutoff} 이전은 이미 월마감된 기간입니다. 과거 누락/정정은 당월 거래로 입력하세요.`, "마감 기간 입력 차단", 8);
+        ss.toast(`⛔ ${_cutoff} 이전은 이미 월마감된 기간입니다. 과거 누락/정정은 오늘 날짜의 입고/출고로 등록하고 비고에 정정 사유를 남기세요.`, "마감 기간 입력 차단", 8);
         if (e.oldValue !== undefined && numRows === 1 && e.range.getNumColumns() === 1) {
           e.range.setValue(e.oldValue);
         } else {

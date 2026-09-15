@@ -412,7 +412,9 @@ function buildEnv(activeSpreadsheet) {
     const folder = {
       _name: name, _subfolders: [],
       getName: () => name,
-      createFile: (fileName, content, mime) => { const f = { name: fileName, content, mime, folder: name, getUrl: () => 'x' }; driveFiles.push(f); return f; },
+      createFile: (fileName, content, mime) => { const f = { name: fileName, content, mime, folder: name, trashed: false, getUrl: () => 'x', isTrashed: () => !!f.trashed }; driveFiles.push(f); return f; },
+      // [TASK-028] 월마감의 동명 아카이브 파일 검사(_hasLiveFileNamed)가 쓴다 — f.trashed = true로 휴지통 파일을 흉내 낸다
+      getFilesByName: (n) => { const hits = driveFiles.filter(x => x.folder === name && x.name === n); let i = 0; return { hasNext: () => i < hits.length, next: () => hits[i++] }; },
       getFoldersByName: (n) => { const hits = folder._subfolders.filter(x => x._name === n); let i = 0; return { hasNext: () => i < hits.length, next: () => hits[i++] }; },
       createFolder: (n) => { const sub = makeFolder(n); folder._subfolders.push(sub); return sub; }
     };

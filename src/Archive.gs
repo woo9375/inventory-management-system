@@ -113,9 +113,46 @@ function executeMonthlyClosing(token, year, month) {
   try {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // [TASK-028] 마감 대상 월 검증 — 시트를 읽거나 쓰기 전에, 어떤 부작용도 없이 거절한다.
+  //   재마감(기준일 이하) · 아직 끝나지 않은 월 · 건너뛴 월을 여기서 막는다. 이 검사가 없던 때는
+  //   기준일 이전 월을 다시 마감하면 setLatestClosingCutoff가 기준일을 뒤로 옮겨 TASK-010의
+  //   소급 입력 차단이 풀리고, 당월을 마감하면 남은 기간의 거래 등록이 통째로 막혔다.
+  year = Number(year);
+  month = Number(month);
+  const target = _validateClosingTarget(year, month, getLatestClosingCutoff(ss), new Date());
+  if (!target.ok) {
+    return { success: false, message: `❌ [월마감 차단] ${target.message}` };
+  }
+
+  // [TASK-028] 동명 아카이브 파일 검사 — 위 검사를 통과했는데 같은 이름의 파일이 있다면 상태 불일치
+  //   (예: 마감 후 스크립트 속성만 지워진 경우)이므로 덮어쓰거나 2번째 파일을 만들지 않고 중단한다.
+  //   연도 폴더는 여기서 만들지 않는다(거절 경로에 Drive 쓰기를 남기지 않기 위해).
+  let baseFolder;
+  try {
+    baseFolder = DriveApp.getFolderById(archiveFolderId);
+  } catch (e) {
+    if (e.message.includes('permission') || e.message.includes('권한')) {
+      return { success: false, message: "⚠️ Google Drive 접근 권한이 필요합니다.\\n[확장프로그램] > [Apps Script]로 이동하여 스크립트를 1회 직접 실행하고 권한(Drive API)을 허용해주세요." };
+    }
+    return { success: false, message: `아카이브 폴더 오류: ${e.message} (ID: ${archiveFolderId})` };
+  }
+  const yearStr = String(year);
+  const monthStr = String(month).padStart(2, '0');
+  const archiveName = `[입출고마감]_${yearStr}_${monthStr}`;
+  const yearFolders = baseFolder.getFoldersByName(yearStr);
+  let yearFolder = yearFolders.hasNext() ? yearFolders.next() : null;
+  if (yearFolder && _hasLiveFileNamed(yearFolder, archiveName)) {
+    return {
+      success: false,
+      message: `❌ [월마감 차단] 아카이브 폴더 ${yearStr}에 '${archiveName}' 파일이 이미 있습니다. ` +
+               `기존 파일을 확인(이름 변경 또는 이동)한 뒤 다시 실행하세요.`
+    };
+  }
+
   const txSheet = ss.getSheetByName(SHEET_INOUT);
   const masterSheet = ss.getSheetByName(SHEET_MASTER);
-  
+
   const txLastRow = Math.max(txSheet.getLastRow(), 3);
   const txData = txLastRow >= 3 ? txSheet.getRange(3, 1, txLastRow - 2, TX_COLS).getValues() : [];
   
@@ -156,28 +193,11 @@ function executeMonthlyClosing(token, year, month) {
   }
   
   // 1. 드라이브 폴더/파일 생성 및 데이터 이관
-  let baseFolder;
-  try {
-    baseFolder = DriveApp.getFolderById(archiveFolderId);
-  } catch (e) {
-    if (e.message.includes('permission') || e.message.includes('권한')) {
-      return { success: false, message: "⚠️ Google Drive 접근 권한이 필요합니다.\\n[확장프로그램] > [Apps Script]로 이동하여 스크립트를 1회 직접 실행하고 권한(Drive API)을 허용해주세요." };
-    }
-    return { success: false, message: `아카이브 폴더 오류: ${e.message} (ID: ${archiveFolderId})` };
-  }
-  
-  const yearStr = year.toString();
-  let yearFolder;
-  const yearFolders = baseFolder.getFoldersByName(yearStr);
-  if (yearFolders.hasNext()) {
-    yearFolder = yearFolders.next();
-  } else {
+  //    (폴더 접근·동명 파일 검사는 위에서 끝냈다 — 연도 폴더는 실제로 쓸 때 만든다)
+  if (!yearFolder) {
     yearFolder = baseFolder.createFolder(yearStr);
   }
-  
-  const monthStr = String(month).padStart(2, '0');
-  const archiveName = `[입출고마감]_${yearStr}_${monthStr}`;
-  
+
   // 새 스프레드시트 생성
   const newSS = SpreadsheetApp.create(archiveName);
   const newFile = DriveApp.getFileById(newSS.getId());
@@ -263,7 +283,6 @@ function executeMonthlyClosing(token, year, month) {
     lots.forEach(lot => {
       if (lot.remaining > 0) {
         // [INFO FIX] 이월 거래ID를 메인 포맷(PREFIX-YYYYMMDD-UUID8)과 통일
-        const monthStr = String(month).padStart(2, '0');
         const uniqueSuffix = Utilities.getUuid().replace(/-/g,"").substring(0,8).toUpperCase();
         const txId = `SYS-${year}${monthStr}01-${uniqueSuffix}`;
         newCarryoverRows.push([
@@ -681,25 +700,94 @@ function evaluateClosingCutoff(dateText, cutoff) {
     blocked: true,
     cutoff: cutoff,
     message: `❌ ${cutoff} 이전 기간(해당일 포함)은 이미 월마감되었습니다. ` +
-             `과거 누락/정정 데이터는 당월 재고조정 거래로 등록해주세요.`
+             `오늘 날짜의 입고/출고로 등록하고 비고에 정정 사유를 남기세요.`
   };
+}
+
+/**
+ * [TASK-028] 마감 기준일의 다음 달 — 순차 마감에서 "다음 마감 대상"이다.
+ * @param {string} cutoff "yyyy-MM-dd" (마감월 말일)
+ * @return {{year: number, month: number}}
+ */
+function _nextClosableMonth(cutoff) {
+  const parts = String(cutoff).split("-").map(Number);
+  const y = parts[0], m = parts[1];
+  return m === 12 ? { year: y + 1, month: 1 } : { year: y, month: m + 1 };
+}
+
+/**
+ * [TASK-028] 마감 대상 연/월이 지금 마감해도 되는지 판정한다 (순수 함수 — 시트·Drive 접근 없음).
+ *
+ * 검사 순서와 규칙(Docs/BusinessRules.md §10):
+ *   1. 재마감 금지   — 대상 월 말일이 마감 기준일 이하면 거절 (기준일이 뒤로 가면 소급 차단이 풀린다)
+ *   2. 미종료 월 금지 — 오늘이 대상 월의 다음 달 1일 전이면 거절 (당월을 닫으면 남은 기간 입력이 막힌다)
+ *   3. 순차 마감     — 마감 이력이 있으면 대상 월은 기준일의 다음 달이어야 한다 (건너뛴 달의 원장이 안 생긴다)
+ * 마감 이력이 없으면(첫 마감) 끝난 달이면 어느 달이든 허용한다 — 그 달 말일 이전 전부가 한 파일로 보관되므로.
+ *
+ * @param {number} year   대상 연도
+ * @param {number} month  대상 월 (1~12)
+ * @param {string|null} cutoff getLatestClosingCutoff() 결과 (없으면 null)
+ * @param {Date} today    기준 일자 — 단위 테스트가 주입한다
+ * @return {{ok: true} | {ok: false, message: string}}
+ */
+function _validateClosingTarget(year, month, cutoff, today) {
+  const y = Number(year), m = Number(month);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12 || y < 2000 || y > 2100) {
+    return { ok: false, message: "마감 대상 연/월이 올바르지 않습니다." };
+  }
+
+  // 1. 재마감·과거 월: 대상 월 말일 <= 기준일
+  const targetEndKey = _toDateKey(new Date(y, m, 0));
+  if (cutoff && targetEndKey <= cutoff) {
+    return { ok: false, message: `${y}년 ${m}월은 이미 마감된 월입니다 (마감 기준일 ${cutoff}).` };
+  }
+
+  // 2. 미종료 월: 오늘 < 대상 월의 다음 달 1일
+  const nextFirstKey = _toDateKey(new Date(y, m, 1));
+  if (_toDateKey(today) < nextFirstKey) {
+    const nextLabel = m === 12 ? `${y + 1}년 1월 1일` : `${m + 1}월 1일`;
+    return { ok: false, message: `${y}년 ${m}월은 아직 끝나지 않았습니다. ${nextLabel} 이후에 마감할 수 있습니다.` };
+  }
+
+  // 3. 순차 마감: 기준일의 다음 달만
+  if (cutoff) {
+    const next = _nextClosableMonth(cutoff);
+    if (y !== next.year || m !== next.month) {
+      return { ok: false, message: `다음 마감 대상은 ${next.year}년 ${next.month}월입니다. 순서대로 마감하세요.` };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * [TASK-028] 폴더 안에 같은 이름의 살아 있는(휴지통 아님) 파일이 있는지 본다.
+ * 휴지통에 버린 옛 파일 때문에 정상 마감이 막히지 않도록 isTrashed()를 함께 본다.
+ */
+function _hasLiveFileNamed(folder, name) {
+  const files = folder.getFilesByName(name);
+  while (files.hasNext()) {
+    if (!files.next().isTrashed()) return true;
+  }
+  return false;
 }
 
 /**
  * [TASK-010] 웹앱 클라이언트가 날짜 선택 하한(min)을 설정하기 위해 호출한다.
  * 서버 검증(addTransaction)이 1차 방어이고 이 값은 UX 보조(이중 방어)다.
+ * [TASK-028] 월마감 모달이 기본 선택·안내 문구에 쓰는 `nextClosable`(기준일의 다음 달)을 함께 준다.
  *
  * @param {string} token 세션 토큰
- * @return {{success: boolean, cutoff: string|null, minDate: string|null}}
+ * @return {{success: boolean, cutoff: string|null, minDate: string|null, nextClosable: {year: number, month: number}|null}}
  */
 function getClosingCutoffInfo(token) {
   const session = validateSession(token);
-  if (!session) return { success: false, cutoff: null, minDate: null };
+  if (!session) return { success: false, cutoff: null, minDate: null, nextClosable: null };
 
   const cutoff = getLatestClosingCutoff();
-  if (!cutoff) return { success: true, cutoff: null, minDate: null };
+  if (!cutoff) return { success: true, cutoff: null, minDate: null, nextClosable: null };
 
   const c = new Date(cutoff + "T00:00:00");
   const minDate = _toDateKey(new Date(c.getFullYear(), c.getMonth(), c.getDate() + 1));
-  return { success: true, cutoff: cutoff, minDate: minDate };
+  return { success: true, cutoff: cutoff, minDate: minDate, nextClosable: _nextClosableMonth(cutoff) };
 }

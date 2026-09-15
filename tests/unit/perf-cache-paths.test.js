@@ -291,7 +291,7 @@ check('대시보드·업장·마감·동기화 시각을 한 번에 돌려주고
   ok(b.success);
   eq(b.shops.map(s => s.name), [SHOP_A]);
   eq(b.dashboard.kpi.total, 2);
-  eq(b.closing, { success: true, cutoff: null, minDate: null });
+  eq(b.closing, { success: true, cutoff: null, minDate: null, nextClosable: null }); // [TASK-028] nextClosable 추가
   eq(b.lastSync.timestamp, '2026-09-14T00:00:00.000Z');
   eq(call(t, 'getBootstrapData("nope").success'), false);
   const s = call(t, 'getBootstrapData("staff")');

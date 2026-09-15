@@ -185,18 +185,29 @@ function loadContext(txRows, masterRows, opts) {
   const createdSpreadsheets = [];
   const addedFiles = [];
 
+  // [TASK-028] existingArchiveFiles: [{ name, trashed }] — 연도 폴더가 이미 있고 그 안에 파일이 있는 상태.
+  //   지정하지 않으면 연도 폴더가 없어 마감이 새로 만든다(기존 동작).
+  const existingFiles = options.existingArchiveFiles || null;
   const yearFolder = {
-    _name: null,
-    addFile(f) { addedFiles.push({ folder: yearFolder._name, file: f }); }
+    _name: existingFiles ? '2026' : null,
+    addFile(f) { addedFiles.push({ folder: yearFolder._name, file: f }); },
+    getFilesByName(n) {
+      const hits = (existingFiles || []).filter((f) => f.name === n).map((f) => ({ isTrashed: () => !!f.trashed }));
+      let i = 0;
+      return { hasNext: () => i < hits.length, next: () => hits[i++] };
+    }
   };
   const baseFolder = {
-    getFoldersByName: () => ({ hasNext: () => false, next: () => null }),
+    getFoldersByName: () => ({ hasNext: () => !!existingFiles, next: () => yearFolder }),
     createFolder(n) { createdFolders.push(n); yearFolder._name = n; return yearFolder; }
   };
 
   let flushCount = 0;
 
   const scriptProps = { ARCHIVE_FOLDER_ID: ARCHIVE_FOLDER_ID };
+  // [TASK-028] 마감 이력이 있는 상태에서 시작 (재마감·순차 마감 검사용)
+  if (options.closedCutoff) scriptProps.LAST_CLOSED_CUTOFF = options.closedCutoff;
+  const cacheStore = new Map();
 
   const sandbox = {
     console: {
@@ -221,6 +232,14 @@ function loadContext(txRows, masterRows, opts) {
       getScriptProperties: () => ({
         getProperty: (k) => (k in scriptProps ? scriptProps[k] : null),
         setProperty: (k, v) => { scriptProps[k] = v; }
+      })
+    },
+    // [TASK-028] 마감 전 getLatestClosingCutoff가 "이력 없음" 부정 캐시(TASK-027)를 읽는다 — 인메모리 스텁
+    CacheService: {
+      getScriptCache: () => ({
+        get: (k) => (cacheStore.has(k) ? cacheStore.get(k) : null),
+        put: (k, v) => { cacheStore.set(k, String(v)); },
+        remove: (k) => { cacheStore.delete(k); }
       })
     },
     DriveApp: {
@@ -674,6 +693,183 @@ test('[회귀] 마감 후 재취합을 반복해도 이월 행과 현재고가 �
     );
     assert.strictEqual(masterRowsOf(ctx)[0][INIT_STOCK_COL], 0);
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+//  [TASK-028] 마감 대상 월 검증 — 재마감 · 과거 월 · 미종료 월 · 건너뜀 · 동명 파일
+//
+//  2026-09-14 DEV에서 모달 기본값(이번 달)으로 9월을 마감해 남은 기간의 거래 등록이 통째로 막혔다.
+//  그 전까지 재마감이 막히던 것은 "아카이브할 데이터 없음" 가드에 우연히 걸린 것뿐이라,
+//  초기재고 > 0인 품목이 하나라도 생기면 재마감이 통과하고, 기준일 이전 월을 다시 마감하면
+//  setLatestClosingCutoff가 기준일을 뒤로 옮겨 TASK-010의 소급 차단이 풀렸다.
+//  아래는 전부 "거절 시 시트·Drive·속성에 아무 흔적도 남기지 않는다"를 함께 단언한다.
+// ─────────────────────────────────────────────────────────────
+
+/** 거절 경로 공통 단언: 파일·폴더 미생성, 시트 불변, 속성 불변 */
+function assertUntouched(ctx, txCountBefore, initBefore, cutoffBefore) {
+  assert.strictEqual(ctx.__createdSpreadsheets.length, 0, 'Drive 파일을 만들면 안 된다');
+  assert.strictEqual(ctx.__createdFolders.length, 0, '연도 폴더를 만들면 안 된다');
+  assert.strictEqual(txRowsOf(ctx).length, txCountBefore, '입출고 시트가 바뀌면 안 된다');
+  assert.strictEqual(masterRowsOf(ctx)[0][INIT_STOCK_COL], initBefore, '초기재고가 바뀌면 안 된다');
+  assert.strictEqual(ctx.__scriptProps.LAST_CLOSED_CUTOFF, cutoffBefore, '마감 기준일이 바뀌면 안 된다');
+  assert.ok(!ctx.__opLog.some((op) => op.indexOf('SET:') === 0 || op.indexOf('CLEAR:') === 0), '시트 쓰기 없음: ' + ctx.__opLog.join(' | '));
+}
+
+test('[TASK-028] 재마감 거절: 기준일 2026-08-31 상태에서 2026년 8월을 다시 마감하면 거절하고 아무것도 쓰지 않는다', () => {
+  const ctx = loadContext([
+    tx('2026-09-01', 'A001', '토마토', '입고', 9, 1200, '2026년 8월 마감 이월', 'SYS-20260801-AAAA0001')
+  ], [master('A001', '토마토', 0, 1500)], { closedCutoff: '2026-08-31' });
+
+  const res = ctx.executeMonthlyClosing('t', 2026, 8);
+  assert.strictEqual(res.success, false);
+  assert.ok(res.message.indexOf('2026년 8월은 이미 마감된 월입니다') >= 0, res.message);
+  assert.ok(res.message.indexOf('2026-08-31') >= 0, '메시지에 기준일: ' + res.message);
+  assertUntouched(ctx, 1, 0, '2026-08-31');
+});
+
+test('[TASK-028] 과거 월 소급 마감 거절: 기준일 2026-08-31 상태에서 7월을 마감해도 기준일이 뒤로 가지 않는다', () => {
+  const ctx = loadContext([
+    tx('2026-09-01', 'A001', '토마토', '입고', 9, 1200, '2026년 8월 마감 이월', 'SYS-20260801-AAAA0001')
+  ], [master('A001', '토마토', 0, 1500)], { closedCutoff: '2026-08-31' });
+
+  const res = ctx.executeMonthlyClosing('t', 2026, 7);
+  assert.strictEqual(res.success, false);
+  assert.ok(res.message.indexOf('이미 마감된 월입니다') >= 0, res.message);
+  assertUntouched(ctx, 1, 0, '2026-08-31');
+  assert.strictEqual(ctx.getLatestClosingCutoff(), '2026-08-31', '소급 차단 기준일이 그대로여야 한다');
+  assert.strictEqual(ctx.validateNotClosedMonth('2026-08-15').blocked, true, '8월 거래는 여전히 차단되어야 한다');
+});
+
+test('[TASK-028] 미종료 월 거절: 이번 달을 마감하려 하면 "아직 끝나지 않았습니다"로 거절한다 (DEV 사고 재현)', () => {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1;
+  const ctx = loadContext([
+    tx(`${y}-${pad(m, 2)}-01`, 'A001', '토마토', '입고', 10, 1000)
+  ], [master('A001', '토마토', 3, 1500)], {});
+
+  const res = ctx.executeMonthlyClosing('t', y, m);
+  assert.strictEqual(res.success, false);
+  assert.ok(res.message.indexOf(`${y}년 ${m}월은 아직 끝나지 않았습니다`) >= 0, res.message);
+  assertUntouched(ctx, 1, 3, undefined);
+});
+
+test('[TASK-028] 건너뛴 월 거절: 기준일 2026-06-30 상태에서 8월을 마감하면 "다음 마감 대상은 2026년 7월"로 거절한다', () => {
+  const ctx = loadContext([
+    tx('2026-07-05', 'A001', '토마토', '입고', 10, 1000),
+    tx('2026-08-05', 'A001', '토마토', '입고', 4, 1000)
+  ], [master('A001', '토마토', 0, 1500)], { closedCutoff: '2026-06-30' });
+
+  const res = ctx.executeMonthlyClosing('t', 2026, 8);
+  assert.strictEqual(res.success, false);
+  assert.ok(res.message.indexOf('다음 마감 대상은 2026년 7월입니다') >= 0, res.message);
+  assertUntouched(ctx, 2, 0, '2026-06-30');
+
+  // 순서대로(7월) 마감하면 정상 — 8월 행은 남고 기준일은 7월 말일로 전진한다
+  const ok = ctx.executeMonthlyClosing('t', 2026, 7);
+  assert.ok(ok.success, ok.message);
+  assert.strictEqual(ctx.__scriptProps.LAST_CLOSED_CUTOFF, '2026-07-31');
+  assert.strictEqual(ctx.__createdSpreadsheets[0], '[입출고마감]_2026_07');
+  assert.strictEqual(txRowsOf(ctx).filter((r) => r[8] === 'FB-X').length, 1, '8월 행은 메인 시트에 남는다');
+});
+
+test('[TASK-028] 동명 파일 거절: 연도 폴더에 [입출고마감]_2026_07이 이미 있으면 파일을 만들지도 시트를 건드리지도 않는다', () => {
+  const rows = [tx('2026-07-05', 'A001', '토마토', '입고', 10, 1000)];
+  const dup = loadContext(rows.map((r) => r.slice()), [master('A001', '토마토', 2, 1500)],
+    { existingArchiveFiles: [{ name: '[입출고마감]_2026_07' }, { name: '[입출고마감]_2026_06' }] });
+
+  const res = dup.executeMonthlyClosing('t', 2026, 7);
+  assert.strictEqual(res.success, false);
+  assert.ok(res.message.indexOf("'[입출고마감]_2026_07' 파일이 이미 있습니다") >= 0, res.message);
+  assert.ok(res.message.indexOf('아카이브 폴더 2026') >= 0, res.message);
+  assertUntouched(dup, 1, 2, undefined);
+
+  // 휴지통에 있는 동명 파일만 있으면 정상 마감 — 기존 연도 폴더를 재사용한다(새로 만들지 않음)
+  const trashed = loadContext(rows.map((r) => r.slice()), [master('A001', '토마토', 2, 1500)],
+    { existingArchiveFiles: [{ name: '[입출고마감]_2026_07', trashed: true }] });
+  const ok = trashed.executeMonthlyClosing('t', 2026, 7);
+  assert.ok(ok.success, ok.message);
+  assert.deepStrictEqual(trashed.__createdSpreadsheets, ['[입출고마감]_2026_07']);
+  assert.strictEqual(trashed.__createdFolders.length, 0, '이미 있는 연도 폴더를 다시 만들지 않는다');
+  assert.strictEqual(trashed.__addedFiles[0].folder, '2026');
+});
+
+test('[TASK-028] 첫 마감(이력 없음): 끝난 달이면 어느 달이든 허용하고, 그 달 말일 이전 전부를 한 파일로 보관한다', () => {
+  const ctx = loadContext([
+    tx('2025-11-20', 'A001', '토마토', '입고', 5, 1000),
+    tx('2026-03-10', 'A001', '토마토', '입고', 7, 1000),
+    tx('2026-04-02', 'A001', '토마토', '출고', 1, 1000)
+  ], [master('A001', '토마토', 0, 1500)], {});
+  assert.strictEqual(ctx.getLatestClosingCutoff(), null, '전제: 마감 이력 없음');
+
+  const res = ctx.executeMonthlyClosing('t', 2026, 3);
+  assert.ok(res.success, res.message);
+  assert.ok(res.message.indexOf('2건 보관') >= 0, '2025-11 + 2026-03 두 행 보관: ' + res.message);
+  assert.strictEqual(ctx.__scriptProps.LAST_CLOSED_CUTOFF, '2026-03-31');
+});
+
+test('[TASK-028] 초기재고 > 0 신규 품목이 있어도 재마감은 규칙으로 거절된다 (우연 가드가 아님을 증명)', () => {
+  // 마감 후 품목 관리에서 초기재고 50으로 신규 등록한 상황 — 예전에는 이 초기재고 때문에
+  // "아카이브할 데이터 없음" 가드를 지나쳐 빈 2번째 파일과 엉뚱한 이월 행이 생겼다.
+  const ctx = loadContext([
+    tx('2026-08-01', 'A001', '토마토', '입고', 9, 1200, '2026년 7월 마감 이월', 'SYS-20260701-AAAA0001')
+  ], [master('A001', '토마토', 0, 1500), master('N999', '신규품목', 50, 700)], { closedCutoff: '2026-07-31' });
+
+  const res = ctx.executeMonthlyClosing('t', 2026, 7);
+  assert.strictEqual(res.success, false);
+  assert.ok(res.message.indexOf('이미 마감된 월입니다') >= 0, '데이터 없음이 아니라 재마감 규칙으로 거절: ' + res.message);
+  assert.ok(res.message.indexOf('아카이브할 입출고 데이터') < 0, res.message);
+  assert.strictEqual(masterRowsOf(ctx)[1][INIT_STOCK_COL], 50, '신규 품목 초기재고가 리셋되면 안 된다');
+  assert.strictEqual(ctx.__createdSpreadsheets.length, 0);
+  assert.strictEqual(carryoverRows(txRowsOf(ctx)).length, 1, '이월 행이 늘어나면 안 된다');
+});
+
+test('[TASK-028] _validateClosingTarget 순수 판정: 기준 일자 주입 · 연말 경계 · 검사 순서 · 잘못된 입력', () => {
+  const ctx = loadContext([], [master('A001', '토마토', 0, 1500)], {});
+  const v = ctx._validateClosingTarget;
+  const day = (s) => new Date(s + 'T12:00:00');
+
+  // 2. 미종료 월 — 오늘이 다음 달 1일이 되는 순간부터 허용
+  assert.strictEqual(v(2026, 9, null, day('2026-09-14')).ok, false);
+  assert.ok(v(2026, 9, null, day('2026-09-14')).message.indexOf('10월 1일 이후') >= 0);
+  assert.strictEqual(v(2026, 9, null, day('2026-09-30')).ok, false, '말일 당일도 아직 끝나지 않았다');
+  assert.strictEqual(v(2026, 9, null, day('2026-10-01')).ok, true);
+  assert.ok(v(2026, 12, null, day('2026-12-31')).message.indexOf('2027년 1월 1일 이후') >= 0, '12월은 이듬해 1월 1일');
+
+  // 3. 순차 마감 — 연말 경계 포함
+  assert.strictEqual(v(2027, 1, '2026-12-31', day('2027-02-01')).ok, true, '12월 마감 다음은 이듬해 1월');
+  const skip = v(2027, 2, '2026-12-31', day('2027-03-01'));
+  assert.strictEqual(skip.ok, false);
+  assert.ok(skip.message.indexOf('다음 마감 대상은 2027년 1월입니다') >= 0, skip.message);
+
+  // 검사 순서: 기준일 이전 월은 (순서 위반이기도 하지만) "이미 마감된 월"로 안내한다
+  const past = v(2026, 5, '2026-08-31', day('2026-09-15'));
+  assert.ok(past.message.indexOf('이미 마감된 월') >= 0, past.message);
+  // 기준일 당월 말일과 같은 달 = 재마감
+  assert.ok(v(2026, 8, '2026-08-31', day('2026-09-15')).message.indexOf('이미 마감된 월') >= 0);
+
+  // 클라이언트가 문자열로 보내도 같은 판정
+  assert.strictEqual(v('2026', '7', null, day('2026-09-15')).ok, true);
+  // 잘못된 입력
+  assert.strictEqual(v(2026, 13, null, day('2026-09-15')).ok, false);
+  assert.strictEqual(v(2026, 0, null, day('2026-09-15')).ok, false);
+  assert.strictEqual(v('abc', 7, null, day('2026-09-15')).ok, false);
+  assert.ok(v(2026, 13, null, day('2026-09-15')).message.indexOf('올바르지 않습니다') >= 0);
+});
+
+test('[TASK-028] getClosingCutoffInfo: nextClosable(기준일의 다음 달)을 함께 주고 기존 필드는 그대로다', () => {
+  const dec = loadContext([], [master('A001', '토마토', 0, 1500)], { closedCutoff: '2026-12-31' });
+  const info = dec.getClosingCutoffInfo('t');
+  assert.strictEqual(info.success, true);
+  assert.strictEqual(info.cutoff, '2026-12-31');
+  assert.strictEqual(info.minDate, '2027-01-01');
+  assert.strictEqual(info.nextClosable.year, 2027);
+  assert.strictEqual(info.nextClosable.month, 1);
+
+  const none = loadContext([], [master('A001', '토마토', 0, 1500)], {});
+  const noInfo = none.getClosingCutoffInfo('t');
+  assert.strictEqual(noInfo.success, true);
+  assert.strictEqual(noInfo.cutoff, null);
+  assert.strictEqual(noInfo.nextClosable, null);
 });
 
 console.log(`\n✓ 월마감 정합성 테스트 ${passed}건 통과`);

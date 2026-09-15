@@ -98,6 +98,11 @@ console.log('[TASK-010] 마감월 데이터 수정 차단 가드레일');
     assert.strictEqual(r.blocked, true);
     assert.ok(r.message.indexOf('2026-08-31') >= 0, '메시지에 마감일이 없음: ' + r.message);
   });
+  check('S1: [TASK-028] 안내 문구는 실제 구분(입고/출고)으로 정정 방법을 알려준다 — "재고조정"이라는 구분은 없다', () => {
+    const r = validate('2026-08-15');
+    assert.ok(r.message.indexOf('오늘 날짜의 입고/출고로 등록하고 비고에 정정 사유를 남기세요') >= 0, r.message);
+    assert.strictEqual(r.message.indexOf('재고조정'), -1, r.message);
+  });
   check('S1: 마감 기준일 이전(2026-08-15) 거래는 차단된다', () => {
     assert.strictEqual(validate('2026-08-15').blocked, true);
   });
@@ -183,6 +188,13 @@ console.log('[TASK-010] 마감월 데이터 수정 차단 가드레일');
     assert.strictEqual(info.success, true);
     assert.strictEqual(info.cutoff, '2026-08-31');
     assert.strictEqual(info.minDate, '2026-09-01');
+  });
+  check('S7: [TASK-028] nextClosable로 다음 마감 대상(기준일의 다음 달)을 준다', () => {
+    const info = ctx.evalIn('getClosingCutoffInfo')('dummy-token');
+    assert.strictEqual(info.nextClosable.year, 2026);
+    assert.strictEqual(info.nextClosable.month, 9);
+    const none = buildContext([normalRow('2026-09-01')], {}).evalIn('getClosingCutoffInfo')('dummy-token');
+    assert.strictEqual(none.nextClosable, null, '마감 이력이 없으면 null');
   });
 }
 

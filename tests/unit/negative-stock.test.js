@@ -240,6 +240,8 @@ function loadContext(txRows, masterRows) {
       getFileById: (id) => ({ _id: id }),
       getRootFolder: () => ({ removeFile() {} })
     },
+    // [TASK-028] 마감 전 대상 월 검증이 getLatestClosingCutoff를 부르고, 이력이 없으면 부정 캐시(CacheService)를 읽는다
+    CacheService: (() => { const m = new Map(); const c = { get: (k) => (m.has(k) ? m.get(k) : null), put: (k, v) => { m.set(k, String(v)); }, remove: (k) => { m.delete(k); } }; return { getScriptCache: () => c }; })(),
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
       newConditionalFormatRule: cfBuilder,

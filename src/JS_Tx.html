@@ -146,20 +146,23 @@ function applyShopList(shops) {
 // [TASK-010] 마감된 기간의 날짜를 아예 고를 수 없게 한다 (서버 검증과 이중 방어).
 // 서버(addTransaction)의 validateNotClosedMonth가 1차 방어이고, 이것은 UX 보조다.
 var closedCutoffDate = null; // "yyyy-MM-dd" 또는 null(마감 이력 없음)
+// [TASK-028] 마지막으로 받은 getClosingCutoffInfo 응답 — 월마감 모달(JS_Config)이 기준일·다음 대상 표시에 쓴다
+var closingCutoffInfo = null;
 
-function loadClosingCutoff() {
+function loadClosingCutoff(cb) {
   google.script.run
-    .withSuccessHandler(applyClosingCutoff)
-    .withFailureHandler(function() {})
+    .withSuccessHandler(function(info) { applyClosingCutoff(info); if (cb) cb(info); })
+    .withFailureHandler(function() { if (cb) cb(null); })
     .getClosingCutoffInfo(getToken());
 }
 
 /** 거래일 하한 적용 — 로그인 부트스트랩과 loadClosingCutoff가 같이 쓴다 [TASK-027] */
 function applyClosingCutoff(info) {
-  if (!info || !info.success || !info.minDate) return;
-  closedCutoffDate = info.cutoff;
+  if (!info || !info.success) return;
+  closingCutoffInfo = info;
+  closedCutoffDate = info.cutoff || null;
   var txDate = document.getElementById('txDate');
-  if (txDate) txDate.min = info.minDate;
+  if (txDate) txDate.min = info.minDate || '';
 }
 
 // [TASK-027] 품목 코드 전체 목록(약 4,300건·150KB)은 서버 검색이 실패했을 때의 폴백에만 쓰인다.
@@ -354,7 +357,7 @@ function saveTransaction() {
   if (Number(txData.qty) <= 0) return showToast('수량은 1 이상이어야 합니다', 'warning');
   // [TASK-010] 마감된 기간은 서버에서도 거부되지만, 왕복 전에 즉시 안내한다
   if (closedCutoffDate && txData.date <= closedCutoffDate) {
-    return showToast(closedCutoffDate + ' 이전은 이미 월마감된 기간입니다. 당월 재고조정으로 등록하세요', 'error');
+    return showToast(closedCutoffDate + ' 이전은 이미 월마감된 기간입니다. 오늘 날짜의 입고/출고로 등록하고 비고에 정정 사유를 남기세요.', 'error');
   }
 
   showLoading();

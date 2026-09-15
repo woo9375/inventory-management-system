@@ -354,35 +354,91 @@ function doDeleteUser(username) {
 // ═══════════════════════════════════════════════════════════════
 //  [NEW] 수동 월마감 기능
 // ═══════════════════════════════════════════════════════════════
+// [TASK-028] 모달은 "지금 마감할 수 있는 달"만 고를 수 있게 한다. 서버 _validateClosingTarget이 1차 방어이고
+//   이 화면은 실수 방지용 보조다(TASK-010의 거래일 min과 같은 이중 방어). 규칙은 서버와 같다:
+//   끝난 달만 · 마감 이력이 있으면 기준일의 다음 달만 · 이력이 없으면 지난 아무 달이나.
+function isClosableMonth(info, year, month, today) {
+  var nextFirst = new Date(year, month, 1); // 대상 월의 다음 달 1일
+  if (today < nextFirst) return false;      // 아직 끝나지 않은 달
+  if (info && info.cutoff && info.nextClosable) {
+    return year === info.nextClosable.year && month === info.nextClosable.month;
+  }
+  return true;
+}
+
+/** 기본 선택: 다음 마감 대상(이력 있음) 또는 지난달(이력 없음) */
+function defaultClosingTarget(info, today) {
+  if (info && info.cutoff && info.nextClosable) return { year: info.nextClosable.year, month: info.nextClosable.month };
+  var prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  return { year: prev.getFullYear(), month: prev.getMonth() + 1 };
+}
+
 function openMonthlyClosingModal() {
   if (currentUser && currentUser.role !== 'admin') {
     return showToast('최고 관리자만 실행할 수 있습니다.', 'error');
   }
+  // 기준일은 로그인 때 받아 두지만, 마감은 되돌릴 수 없는 작업이라 열 때마다 최신 값을 다시 읽는다.
+  showLoading();
+  loadClosingCutoff(function(info) {
+    hideLoading();
+    if (!info || !info.success) return showToast('마감 기준일을 확인하지 못했습니다. 잠시 후 다시 시도하세요.', 'error');
+    renderMonthlyClosingModal(info, new Date());
+  });
+}
 
-  var d = new Date();
-  var currYear = d.getFullYear();
-  var currMonth = d.getMonth() + 1;
-  
+function renderMonthlyClosingModal(info, today) {
+  var target = defaultClosingTarget(info, today);
+  var currYear = today.getFullYear();
+  var firstYear = Math.min(currYear - 1, target.year);
+  var lastYear = Math.max(currYear, target.year);
+
   var yrOptions = '';
-  for(var y = currYear - 1; y <= currYear; y++) {
-    yrOptions += '<option value="' + y + '"' + (y===currYear ? ' selected' : '') + '>' + y + '년</option>';
+  for (var y = firstYear; y <= lastYear; y++) {
+    var yearClosable = false;
+    for (var mm = 1; mm <= 12 && !yearClosable; mm++) yearClosable = isClosableMonth(info, y, mm, today);
+    yrOptions += '<option value="' + y + '"' + (y === target.year ? ' selected' : '') + (yearClosable ? '' : ' disabled') + '>' + y + '년</option>';
   }
-  
   var mthOptions = '';
-  for(var m = 1; m <= 12; m++) {
-    mthOptions += '<option value="' + m + '"' + (m===currMonth ? ' selected' : '') + '>' + m + '월</option>';
+  for (var m = 1; m <= 12; m++) {
+    mthOptions += '<option value="' + m + '"' + (m === target.month ? ' selected' : '') + '>' + m + '월</option>';
+  }
+
+  var guide;
+  if (info.cutoff) {
+    guide = '현재 마감 기준일: <strong>' + info.cutoff + '</strong> · 다음 마감 대상: <strong>' + target.year + '년 ' + target.month + '월</strong>';
+    if (!isClosableMonth(info, target.year, target.month, today)) {
+      var nextFirst = new Date(target.year, target.month, 1);
+      guide += ' <span class="text-muted">(' + (nextFirst.getMonth() + 1) + '월 1일 이후 가능)</span>';
+    }
+  } else {
+    guide = '현재 마감 기준일: <strong>마감 이력 없음</strong> · 다음 마감 대상: <strong>지난 월 선택 가능</strong>';
   }
 
   var body = '<div class="form-grid">' +
     '<div class="form-group form-group--wide">' +
+    '<div class="callout" id="closingGuide">' + guide + '</div>' +
     '<p class="warn-text mb-8">경고: 월마감을 실행하면 선택한 연/월 이전의 모든 과거 데이터가 별도의 드라이브 시트로 분리되며, 현재 메인 시트에서 삭제됩니다. 남은 재고는 새롭게 선입선출 이월 기록으로 생성됩니다.</p>' +
     '</div>' +
-    '<div class="form-group"><label>마감 기준 연도</label><select id="closingYear">' + yrOptions + '</select></div>' +
+    '<div class="form-group"><label>마감 기준 연도</label><select id="closingYear" onchange="refreshClosingMonthOptions()">' + yrOptions + '</select></div>' +
     '<div class="form-group"><label>마감 기준 월</label><select id="closingMonth">' + mthOptions + '</select></div>' +
     '</div>';
-    
+
   var footer = '<button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-danger" onclick="confirmMonthlyClosing()">실행</button>';
   openModal('월마감 및 재고 이월 실행', body, footer);
+  refreshClosingMonthOptions();
+}
+
+/** 선택한 연도에 맞춰 고를 수 없는 달을 disabled 처리한다 (연도를 바꾸면 다시 계산) */
+function refreshClosingMonthOptions() {
+  var yearSel = document.getElementById('closingYear');
+  var monthSel = document.getElementById('closingMonth');
+  if (!yearSel || !monthSel) return;
+  var year = Number(yearSel.value);
+  var today = new Date();
+  for (var i = 0; i < monthSel.options.length; i++) {
+    var opt = monthSel.options[i];
+    opt.disabled = !isClosableMonth(closingCutoffInfo, year, Number(opt.value), today);
+  }
 }
 
 function confirmMonthlyClosing() {
@@ -410,10 +466,12 @@ function submitMonthlyClosing(year, month) {
     .withSuccessHandler(function(res) {
       hideLoading();
       if (res.success) {
-        showToast(res.message, 'success');
+        showToast(itemMsg(res.message), 'success');
         closeModal();
+        // [TASK-028] 기준일이 바뀌었으니 거래일 하한(txDate.min)과 다음 모달의 안내를 최신으로
+        loadClosingCutoff();
       } else {
-        showToast('마감 실패: ' + res.message, 'error');
+        showToast('마감 실패: ' + itemMsg(res.message), 'error');
       }
     })
     .withFailureHandler(function(err) {
