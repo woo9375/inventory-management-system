@@ -1043,7 +1043,7 @@ input:disabled, select:disabled, textarea:disabled {
 
 /* ═══════════════ [TASK-022] 인라인 style 이관 컴포넌트 (UIGuidelines §4 인라인 금지) ═══════════════ */
 /* JS가 토글하는 표시 상태는 [hidden] 속성으로 — display 규칙이 있는 요소는 명시적으로 덮는다 */
-.app-container[hidden], .nav-badge[hidden], .autocomplete-list[hidden], .modal-close[hidden], .modal-footer[hidden] { display: none; }
+.app-container[hidden], .nav-badge[hidden], .autocomplete-list[hidden], .modal-close[hidden], .modal-footer[hidden], .status-badge[hidden] { display: none; }
 .admin-only[hidden] { display: none !important; } /* 역할 가드(JS_Auth applyRolePermissions) — 어떤 display 규칙보다 우선 */
 .admin-manager-only[hidden] { display: none !important; } /* [TASK-025] admin + manager 공용(품목 관리) — .admin-only의 의미는 그대로 둔다 */
 

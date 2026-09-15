@@ -390,6 +390,10 @@ test('기본 마감: FIFO 잔여 로트가 이월 입고로 생성되고 INIT_ST
 
   // INIT_STOCK 리셋
   assert.strictEqual(masterRowsOf(ctx)[0][INIT_STOCK_COL], 0);
+
+  // [TASK-029] 월마감도 recalcStockAndUsage로 H열을 되쓰므로 재계산 시각이 남아야 한다 (전에는 통합 갱신만 기록)
+  assert.ok(!isNaN(Date.parse(ctx.__scriptProps.LAST_SYNC_TIMESTAMP || '')),
+    '월마감 뒤 LAST_SYNC_TIMESTAMP가 ISO 문자열이어야 한다: ' + ctx.__scriptProps.LAST_SYNC_TIMESTAMP);
 });
 
 // ─────────────────────────────────────────────────────────────

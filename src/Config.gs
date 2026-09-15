@@ -124,6 +124,11 @@ const CACHE_INVALIDATE_KEYS = [
   CACHE_KEYS.ITEM_INDEX
 ];
 
+// [TASK-029] 재고를 마지막으로 재계산한 시각(ISO 문자열)을 담는 ScriptProperties 키.
+//   recalcStockAndUsage가 마스터 H열(현재고)을 되쓴 직후에 기록하고, 대시보드 헤더 「재고 계산 기준」이 읽는다.
+//   키 이름은 예전 사이드바 "마지막 취합 시각"에서 그대로 물려받았다(getLastSyncTime 호환).
+const STOCK_RECALC_AT_PROPERTY = "LAST_SYNC_TIMESTAMP";
+
 // ═══════════════════════════════════════════════════════════════════
 //  인증 시스템 상수
 // ═══════════════════════════════════════════════════════════════════

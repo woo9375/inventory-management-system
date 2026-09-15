@@ -97,10 +97,8 @@ function refreshDashboard(isSilent = false) {
     }
 
     // [TASK-006] 재취합은 재고 수치를 바꾸므로 캐시를 버려야 웹앱이 최신 값을 읽는다
+    //   (재계산 시각 LAST_SYNC_TIMESTAMP는 recalcStockAndUsage가 기록한다 — TASK-029)
     try { CacheManager.invalidateAll(); } catch (e) { console.warn('[TASK-006] 캐시 무효화 실패: ' + e.message); }
-    
-    // [FIX] 수동 취합 완료 시간 기록
-    PropertiesService.getScriptProperties().setProperty("LAST_SYNC_TIMESTAMP", new Date().toISOString());
     
     if (!isSilent) SpreadsheetApp.getUi().alert("🔄 [동기화 완료] 정적 재고 집계 및 최신화가 완료되었습니다.");
     return { success: true, message: "통합 갱신이 완료되었습니다. 현재고와 대시보드가 최신 상태입니다." };

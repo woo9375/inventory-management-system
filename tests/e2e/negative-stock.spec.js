@@ -338,7 +338,7 @@ test.describe('DEV 음수 재고 표시', () => {
     // 배지 렌더링 자체는 검증할 수 있어야 하기 때문이다.
     await app.locator('body').evaluate(() => {
       renderDashboard({
-        date: '9999-12-31 00:00',
+        recalcAt: null, recalcAtText: null, // [TASK-029] 옛 date 필드 대신
         season: '비수기',
         seasonMultiplier: 1,
         kpi: { total: 2, risk: 1, order: 1, normal: 0 },

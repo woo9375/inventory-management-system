@@ -283,6 +283,76 @@ check('staff는 여전히 거절된다 (캐시가 권한을 우회하지 않는�
   eq(call(t, 'getDashboardData("staff").success'), false);
 });
 
+console.log('\n[6-1] [TASK-029] 대시보드 헤더 시각 = 재고 재계산 시각');
+check('recalcStockAndUsage가 끝나면 LAST_SYNC_TIMESTAMP를 ISO로 기록한다', () => {
+  const t = makeCtx();
+  ok(!t.env.__scriptProps.has('LAST_SYNC_TIMESTAMP'), '사전 조건: 기록 없음');
+  const before = Date.now();
+  call(t, 'recalcStockAndUsage(SpreadsheetApp.getActiveSpreadsheet())');
+  const iso = t.env.__scriptProps.get('LAST_SYNC_TIMESTAMP');
+  ok(typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(iso), 'ISO 문자열: ' + iso);
+  ok(Date.parse(iso) >= before - 1000 && Date.parse(iso) <= Date.now() + 1000, '지금 시각');
+});
+check('refreshDashboard는 따로 기록하지 않는다 — 실행 중 그 키 쓰기는 recalc의 1회뿐', () => {
+  const t = makeCtx();
+  const writes = [];
+  const origProps = t.ctx.PropertiesService.getScriptProperties;
+  t.ctx.PropertiesService.getScriptProperties = function () {
+    const p = origProps();
+    const origSet = p.setProperty;
+    p.setProperty = function (k, v) { writes.push(k); return origSet(k, v); };
+    return p;
+  };
+  const r = call(t, 'refreshDashboard(true)');
+  ok(r.success, r.message);
+  eq(writes.filter((k) => k === 'LAST_SYNC_TIMESTAMP').length, 1, '기록 횟수');
+  ok(!/setProperty\(\s*["']LAST_SYNC_TIMESTAMP/.test(fs.readFileSync(path.join(SRC, 'Dashboard.gs'), 'utf8')), 'Dashboard.gs에 옛 기록 줄이 남아 있다');
+});
+check('runSystemCommand(refreshDashboard·incrementalSync)는 통합 갱신의 실패(잠금 대기 등)를 그대로 돌려준다', () => {
+  const t = makeCtx();
+  const okR = call(t, 'runSystemCommand("tok", "refreshDashboard")');
+  ok(okR.success && /갱신이 완료/.test(okR.message), JSON.stringify(okR));
+  ok(t.env.__scriptProps.has('LAST_SYNC_TIMESTAMP'), '웹앱 통합 갱신 뒤 재계산 시각');
+  t.ctx.refreshDashboard = () => ({ success: false, message: '다른 프로세스가 실행 중입니다. 잠시 후 재시도해 주세요.' });
+  ['refreshDashboard', 'incrementalSync'].forEach((cmd) => {
+    const r = call(t, 'runSystemCommand("tok", "' + cmd + '")');
+    eq(r, { success: false, message: '다른 프로세스가 실행 중입니다. 잠시 후 재시도해 주세요.' }, cmd + ' (전에는 무시하고 성공이라 했다)');
+  });
+});
+check('getDashboardData: date 대신 recalcAt(ISO)·recalcAtText(서버 타임존 포맷)를 준다', () => {
+  const t = makeCtx();
+  const iso = '2026-09-15T00:02:15.123Z';
+  t.env.__scriptProps.set('LAST_SYNC_TIMESTAMP', iso);
+  // 목의 formatDate는 ISO를 돌려주므로 인자(값·타임존·형식)를 직접 본다
+  t.ctx.Utilities.formatDate = (d, tz, fmt) => 'FMT|' + new Date(d).toISOString() + '|' + tz + '|' + fmt;
+  const d = call(t, 'getDashboardData("tok")');
+  ok(d.success);
+  ok(!('date' in d), 'date 필드가 남아 있다');
+  eq(d.recalcAt, iso);
+  eq(d.recalcAtText, 'FMT|' + iso + '|Asia/Seoul|yyyy-MM-dd HH:mm');
+  eq(Object.keys(d).sort(), ['alertItems', 'kpi', 'recalcAt', 'recalcAtText', 'season', 'seasonMultiplier', 'success']);
+});
+check('getDashboardData: 기록이 없거나 깨진 값이면 recalcAt·recalcAtText가 null', () => {
+  const t = makeCtx();
+  const none = call(t, 'getDashboardData("tok")');
+  eq([none.recalcAt, none.recalcAtText], [null, null], '기록 없음');
+  call(t, 'CacheManager.invalidateAll()');
+  t.env.__scriptProps.set('LAST_SYNC_TIMESTAMP', 'not-a-date');
+  const bad = call(t, 'getDashboardData("tok")');
+  eq([bad.recalcAt, bad.recalcAtText], [null, null], '깨진 값');
+});
+check('캐시 히트는 같은 recalcAt을 주고, 재계산(invalidateAll) 뒤에는 새 값을 읽는다', () => {
+  const t = makeCtx();
+  t.env.__scriptProps.set('LAST_SYNC_TIMESTAMP', '2026-09-14T15:00:00.000Z');
+  const a = call(t, 'getDashboardData("tok")');
+  t.env.__scriptProps.set('LAST_SYNC_TIMESTAMP', '2026-09-15T15:00:00.000Z'); // 캐시를 지우지 않은 채 속성만 바뀜
+  eq(call(t, 'getDashboardData("tok")').recalcAt, a.recalcAt, '캐시 히트');
+  call(t, 'recalcStockAndUsage(SpreadsheetApp.getActiveSpreadsheet()); CacheManager.invalidateAll()');
+  const c = call(t, 'getDashboardData("tok")');
+  eq(c.recalcAt, t.env.__scriptProps.get('LAST_SYNC_TIMESTAMP'), '무효화 뒤 재계산 시각');
+  ok(c.recalcAt !== a.recalcAt);
+});
+
 console.log('\n[7] getBootstrapData — 로그인 직후 묶음 응답');
 check('대시보드·업장·마감 기준일을 한 번에 돌려주고, 인증 없으면 거절한다', () => {
   const t = makeCtx();

@@ -10,6 +10,8 @@
 // ═══════════════════════════════════════════════════════════════
 var TAB_CACHE_FRESH_MS = 60000;
 var tabDataCache = {};
+// [TASK-029] 대시보드 헤더 「재고 계산 기준」이 이보다 오래됐으면 경고 배지를 보인다 — 자정 트리거가 죽었을 때의 신호
+var DASHBOARD_STALE_MS = 24 * 60 * 60 * 1000;
 
 function getTabData(key) { return tabDataCache[key] || null; }
 function setTabData(key, data) { tabDataCache[key] = { data: data, at: Date.now() }; }
@@ -202,6 +204,21 @@ function closeModal() {
 // ═══════════════════════════════════════════════════════════════
 //  대시보드
 // ═══════════════════════════════════════════════════════════════
+/**
+ * [TASK-029] 헤더 시각 = 재고를 마지막으로 재계산한 시각(recalcStockAndUsage가 남긴 LAST_SYNC_TIMESTAMP).
+ *   예전 「최신 갱신일」은 서버가 대시보드를 읽어 캐시한 시각이라 KPI가 언제 계산됐는지와 무관했다(실시간으로 오인).
+ *   recalcAtText는 서버가 스크립트 타임존으로 포맷한 문자열, recalcAt은 ISO — 24시간 경과 판정에만 쓴다.
+ */
+function renderDashboardRecalcAt(data) {
+  document.getElementById('dashDate').textContent = '재고 계산 기준: ' + (data.recalcAtText || '기록 없음');
+  var stale = false;
+  if (data.recalcAt) {
+    var recalcMs = new Date(data.recalcAt).getTime();
+    stale = !isNaN(recalcMs) && (Date.now() - recalcMs) > DASHBOARD_STALE_MS;
+  }
+  document.getElementById('dashStaleBadge').hidden = !stale;
+}
+
 function loadDashboard() {
   showLoading();
   google.script.run
@@ -215,7 +232,7 @@ function loadDashboard() {
 }
 
 function renderDashboard(data) {
-  document.getElementById('dashDate').textContent = '최신 갱신일: ' + data.date;
+  renderDashboardRecalcAt(data);
   document.getElementById('dashSeason').textContent = data.season + ' (×' + data.seasonMultiplier + ')';
   document.getElementById('kpiTotal').textContent = data.kpi.total;
   document.getElementById('kpiRisk').textContent = data.kpi.risk;

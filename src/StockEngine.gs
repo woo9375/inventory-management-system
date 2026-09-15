@@ -207,4 +207,9 @@ function recalcStockAndUsage(ss) {
     //   상수를 쓴다 — 그대로 뒀다면 FIFO 평가액을 단위 세액 열에 덮어썼다.
     masterSheet.getRange(3, MASTER_COLS.TOTAL_VALUE + 1, valueUpdates.length, 1).setValues(valueUpdates);
   }
+
+  // [TASK-029] 재고 재계산 완료 시각 — 대시보드 헤더 「재고 계산 기준」의 단일 출처.
+  //   예전에는 refreshDashboard(통합 갱신)만 기록해 월마감·품목 초기재고 변경으로 H열이 바뀐 시각은 빠졌다.
+  //   실제로 H열을 되쓰는 곳이 여기뿐이므로 여기서 기록한다. 위의 스키마 검사 조기 반환은 쓰지 않았으니 기록하지 않는다.
+  PropertiesService.getScriptProperties().setProperty(STOCK_RECALC_AT_PROPERTY, new Date().toISOString());
 }

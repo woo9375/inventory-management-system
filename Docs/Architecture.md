@@ -154,6 +154,8 @@ CacheService(스크립트 캐시) ← CacheManager (90KB 청크 분할, 기본 T
   무효화: invalidateAll() = getAll 1회 + removeAll 1회. 부르는 곳 — 마스터/업장/시즌/사용자/기초데이터/거래처 쓰기 API,
       시트 직접 편집(onEdit, 시스템 시트 어디든), 통합 갱신, 월마감, 마이그레이션, 웹앱 「시트 동기화」
   거래 등록은 캐시를 지우지 않는다. 마감 기준일이 없는 환경은 CLOSING_CUTOFF_NONE 부정 캐시로 통합 시트 풀 스캔을 막는다.
+  대시보드(DASHBOARD_DATA)에는 재고 재계산 시각 recalcAt/recalcAtText(ScriptProperties LAST_SYNC_TIMESTAMP, 콜드 미스 때 1회 읽음)가
+      같이 담긴다 — 재계산 경로(통합 갱신·월마감·품목 초기재고 변경)가 모두 invalidateAll을 부르므로 캐시와 어긋나지 않는다 (TASK-029).
 클라이언트(JS_UI loadWithTabCache): 업장·시즌·사용자(getConfigData)·기초데이터·거래처 응답을 세션 동안 보관.
   1분 안 재방문은 서버 호출 없음, 그 뒤는 먼저 그리고 뒤에서 갱신. 쓰기 직후 loadXxx(true), 「시트 동기화」는 clearTabData().
 로그인: getBootstrapData 1회 = 대시보드 + 업장 목록 + 마감 기준일. 클라이언트 applyBootstrap이 항목별 try/catch로 적용한다
@@ -164,8 +166,13 @@ CacheService(스크립트 캐시) ← CacheManager (90KB 청크 분할, 기본 T
 ```
 refreshDashboard()   // 시트 메뉴에서는 menuRefreshDashboard() → 안내 대화상자(AdminActionDialog.html) → runAdminAction()이 isSilent=true로 호출 (TASK-019/023)
   → consolidateAllSheets() (업장 데이터 통합)
-  → recalcStockAndUsage() (재고/일평균 재계산)
+  → recalcStockAndUsage() (재고/일평균 재계산) — 끝에 LAST_SYNC_TIMESTAMP(ISO) 기록 (TASK-029; 월마감·품목 초기재고 변경 경로도 같은 함수라 함께 기록된다)
   → runDashboardSync() (대시보드 시트 업데이트)
+  → CacheManager.invalidateAll()
+웹앱 「통합갱신」·「신규 내역 취합」(JS_Config submitSystemCommand → runSystemCommand): 성공 토스트 뒤 clearTabData() + loadDashboard()로
+  KPI·알림 표·헤더 시각을 다시 그린다 (TASK-029 — 전에는 토스트만 띄워 화면이 갱신 전 값으로 남았다).
+헤더 「재고 계산 기준: yyyy-MM-dd HH:mm」 = getDashboardData().recalcAtText (서버 타임존 포맷; 기록 없으면 "기록 없음").
+  recalcAt이 24시간보다 오래되면 #dashStaleBadge("하루 이상 지난 계산") — 자정 트리거(Triggers.gs) 장애를 화면에서 알아차리게.
 ```
 
 ### 월마감 흐름

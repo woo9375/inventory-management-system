@@ -52,8 +52,10 @@ function getDashboardData(token) {
   if (session.role === ROLES.STAFF) return { success: false, message: "대시보드 조회 권한이 없습니다." };
 
   // [TASK-027] 마스터 4,300행 스캔 결과를 캐시한다(역할과 무관한 값). 로그인마다 3초 넘게 걸리던 호출이다.
-  //   현재고·상태는 통합 갱신이 바꾸며 그쪽이 invalidateAll로 지운다. date는 캐시 시점의 값이 그대로 남는데,
-  //   이 값은 "재고 상태를 마지막으로 읽은 시각"이므로 캐시 시점을 보여 주는 것이 맞다.
+  //   현재고·상태는 recalcStockAndUsage(통합 갱신·월마감·품목 초기재고 변경)만 바꾸며 그 경로들이 invalidateAll로 지운다.
+  // [TASK-029] 헤더 시각은 "재고를 마지막으로 재계산한 시각"(recalcAt = LAST_SYNC_TIMESTAMP)이다.
+  //   예전 date(조회 시점의 현재 시각)는 KPI가 언제 계산됐는지와 무관해 "실시간"으로 오인하게 했다.
+  //   recalcAt도 캐시된 객체에 들어가지만, 재계산 경로가 모두 invalidateAll을 부르므로 캐시와 어긋나지 않는다.
   const cachedDashboard = CacheManager.get(CACHE_KEYS.DASHBOARD);
   if (cachedDashboard) return cachedDashboard;
 
@@ -97,11 +99,23 @@ function getDashboardData(token) {
     }
   });
 
+  // [TASK-029] 속성 1회 읽기(수 ms). 포맷은 서버 타임존으로 — 브라우저 타임존 차이로 표기가 흔들리지 않게.
+  const recalcIso = PropertiesService.getScriptProperties().getProperty(STOCK_RECALC_AT_PROPERTY);
+  let recalcAt = null, recalcAtText = null;
+  if (recalcIso) {
+    const recalcDate = new Date(recalcIso);
+    if (!isNaN(recalcDate.getTime())) {
+      recalcAt = recalcIso;
+      recalcAtText = Utilities.formatDate(recalcDate, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+    }
+  }
+
   const dashboard = {
     success: true,
     season: currentSeason,
     seasonMultiplier: seasonMultiplier,
-    date: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm"),
+    recalcAt: recalcAt,         // ISO 문자열 또는 null (기록 없음) — 클라이언트가 24시간 경과 배지 판정에 쓴다
+    recalcAtText: recalcAtText, // "yyyy-MM-dd HH:mm" (스크립트 타임존) 또는 null
     kpi: { total: totalItems, risk: riskCount, order: orderCount, normal: normalCount },
     alertItems: alertItems
   };
@@ -137,9 +151,13 @@ function runSystemCommand(token, command) {
 
   try {
     switch (command) {
-      case "refreshDashboard":
-        refreshDashboard(true);
+      case "refreshDashboard": {
+        // [TASK-029] 잠금 대기 실패·오류는 refreshDashboard가 { success:false }로 돌려준다(TASK-023).
+        //   그대로 전달해야 클라이언트가 성공 토스트·대시보드 재조회를 건너뛴다 (전에는 무시하고 항상 성공이라 했다).
+        const refreshed = refreshDashboard(true);
+        if (refreshed && refreshed.success === false) return refreshed;
         return { success: true, message: "🔄 대시보드 및 재고 갱신이 완료되었습니다." };
+      }
       case "syncPermissions":
         const ss1 = SpreadsheetApp.getActiveSpreadsheet();
         _refreshPermissionDropdown(ss1);
@@ -164,9 +182,11 @@ function runSystemCommand(token, command) {
       case "backupCSV":
         backupToCSV();
         return { success: true, message: "💾 시스템 데이터 백업이 완료되었습니다." };
-      case "incrementalSync":
-        refreshDashboard(true);
+      case "incrementalSync": {
+        const synced = refreshDashboard(true);
+        if (synced && synced.success === false) return synced;
         return { success: true, message: "🔄 신규 내역 취합 및 동기화가 완료되었습니다." };
+      }
 
       case "refreshSheetStatus":
         refreshSheetStatus();
@@ -183,7 +203,7 @@ function getLastSyncTime(token) {
   const session = validateSession(token);
   if (!session) return { success: false, message: "인증이 필요합니다." };
   const props = PropertiesService.getScriptProperties();
-  const time = props.getProperty("LAST_SYNC_TIMESTAMP");
+  const time = props.getProperty(STOCK_RECALC_AT_PROPERTY);
   return { success: true, timestamp: time };
 }
 

@@ -138,6 +138,9 @@
               <span class="meta-icon"><svg class="ico"><use href="#i-clock"/></svg></span>
               <span id="dashDate">-</span>
             </span>
+            <!-- [TASK-029] 마지막 재고 계산이 24시간보다 오래됐을 때만 보인다 (자정 트리거 장애 신호). UIGuidelines §3: 이모지 없이 색+텍스트 pill -->
+            <span id="dashStaleBadge" class="status-badge order" hidden
+              title="마지막 재고 계산 후 24시간이 지났습니다. 자정 트리거 상태를 확인하거나 통합 갱신을 실행하세요.">하루 이상 지난 계산</span>
           </div>
           <div class="header-meta">
             <button class="btn btn-outline btn-sm" onclick="openForceRefreshModal(loadDashboard)"

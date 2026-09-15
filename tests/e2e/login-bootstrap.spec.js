@@ -34,7 +34,10 @@ test.describe('DEV 로그인 부트스트랩', () => {
     await expect(app.locator('#kpiRisk')).toHaveText(String(dash.kpi.risk));
     await expect(app.locator('#kpiOrder')).toHaveText(String(dash.kpi.order));
     await expect(app.locator('#kpiNormal')).toHaveText(String(dash.kpi.normal));
-    await expect(app.locator('#dashDate')).toContainText('최신 갱신일: ' + dash.date);
+    // [TASK-029] 헤더 시각은 서버가 포맷한 재고 재계산 시각(없으면 '기록 없음')
+    await expect(app.locator('#dashDate')).toHaveText('재고 계산 기준: ' + (dash.recalcAtText || '기록 없음'));
+    const stale = !!dash.recalcAt && Date.now() - new Date(dash.recalcAt).getTime() > 24 * 60 * 60 * 1000;
+    await expect(app.locator('#dashStaleBadge'))[stale ? 'toBeVisible' : 'toBeHidden']();
     await expect(app.locator('#alertTableBody')).not.toContainText('데이터를 불러오는 중');
     if (dash.alertItems.length === 0) {
       await expect(app.locator('#alertTableBody')).toContainText('발주 필요 품목이 없습니다');

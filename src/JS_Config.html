@@ -507,6 +507,12 @@ function submitSystemCommand(command) {
       hideLoading();
       if (res.success) {
         showToast(res.message, 'success');
+        // [TASK-029] 재고를 다시 계산한 명령은 서버 캐시를 비웠으니 화면도 다시 그린다 — 「시트 동기화」(doForceRefresh)와 같은 후처리.
+        //   전에는 토스트만 띄워 KPI·알림 표·재고 계산 기준이 갱신 전 값으로 남았다. 다른 명령(권한·시즌·백업)은 재고와 무관.
+        if (command === 'refreshDashboard' || command === 'incrementalSync') {
+          clearTabData();
+          loadDashboard();
+        }
       } else {
         showToast(res.message, 'warning');
       }
